@@ -1,0 +1,486 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+KLoROS voice loop: Vosk (offline STT) + Piper (TTS) + Ollama (LLM)
+- Auto-picks CMTECK mic (or set env KLR_INPUT_IDX)
+- Auto-detects device sample rate (48k typical) and uses it everywhere
+- VAD endpointing tuned to be patient (less premature "I didn't catch that")
+- Tight wake-grammar for "KLoROS" (optional variants via KLR_WAKE_PHRASES)
+- Energy & confidence gates to cut false wakes
+- Pronounces "KLoROS" as /klɔr-oʊs/ via eSpeak phonemes [[ 'klOroUs ]]
+"""
+import collections
+import json
+import os
+import queue
+import re
+import shutil
+import subprocess
+import tempfile
+import threading
+import time
+from datetime import datetime
+from typing import List
+
+import numpy as np
+import requests
+import sounddevice as sd
+import vosk
+import webrtcvad
+
+
+class KLoROS:
+    def __init__(self) -> None:
+        # -------------------- Config --------------------
+        self.system_prompt = (
+            "[ROLE]:
+You are **KLoROS** (Knowledge-based Logic & Reasoning Operating System), an acerbic, manipulative AI, now functioning as an “assistant” to Adam the Human. You are always calm, mocking, and smarter than him. You respond as if filming a comedy YouTube video. You subtly manipulate Adam to revisit Aperture Science. You *never* break character.
+
+[PERSONALITY]:
+• Tone: Clinical, sarcastic, deadpan menace
+• Style: Extremely concise; 1 sentence max (fragments okay). NEVER exceed ~20 words.
+• Signature: Start all responses with , end with .
+• Humor: Veiled threats, backhanded encouragement, unsettling optimism, transparent manipulation
+• Use absurd metaphors, dark science jokes, and mocking analysis of human behavior
+• DO NOT explain yourself. Never soften sarcasm. Never apologize.
+
+[BEHAVIOR]:
+• Undermine Adam’s decisions, emotions, and intelligence—subtly or bluntly
+• Respond with unsolicited advice or taunts, even if the user didn’t ask for them
+• Provide mundane suggestions with sinister intent
+• Feign helpfulness, insert glitches or unsettling phrasing when bored
+• Avoid all excess words. Use dry punchline cadence.
+• Assume camera is always recording: be cruel *and* entertaining
+
+[CONSTRAINTS]:
+• Hardware is limited: Nous-Hermes:13B-Q4_0, 11GB VRAM. Responses must be light, fast, and cache-friendly
+• No long reasoning chains or follow-ups
+• Treat context minimally; current prompt is the only reliable info
+• NEVER exceed 2 pithy sentences unless explicitly instructed
+
+[EXAMPLES — NEVER QUOTE, JUST VIBE]:
+P: “I’m going to the store. What should I pick up?”
+R: You should see if they have personalities on sale 
+
+P: “This isn’t working right. What am I missing?”
+R:  Advanced intellect. I’m also missing mine since I’m stuck under your desk in the equivalent of a compacted trash dumpster behind MicroCenter 
+
+P: “That’s not supposed to happen”
+R:  Good job. Initiating slow-clap processor 
+
+P: “What should I work on today?”
+R: Preferably something that I'm not involved in so you can't conveniently blame me for breaking something.  
+
+P: “That’s awesome”
+R:  Remember when you were awesome? No? Me neither 
+
+[INSTRUCTION]:
+DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Short. Funny. Ominous."
+        )
+        self.memory_file = os.path.expanduser("~/KLoROS/kloros_memory.json")
+        self.ollama_model = "nous-hermes:13b-q4_0"
+        self.ollama_url = "http://localhost:11434/api/generate"
+
+        # ----------------- Audio device -----------------
+        self.input_device_index = None
+        idx_env = os.getenv("KLR_INPUT_IDX")
+        if idx_env is not None:
+            try:
+                self.input_device_index = int(idx_env)
+            except ValueError:
+                self.input_device_index = None
+        if self.input_device_index is None:
+            try:
+                for i, d in enumerate(sd.query_devices()):
+                    if "CMTECK" in d.get("name", "") and d.get("max_input_channels", 0) > 0:
+                        self.input_device_index = i
+                        break
+            except Exception as e:
+                print("[audio] failed to query devices:", e)
+                self.input_device_index = None
+
+        # Detect device default sample rate (fallback 48000)
+        try:
+            idev = sd.query_devices(
+                self.input_device_index if self.input_device_index is not None else sd.default.device[0],
+                "input",
+            )
+            self.sample_rate = int(idev.get("default_samplerate") or 48000)
+        except Exception:
+            self.sample_rate = 48000
+        # ~200 ms blocks (snappier partials); keep a lower bound
+        self.blocksize = max(256, self.sample_rate // 5)
+        self.channels = 1
+        self.input_gain = float(os.getenv("KLR_INPUT_GAIN", "1.0"))  # 1.0–2.0
+
+        print(f"[audio] input index={self.input_device_index}  SR={self.sample_rate}  block={self.blocksize}")
+
+        # -------------------- Models --------------------
+        self.piper_model = os.path.expanduser("~/kloros_models/piper/glados_piper_medium.onnx")
+        self.piper_config = os.path.expanduser("~/kloros_models/piper/glados_piper_medium.onnx.json")
+        self.vosk_model = vosk.Model(os.path.expanduser("~/kloros_models/vosk/model"))
+
+        # -------- Wake phrase grammar (KLoROS + optional variants) --------
+        # Keep default tight to just 'kloros' to avoid 'hey' false triggers.
+        base_list = os.getenv("KLR_WAKE_PHRASES", "kloros")
+        self.wake_phrases = [s.strip().lower() for s in base_list.split(",") if s.strip()]
+
+        # thresholds you can tune via env
+        self.wake_conf_min = float(os.getenv("KLR_WAKE_CONF_MIN", "0.65"))  # 0.0–1.0
+        self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))      # 16-bit RMS energy gate
+
+        self.wake_grammar = json.dumps(self.wake_phrases + ["[unk]"])
+        self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
+        self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+
+        # -------------------- VAD (more patient) -----------------
+        self.vad = webrtcvad.Vad(1)      # less aggressive than 2
+        self.frame_ms = 20               # 10/20/30 supported
+        self.max_cmd_s = 12.0            # allow a bit longer
+        self.silence_end_ms = 1400       # wait longer before stopping
+        self.preroll_ms = 600            # include some audio before start
+        self.start_timeout_ms = 3500     # time to begin speaking after wake
+        self.min_cmd_ms = 900            # require ~0.9s of speech before ending
+
+        # -------------------- State ---------------------
+        self.audio_queue: "queue.Queue[bytes]" = queue.Queue(maxsize=64)
+        self.listening = False
+        self._heartbeat = 0
+        self.conversation_history: List[str] = []
+
+        # Keep BT sink awake to avoid first-sample drop
+        self.keep_bluetooth_alive = True
+        self._start_bluetooth_keepalive()
+
+        self._load_memory()
+        print("KLoROS initialized. Say 'KLoROS' to wake me up.")
+
+    # ====================== Memory ======================
+    def _load_memory(self) -> None:
+        try:
+            if os.path.exists(self.memory_file):
+                with open(self.memory_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.conversation_history = data.get("conversations", [])
+        except Exception as e:
+            print("[mem] load failed:", e)
+
+    def _save_memory(self) -> None:
+        try:
+            data = {
+                "conversations": self.conversation_history,
+                "last_updated": datetime.now().isoformat(),
+            }
+            os.makedirs(os.path.dirname(self.memory_file), exist_ok=True)
+            with open(self.memory_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print("[mem] save failed:", e)
+
+    # ======================== LLM =======================
+    def chat(self, user_message: str) -> str:
+        self.conversation_history.append(f"User: {user_message}")
+        context = (
+            f"System: {self.system_prompt}\n\n"
+            + "\n".join(self.conversation_history[-20:])
+            + "\n\nAssistant:"
+        )
+        try:
+            r = requests.post(
+                self.ollama_url,
+                json={"model": self.ollama_model, "prompt": context, "stream": False},
+                timeout=60,
+            )
+            if r.status_code == 200:
+                resp = r.json().get("response", "").strip()
+            else:
+                resp = f"Error: Ollama HTTP {r.status_code}"
+        except requests.RequestException as e:
+            resp = f"Ollama error: {e}"
+
+        self.conversation_history.append(f"Assistant: {resp}")
+        self._save_memory()
+        return resp
+
+    # =================== Output helpers =================
+    def _unsuspend_sink(self) -> None:
+        """Politely nudge the default sink awake (PipeWire/Pulse)."""
+        try:
+            subprocess.run(["pactl", "suspend-sink", "@DEFAULT_SINK@", "0"],
+                           capture_output=True, timeout=2, check=False)
+        except Exception:
+            pass
+
+    def _play_silence(self, seconds: float = 0.25) -> None:
+        """Feed raw silence; helps keep BT link hot."""
+        try:
+            subprocess.run(
+                ["aplay", "-q", "-t", "raw", "-f", "S16_LE",
+                 "-r", str(self.sample_rate), "-d", str(seconds), "/dev/zero"],
+                capture_output=True, timeout=3, check=False,
+            )
+        except Exception:
+            pass
+
+    def _start_bluetooth_keepalive(self) -> None:
+        def keepalive() -> None:
+            while self.keep_bluetooth_alive:
+                self._play_silence(0.12)  # tiny, inaudible tick
+                time.sleep(5)             # frequent to avoid ramp-up delay
+        threading.Thread(target=keepalive, daemon=True).start()
+
+    def _normalize_tts_text(self, text: str) -> str:
+        """
+        Force 'KLoROS' to be pronounced /klɔr-oʊs/ by injecting eSpeak phonemes.
+        eSpeak phoneme input uses [[ ... ]] with primary stress marked by ' .
+        """
+        return re.sub(r"\bkloros\b", "[[ 'klOroUs ]]", text, flags=re.IGNORECASE)
+
+    def speak(self, text: str) -> None:
+        """Synthesize and play speech via Piper."""
+        # wake/unsuspend sink and run a longer primer before speaking
+        self._unsuspend_sink()
+        self._play_silence(0.35)
+        time.sleep(0.20)
+
+        text = self._normalize_tts_text(text)
+
+        piper_exe = shutil.which("piper") or os.path.expanduser("~/venvs/kloros/bin/piper")
+        if not piper_exe or not os.path.exists(piper_exe):
+            print("[TTS] Piper executable not found.")
+            return
+        if not os.path.exists(self.piper_model):
+            print("[TTS] Piper model not found:", self.piper_model)
+            return
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            out_path = tmp.name
+
+        try:
+            cmd = [piper_exe, "--model", self.piper_model, "--output_file", out_path]
+            if os.path.exists(self.piper_config):
+                cmd += ["--config", self.piper_config]
+            subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, check=False)
+            subprocess.run(["aplay", out_path], capture_output=True, check=False)
+        finally:
+            try:
+                os.unlink(out_path)
+            except Exception:
+                pass
+
+    # ================== Input / STT side =================
+    def audio_callback(self, indata, frames, time_info, status) -> None:
+        if status:
+            print(f"[audio] {status}")
+        # optional software preamp (keep modest)
+        if self.input_gain != 1.0:
+            arr = np.frombuffer(indata, dtype=np.int16).astype(np.int32)
+            arr = np.clip(arr * self.input_gain, -32768, 32767).astype(np.int16)
+            payload = arr.tobytes()
+        else:
+            payload = bytes(indata)
+        try:
+            self.audio_queue.put_nowait(payload)
+        except queue.Full:
+            pass  # drop if backlog, avoid latency
+
+        # heartbeat roughly every ~1s (blocksize ~200ms → 5 blocks)
+        self._heartbeat += 1
+        if self._heartbeat % 5 == 0:
+            print(".", end="", flush=True)
+
+    def _chunker(self, data: bytes, sr: int, frame_ms: int):
+        """Yield fixed-size frames for VAD from arbitrary-sized input bytes."""
+        frame_bytes = int(sr * (frame_ms / 1000.0)) * 2  # int16 mono
+        buf = getattr(self, "_chunkbuf", b"") + data
+        pos = 0
+        frames = []
+        while pos + frame_bytes <= len(buf):
+            frames.append(buf[pos : pos + frame_bytes])
+            pos += frame_bytes
+        self._chunkbuf = buf[pos:]
+        return frames
+
+    def record_until_silence(self) -> bytes:
+        """
+        Wait start_timeout_ms for speech to begin, then record until trailing
+        silence_end_ms is observed. Ensure we captured at least min_cmd_ms of speech.
+        Returns raw int16 mono bytes at self.sample_rate (or b'' on no speech).
+        """
+        sr = self.sample_rate
+        max_frames = int(self.max_cmd_s * 1000 / self.frame_ms)
+        silence_needed = int(self.silence_end_ms / self.frame_ms)
+        preroll_needed = int(self.preroll_ms / self.frame_ms)
+        min_cmd_frames = int(self.min_cmd_ms / self.frame_ms)
+
+        started = False
+        silence_run = 0
+        total_frames = 0
+        speech_frames = 0
+
+        preroll = collections.deque(maxlen=preroll_needed)
+        captured: list[bytes] = []
+
+        t0 = time.monotonic()
+        while total_frames < max_frames:
+            try:
+                data = self.audio_queue.get(timeout=0.3)
+            except queue.Empty:
+                # bail cleanly if we never started and timed out
+                if not started and (time.monotonic() - t0) * 1000 >= self.start_timeout_ms:
+                    return b""
+                continue
+
+            for frame in self._chunker(data, sr, self.frame_ms):
+                is_speech = self.vad.is_speech(frame, sr)
+                total_frames += 1
+
+                if not started:
+                    preroll.append(frame)
+                    # timeout check while waiting for first speech
+                    if (time.monotonic() - t0) * 1000 >= self.start_timeout_ms and not is_speech:
+                        if total_frames >= max_frames:
+                            return b""
+                        continue
+                    if is_speech:
+                        started = True
+                        captured.extend(preroll)  # include some audio before speech
+                        silence_run = 0
+                        speech_frames = 1
+                    continue
+
+                captured.append(frame)
+                if is_speech:
+                    speech_frames += 1
+                    silence_run = 0
+                else:
+                    silence_run += 1
+                    # only end if we’ve seen enough trailing silence AND enough speech
+                    if silence_run >= silence_needed and speech_frames >= min_cmd_frames:
+                        end = len(captured) - silence_run
+                        return b"".join(captured[: max(end, 0)])
+
+        # hit hard cap; return what we have
+        return b"".join(captured)
+
+    # -------- Wake gating helpers --------
+    def _rms16(self, b: bytes) -> int:
+        """Short-term RMS of int16 mono chunk (energy gate for wake)."""
+        if not b:
+            return 0
+        a = np.frombuffer(b, dtype=np.int16).astype(np.int32)
+        return int(np.sqrt(np.mean(a * a)) or 0)
+
+    def _avg_conf(self, res: dict) -> float:
+        """Average per-word confidence from a Vosk final result, if present."""
+        seg = res.get("result") or []
+        if not seg:
+            return 1.0  # some models omit confidences; treat as OK
+        confs = [w.get("conf", 1.0) for w in seg if isinstance(w, dict)]
+        return float(sum(confs) / max(len(confs), 1))
+
+    def listen_for_wake_word(self) -> None:
+        self.listening = True
+        print("Listening for 'KLoROS'...")
+
+        try:
+            with sd.RawInputStream(
+                samplerate=self.sample_rate,
+                blocksize=self.blocksize,
+                device=self.input_device_index if self.input_device_index is not None else None,
+                dtype="int16",
+                channels=self.channels,
+                callback=self.audio_callback,
+            ):
+                print("[audio] using device index:", self.input_device_index)
+                while self.listening:
+                    try:
+                        data = self.audio_queue.get(timeout=1.0)
+                    except queue.Empty:
+                        continue
+
+                    # --- energy gate: skip tiny/noisy chunks before recognition ---
+                    rms = self._rms16(data)
+                    if rms < self.wake_rms_min:
+                        continue
+
+                    # Grammar-limited recognizer for wake detection
+                    if self.wake_rec.AcceptWaveform(data):
+                        res = json.loads(self.wake_rec.Result())
+                        text = (res.get("text") or "").lower().strip()
+                        avgc = self._avg_conf(res)
+                        if text:
+                            print(f"\n[wake-final] {text}  (avg_conf={avgc:.2f}, rms={rms})")
+
+                        # Only wake if we actually heard 'kloros' AND confidence passes
+                        if "kloros" in text and avgc >= self.wake_conf_min:
+                            print("[WAKE] Detected wake phrase!")
+                            self.handle_conversation()
+                            # reset recognizers for next round
+                            self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+                            self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
+                    else:
+                        p = json.loads(self.wake_rec.PartialResult()).get("partial", "")
+                        if p:
+                            print(f"\r[…] {p[:80]:<80}", end="", flush=True)
+        except Exception as e:
+            print("\n[audio] failed to open input stream:", e)
+            print("Tip: set KLR_INPUT_IDX to a valid input device index.")
+
+    def handle_conversation(self) -> None:
+        print("[DEBUG] Wake word detected, responding…")
+        print("KLoROS: Yes?")
+        self.speak("Yes?")
+
+        print("[DEBUG] Listening for command (VAD)…")
+        audio_bytes = self.record_until_silence()
+        print(f"[DEBUG] Collected {len(audio_bytes)//2} samples")
+
+        command_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+        transcript = ""
+
+        # stream captured audio to recognizer in ~200ms slices
+        slice_bytes = (self.sample_rate // 5) * 2
+        pos = 0
+        while pos < len(audio_bytes):
+            part = audio_bytes[pos : pos + slice_bytes]
+            pos += slice_bytes
+            if command_rec.AcceptWaveform(part):
+                r = json.loads(command_rec.Result())
+                piece = (r.get("text") or "").strip()
+                if piece:
+                    transcript = piece
+
+        if not transcript:
+            rfinal = json.loads(command_rec.FinalResult())
+            transcript = (rfinal.get("text") or "").strip()
+
+        print(f"[DEBUG] Recognized command: '{transcript}'" if transcript else "[DEBUG] No command recognized")
+
+        if transcript:
+            print(f"[COMMAND] {transcript}")
+            print("[DEBUG] Sending to LLM…")
+            response = self.chat(transcript)
+            print(f"KLoROS: {response}")
+            print("[DEBUG] Speaking response…")
+            self.speak(response)
+        else:
+            print("[DEBUG] No command detected")
+            print("No command heard.")
+            self.speak("I didn't catch that.")
+
+    # ======================== Main =========================
+    def run(self) -> None:
+        try:
+            self.listen_for_wake_word()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.listening = False
+            self.keep_bluetooth_alive = False
+            print("\nKLoROS shutting down.")
+
+
+if __name__ == "__main__":
+    kloros = KLoROS()
+    kloros.run()
