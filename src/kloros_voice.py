@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime
-from typing import List
+from typing import List, Callable, Optional, Any
 import platform
 
 import numpy as np
@@ -28,6 +28,10 @@ import requests
 import sounddevice as sd
 import vosk
 import webrtcvad
+try:
+    from src.rag import RAG
+except Exception:
+    RAG = None
 
 
 class KLoROS:
@@ -217,6 +221,44 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
 
         self.conversation_history.append(f"Assistant: {resp}")
         self._save_memory()
+        return resp
+
+    # =============== RAG integration helpers ===============
+    def load_rag(self, metadata_path: str, embeddings_path: str, faiss_index: str | None = None) -> None:
+        """Load RAG artifacts for later retrieval. Uses src.rag.RAG.
+
+        metadata_path and embeddings_path should point to files on the local filesystem (KLoROS host).
+        If a faiss index is available, pass its path as faiss_index (optional).
+        """
+        if RAG is None:
+            raise RuntimeError("RAG module not available; ensure src/rag.py is present")
+        self.rag = RAG(metadata_path=metadata_path, embeddings_path=embeddings_path)
+        # try to load faiss index if provided
+        if faiss_index:
+            try:
+                import faiss
+
+                idx = faiss.read_index(faiss_index)
+                self.rag.faiss_index = idx
+            except Exception as e:
+                print("[RAG] failed to load faiss index:", e)
+
+    def answer_with_rag(self, question: str, top_k: int = 5, embedder: Optional[Callable[..., Any]] = None, speak: bool = False) -> str:
+        """Retrieve context and ask Ollama for a grounded response. Optionally speak result via Piper.
+
+        Provide either an embedder callable or ensure the RAG object can accept a precomputed query embedding.
+        """
+        if not hasattr(self, 'rag') or self.rag is None:
+            raise RuntimeError("RAG not loaded. Call load_rag() first.")
+        if embedder is None:
+            raise ValueError("Provide an embedder callable for query embedding")
+        out = self.rag.answer(question, embedder=embedder, top_k=top_k, ollama_url=self.ollama_url, model=self.ollama_model)
+        resp = out.get('response', '')
+        if speak and resp:
+            try:
+                self.speak(resp)
+            except Exception as e:
+                print('[RAG] speak failed:', e)
         return resp
 
     # =================== Output helpers =================
