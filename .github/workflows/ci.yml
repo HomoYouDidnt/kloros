@@ -52,10 +52,8 @@ jobs:
           # Install Python deps (use cached pip directory)
           python -m pip install --no-cache-dir -r requirements.txt || \
             (python -m pip install --upgrade pip setuptools wheel && python -m pip install -r requirements.txt)
-          # Install this package in editable mode so tests can import `src` as a package
-          python -m pip install -e .
-          # Ensure pytest is available for the test runner
-          python -m pip install pytest
+            # No editable install here — repository is importable via PYTHONPATH in CI
+            python -m pip install pytest
       - name: "Debug: Python environment"
         run: |
           python -V
