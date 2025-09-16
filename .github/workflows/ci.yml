@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - name: Cache pip
@@ -50,6 +52,8 @@ jobs:
           # Install Python deps (use cached pip directory)
           python -m pip install --no-cache-dir -r requirements.txt || \
             (python -m pip install --upgrade pip setuptools wheel && python -m pip install -r requirements.txt)
+          # Install this package in editable mode so tests can import `src` as a package
+          python -m pip install -e .
           # Ensure pytest is available for the test runner
           python -m pip install pytest
       - name: "Debug: Python environment"
