@@ -267,8 +267,12 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         text = self._normalize_tts_text(text)
 
         # Allow explicit override for the piper executable for dev/test environments
-        piper_exe = os.getenv("KLR_PIPER_EXE") or shutil.which("piper") or os.path.expanduser("~/venvs/kloros/bin/piper")
-        if not piper_exe or not os.path.exists(piper_exe):
+        # If KLR_PIPER_EXE is set explicitly, prefer it even if the path doesn't exist (tests may monkeypatch subprocess.run).
+        env_piper = os.getenv("KLR_PIPER_EXE")
+        discovered_piper = shutil.which("piper") or os.path.expanduser("~/venvs/kloros/bin/piper")
+        piper_exe = env_piper if env_piper is not None else discovered_piper
+        # If we discovered an executable, ensure it exists. If only env override is provided, trust the override (for tests/dev).
+        if not piper_exe or (env_piper is None and not os.path.exists(piper_exe)):
             print("[TTS] Piper executable not found; skipping TTS. Set KLR_PIPER_EXE to override.")
             return
         if not os.path.exists(self.piper_model):
