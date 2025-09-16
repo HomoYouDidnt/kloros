@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kloros"
+version = "0.0.0"
+description = "KLoROS — local voice assistant glue code"
+readme = "README.md"
+authors = [ { name = "KLoROS Dev" } ]
+license = { text = "MIT" }
+dependencies = [
+    "numpy==2.3.2",
+    "requests==2.32.5",
+    "sounddevice==0.5.2",
+    "vosk==0.3.45",
+    "webrtcvad==2.0.10",
+]

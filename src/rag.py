@@ -28,7 +28,7 @@ import pickle
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
-import requests
+import requests  # type: ignore
 
 
 class RAG:
@@ -169,6 +169,7 @@ class RAG:
         if query_embedding is None and embedder is None:
             raise ValueError("Provide either query_embedding or an embedder callable")
         if query_embedding is None:
+            assert embedder is not None
             query_embedding = embedder(question)
         retrieved = self.retrieve_by_embedding(query_embedding, top_k=top_k)
         prompt = self.build_prompt(question, retrieved)

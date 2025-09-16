@@ -24,7 +24,7 @@ from typing import List, Callable, Optional, Any
 import platform
 
 import numpy as np
-import requests
+import requests  # type: ignore
 import sounddevice as sd
 import vosk
 import webrtcvad
@@ -388,7 +388,7 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         total_frames = 0
         speech_frames = 0
 
-        preroll = collections.deque(maxlen=preroll_needed)
+        preroll: collections.deque[bytes] = collections.deque(maxlen=preroll_needed)
         captured: list[bytes] = []
 
         t0 = time.monotonic()
