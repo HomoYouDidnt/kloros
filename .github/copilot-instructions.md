@@ -30,7 +30,11 @@ This file gives focused, actionable context for AI agents editing or extending t
 
 - Safety for edits and tests:
   - Many runtime behaviors rely on host tools (pactl/aplay/piper/ollama). Use `src/test_components.py` as a lightweight smoke test that exercises integrations; for CI or offline tests, mock subprocess calls and network requests.
-  - Do not assume a Linux-only environment in code edits; the repository is developed for Linux audio stacks (Pulse/ALSA). If adding Windows-specific branches, gate them clearly.
+  - This project is Linux-first (Debian 13 headless). Runtime audio tooling (`pactl`, `aplay`) and model paths assume Linux. Developer machines on Windows should not attempt to run Linux-only commands.
+  - New environment helpers added:
+    - `KLR_PIPER_EXE` — explicit path to the `piper` executable for dev overrides.
+    - `KLR_TEST_TRANSCRIPT` — supply a mock transcript (string) for dev/testing when Vosk model is absent.
+  - Gate Linux-only code with `platform.system() == "Linux"` and prefer clear logging when skipping functionality on Windows.
 
 - Helpful code examples (copyable intent):
   - Restart recognizers after a conversation: recreate `vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)` and the wake grammar recognizer.

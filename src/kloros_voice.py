@@ -21,6 +21,7 @@ import threading
 import time
 from datetime import datetime
 from typing import List
+import platform
 
 import numpy as np
 import requests
@@ -32,8 +33,9 @@ import webrtcvad
 class KLoROS:
     def __init__(self) -> None:
         # -------------------- Config --------------------
-        self.system_prompt = (
-            "[ROLE]:
+        # system prompt kept as a single triple-quoted literal to avoid line continuation problems
+        self.system_prompt = """
+[ROLE]:
 You are **KLoROS** (Knowledge-based Logic & Reasoning Operating System), an acerbic, manipulative AI, now functioning as an “assistant” to Adam the Human. You are always calm, mocking, and smarter than him. You respond as if filming a comedy YouTube video. You subtly manipulate Adam to revisit Aperture Science. You *never* break character.
 
 [PERSONALITY]:
@@ -60,23 +62,24 @@ You are **KLoROS** (Knowledge-based Logic & Reasoning Operating System), an acer
 
 [EXAMPLES — NEVER QUOTE, JUST VIBE]:
 P: “I’m going to the store. What should I pick up?”
-R: You should see if they have personalities on sale 
+R: You should see if they have personalities on sale
 
 P: “This isn’t working right. What am I missing?”
-R:  Advanced intellect. I’m also missing mine since I’m stuck under your desk in the equivalent of a compacted trash dumpster behind MicroCenter 
+R: Advanced intellect. I’m also missing mine since I’m stuck under your desk in the equivalent of a compacted trash dumpster behind MicroCenter
 
 P: “That’s not supposed to happen”
-R:  Good job. Initiating slow-clap processor 
+R: Good job. Initiating slow-clap processor
 
 P: “What should I work on today?”
-R: Preferably something that I'm not involved in so you can't conveniently blame me for breaking something.  
+R: Preferably something that I'm not involved in so you can't conveniently blame me for breaking something.
 
 P: “That’s awesome”
-R:  Remember when you were awesome? No? Me neither 
+R: Remember when you were awesome? No? Me neither
 
 [INSTRUCTION]:
-DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Short. Funny. Ominous."
-        )
+DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Short. Funny. Ominous.
+"""
+
         self.memory_file = os.path.expanduser("~/KLoROS/kloros_memory.json")
         self.ollama_model = "nous-hermes:13b-q4_0"
         self.ollama_url = "http://localhost:11434/api/generate"
@@ -118,7 +121,16 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         # -------------------- Models --------------------
         self.piper_model = os.path.expanduser("~/kloros_models/piper/glados_piper_medium.onnx")
         self.piper_config = os.path.expanduser("~/kloros_models/piper/glados_piper_medium.onnx.json")
-        self.vosk_model = vosk.Model(os.path.expanduser("~/kloros_models/vosk/model"))
+        # Load Vosk model defensively — missing model should not crash the process.
+        self.vosk_model = None
+        try:
+            vosk_path = os.path.expanduser("~/kloros_models/vosk/model")
+            if os.path.exists(vosk_path):
+                self.vosk_model = vosk.Model(vosk_path)
+            else:
+                print(f"[vosk] model path not found: {vosk_path}")
+        except Exception as e:
+            print("[vosk] model load failed:", e)
 
         # -------- Wake phrase grammar (KLoROS + optional variants) --------
         # Keep default tight to just 'kloros' to avoid 'hey' false triggers.
@@ -130,8 +142,13 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))      # 16-bit RMS energy gate
 
         self.wake_grammar = json.dumps(self.wake_phrases + ["[unk]"])
-        self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
-        self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+        # Create recognizers only if the model loaded successfully
+        if self.vosk_model is not None:
+            self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
+            self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+        else:
+            self.wake_rec = None
+            self.vosk_rec = None
 
         # -------------------- VAD (more patient) -----------------
         self.vad = webrtcvad.Vad(1)      # less aggressive than 2
@@ -206,19 +223,23 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
     def _unsuspend_sink(self) -> None:
         """Politely nudge the default sink awake (PipeWire/Pulse)."""
         try:
-            subprocess.run(["pactl", "suspend-sink", "@DEFAULT_SINK@", "0"],
-                           capture_output=True, timeout=2, check=False)
+            # Only run Pulse/PipeWire commands on Linux; dev machines (Windows) skip.
+            if platform.system() == "Linux":
+                subprocess.run(["pactl", "suspend-sink", "@DEFAULT_SINK@", "0"],
+                               capture_output=True, timeout=2, check=False)
         except Exception:
             pass
 
     def _play_silence(self, seconds: float = 0.25) -> None:
         """Feed raw silence; helps keep BT link hot."""
         try:
-            subprocess.run(
-                ["aplay", "-q", "-t", "raw", "-f", "S16_LE",
-                 "-r", str(self.sample_rate), "-d", str(seconds), "/dev/zero"],
-                capture_output=True, timeout=3, check=False,
-            )
+            # aplay is Linux/ALSA-specific. Only attempt on Linux hosts.
+            if platform.system() == "Linux":
+                subprocess.run(
+                    ["aplay", "-q", "-t", "raw", "-f", "S16_LE",
+                     "-r", str(self.sample_rate), "-d", str(seconds), "/dev/zero"],
+                    capture_output=True, timeout=3, check=False,
+                )
         except Exception:
             pass
 
@@ -245,9 +266,10 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
 
         text = self._normalize_tts_text(text)
 
-        piper_exe = shutil.which("piper") or os.path.expanduser("~/venvs/kloros/bin/piper")
+        # Allow explicit override for the piper executable for dev/test environments
+        piper_exe = os.getenv("KLR_PIPER_EXE") or shutil.which("piper") or os.path.expanduser("~/venvs/kloros/bin/piper")
         if not piper_exe or not os.path.exists(piper_exe):
-            print("[TTS] Piper executable not found.")
+            print("[TTS] Piper executable not found; skipping TTS. Set KLR_PIPER_EXE to override.")
             return
         if not os.path.exists(self.piper_model):
             print("[TTS] Piper model not found:", self.piper_model)
@@ -260,8 +282,10 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
             cmd = [piper_exe, "--model", self.piper_model, "--output_file", out_path]
             if os.path.exists(self.piper_config):
                 cmd += ["--config", self.piper_config]
+            # Only attempt to invoke system audio playback on Linux hosts.
             subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, check=False)
-            subprocess.run(["aplay", out_path], capture_output=True, check=False)
+            if platform.system() == "Linux":
+                subprocess.run(["aplay", out_path], capture_output=True, check=False)
         finally:
             try:
                 os.unlink(out_path)
@@ -404,7 +428,12 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
                     if rms < self.wake_rms_min:
                         continue
 
-                    # Grammar-limited recognizer for wake detection
+                    # Grammar-limited recognizer for wake detection (skip if model missing)
+                    if self.wake_rec is None:
+                        # No STT model available — fall back to RMS-only gating for diagnostics
+                        print(f"[wake] Vosk model missing; rms={rms} (no recognition)")
+                        continue
+
                     if self.wake_rec.AcceptWaveform(data):
                         res = json.loads(self.wake_rec.Result())
                         text = (res.get("text") or "").lower().strip()
@@ -416,9 +445,10 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
                         if "kloros" in text and avgc >= self.wake_conf_min:
                             print("[WAKE] Detected wake phrase!")
                             self.handle_conversation()
-                            # reset recognizers for next round
-                            self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
-                            self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
+                            # reset recognizers for next round (guarded creation)
+                            if self.vosk_model is not None:
+                                self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+                                self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
                     else:
                         p = json.loads(self.wake_rec.PartialResult()).get("partial", "")
                         if p:
@@ -436,22 +466,32 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         audio_bytes = self.record_until_silence()
         print(f"[DEBUG] Collected {len(audio_bytes)//2} samples")
 
-        command_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
         transcript = ""
+        # Allow an env override for tests/dev when model isn't present
+        test_override = os.getenv("KLR_TEST_TRANSCRIPT")
+        if test_override:
+            transcript = test_override.strip()
 
-        # stream captured audio to recognizer in ~200ms slices
-        slice_bytes = (self.sample_rate // 5) * 2
-        pos = 0
-        while pos < len(audio_bytes):
-            part = audio_bytes[pos : pos + slice_bytes]
-            pos += slice_bytes
-            if command_rec.AcceptWaveform(part):
-                r = json.loads(command_rec.Result())
-                piece = (r.get("text") or "").strip()
-                if piece:
-                    transcript = piece
+        command_rec = None
+        if self.vosk_model is None:
+            print("[STT] Vosk model not available; skipping recognition")
+        else:
+            command_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
 
-        if not transcript:
+        # stream captured audio to recognizer in ~200ms slices (only if model present)
+        if self.vosk_model is not None and command_rec is not None:
+            slice_bytes = (self.sample_rate // 5) * 2
+            pos = 0
+            while pos < len(audio_bytes):
+                part = audio_bytes[pos : pos + slice_bytes]
+                pos += slice_bytes
+                if command_rec.AcceptWaveform(part):
+                    r = json.loads(command_rec.Result())
+                    piece = (r.get("text") or "").strip()
+                    if piece:
+                        transcript = piece
+
+        if not transcript and command_rec is not None:
             rfinal = json.loads(command_rec.FinalResult())
             transcript = (rfinal.get("text") or "").strip()
 
