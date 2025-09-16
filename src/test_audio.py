@@ -10,7 +10,8 @@ print(sd.query_devices())
 
 # Test 2: Simple audio capture test
 print("\nTesting audio capture for 5 seconds...")
-audio_queue = queue.Queue()
+# Annotate queue contents as bytes for mypy
+audio_queue: queue.Queue[bytes] = queue.Queue()
 
 def audio_callback(indata, frames, time, status):
     if status:

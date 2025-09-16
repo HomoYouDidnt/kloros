@@ -1,15 +1,32 @@
-"""A tiny local shim for webrtcvad used in tests to avoid importing pkg_resources.
+"""Conditional wrapper for `webrtcvad`.
 
-This provides a minimal Vad class with the same constructor signature used in
-the project: webrtcvad.Vad(mode). It implements an is_speech(frame, sample_rate)
-method that heuristically treats non-zero frames as speech. This is *not* a
-replacement for the real library in production; it only supports unit tests and
-local demos where exact VAD behavior is unnecessary.
+This module prefers the real `webrtcvad` C-extension. If that import fails
+or if the environment variable `KLR_FORCE_WEBSHIM` is set to a truthy value,
+we expose a minimal pure-Python `Vad` implementation used for tests and
+CI environments without the native extension.
+
+Note: the shim is intentionally simple and deterministic; it is not a
+production replacement for `webrtcvad`.
 """
 from typing import Optional
+import os
 
 
-class Vad:
+_force = os.environ.get("KLR_FORCE_WEBSHIM")
+_use_shim = False
+if _force and _force.lower() not in ("", "0", "false", "no"):
+    _use_shim = True
+
+_real_vad = None
+if not _use_shim:
+    try:
+        import webrtcvad as _real_webrtcvad  # type: ignore
+        _real_vad = getattr(_real_webrtcvad, "Vad", None)
+    except Exception:
+        _real_vad = None
+
+
+class _ShimVad:
     def __init__(self, mode: int = 1) -> None:
         # store mode but ignore — present for API compatibility
         self.mode = int(mode)
@@ -23,3 +40,8 @@ class Vad:
         if not frame:
             return False
         return any(b != 0 for b in frame)
+
+
+# Final exported Vad: prefer real extension, fall back to shim
+Vad = _real_vad or _ShimVad
+

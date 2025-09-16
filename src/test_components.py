@@ -8,7 +8,7 @@ import json
 import os
 import shutil
 import subprocess
-import requests
+import requests  # type: ignore
 
 # Test Ollama (defensive)
 try:
