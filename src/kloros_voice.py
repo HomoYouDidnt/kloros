@@ -22,12 +22,18 @@ import time
 from datetime import datetime
 from typing import List, Callable, Optional, Any
 import platform
+import sys
+from pathlib import Path
+
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 
 import numpy as np
 import requests  # type: ignore
 import sounddevice as sd
 import vosk
-import webrtcvad
+from src.compat import webrtcvad
 try:
     from src.rag import RAG
 except Exception:
