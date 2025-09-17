@@ -9,3 +9,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.cache/
+
+runs/
+clip_scout_models/
+\n# Project artefacts\nruns/\nclip_scout_models/\ntools/\
