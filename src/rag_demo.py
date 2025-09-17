@@ -16,6 +16,11 @@ import os
 import sys
 import numpy as np
 
+# Ensure repo root is on sys.path when executed as a script (helps import during tooling/tests)
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
+
 from src.rag import RAG
 
 
