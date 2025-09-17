@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, cast
 
 import numpy as np
 import requests  # type: ignore
@@ -71,10 +71,11 @@ class RAG:
         path = os.path.expanduser(path)
         if path.endswith('.parquet'):
             try:
-                import pandas as pd
+                import pandas as pd  # type: ignore
 
                 df = pd.read_parquet(path)
-                return df.to_dict(orient='records')
+                # pandas returns list[dict[Hashable, Any]] here; cast to the declared return type
+                return cast(List[Dict[str, Any]], df.to_dict(orient='records'))
             except Exception as e:
                 raise RuntimeError("Failed to load parquet metadata: " + str(e))
         if path.endswith('.json') or path.endswith('.ndjson'):
