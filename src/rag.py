@@ -37,6 +37,8 @@ class RAG:
         self.embeddings_path = embeddings_path
         self.metadata: List[Dict[str, Any]] = []
         self.embeddings: Optional[np.ndarray] = None
+        # Optional runtime Faiss index (set when available)
+        self.faiss_index: Optional[Any] = None
 
         if metadata_path:
             self.metadata = self._load_metadata(metadata_path)

@@ -99,7 +99,14 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         if self.input_device_index is None:
             try:
                 for i, d in enumerate(sd.query_devices()):
-                    if "CMTECK" in d.get("name", "") and d.get("max_input_channels", 0) > 0:
+                    # d may be a mapping-like object or a string in some environments — handle both
+                    if isinstance(d, dict):
+                        name = d.get("name")
+                        max_in = d.get("max_input_channels", 0)
+                    else:
+                        name = str(d)
+                        max_in = 0
+                    if "CMTECK" in (name or "") and (max_in or 0) > 0:
                         self.input_device_index = i
                         break
             except Exception as e:
@@ -107,14 +114,19 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
                 self.input_device_index = None
 
         # Detect device default sample rate (fallback 48000)
-        try:
-            idev = sd.query_devices(
-                self.input_device_index if self.input_device_index is not None else sd.default.device[0],
-                "input",
-            )
-            self.sample_rate = int(idev.get("default_samplerate") or 48000)
-        except Exception:
-            self.sample_rate = 48000
+            try:
+                idev = sd.query_devices(
+                    self.input_device_index if self.input_device_index is not None else sd.default.device[0],
+                    "input",
+                )
+                # device entries can be mapping-like; attempt dict-like access, fallback to attribute access
+                if isinstance(idev, dict):
+                    self.sample_rate = int(idev.get("default_samplerate") or 48000)
+                else:
+                    # best-effort: some snd libs return objects with attribute access
+                    self.sample_rate = int(getattr(idev, "default_samplerate", 48000) or 48000)
+            except Exception:
+                self.sample_rate = 48000
         # ~200 ms blocks (snappier partials); keep a lower bound
         self.blocksize = max(256, self.sample_rate // 5)
         self.channels = 1
@@ -236,10 +248,12 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         # try to load faiss index if provided
         if faiss_index:
             try:
-                import faiss
+                import importlib
 
+                faiss = importlib.import_module("faiss")
                 idx = faiss.read_index(faiss_index)
-                self.rag.faiss_index = idx
+                # assign onto the RAG instance (attribute added in src/rag.py)
+                setattr(self.rag, "faiss_index", idx)
             except Exception as e:
                 print("[RAG] failed to load faiss index:", e)
 
