@@ -38,12 +38,13 @@ def decode(
     if isinstance(mode_value, list):
         mode_value = mode_value[0] if mode_value else "greedy"
     mode = str(mode_value).lower()
+    doc_text = trace.get("doc_text", {})
     if mode == "sled":
-        answer = sled_generate(question, context, cfg)
+        answer = sled_generate(question, context, cfg, doc_text)
     elif mode == "cisc":
-        answer = cisc_generate(question, context, cfg)
+        answer = cisc_generate(question, context, cfg, doc_text)
     else:
-        answer = greedy_generate(question, context, cfg)
+        answer = greedy_generate(question, context, cfg, doc_text)
     trace["decode_mode"] = mode
     return answer, {"mode": mode}
 
