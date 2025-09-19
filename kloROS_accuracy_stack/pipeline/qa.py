@@ -7,6 +7,7 @@ import yaml
 
 from kloROS_accuracy_stack.decoding.cisc import cisc_generate, greedy_generate
 from kloROS_accuracy_stack.decoding.sled_decoding import sled_generate
+from kloROS_accuracy_stack.decoding.sampling import nucleus_generate, topk_generate
 from kloROS_accuracy_stack.retrieval.crag import corrective_loop, need_correction
 from kloROS_accuracy_stack.retrieval.embedder import retrieve
 from kloROS_accuracy_stack.retrieval.graphrag import graphrag_expand
@@ -50,6 +51,10 @@ def decode(
         answer = sled_generate(question, context, cfg, doc_text)
     elif mode == "cisc":
         answer = cisc_generate(question, context, cfg, doc_text)
+    elif mode == "topk":
+        answer = topk_generate(question, context, cfg, doc_text)
+    elif mode == "nucleus":
+        answer = nucleus_generate(question, context, cfg, doc_text)
     else:
         answer = greedy_generate(question, context, cfg, doc_text)
     trace["decode_mode"] = mode

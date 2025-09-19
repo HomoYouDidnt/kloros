@@ -14,12 +14,17 @@ graphrag:
   enabled: true
 decoding:
   active: "greedy"
-  mode: ["greedy", "sled", "cisc"]
+  mode: ["greedy", "sled", "cisc", "topk", "nucleus"]
   sled:
     alpha: 0.2
     keep_final_topk_union: 40
   cisc:
     samples: 3
+  topk:
+    k: 4
+  nucleus:
+    p: 0.85
+    max_tokens: 24
   llm:
     provider: "local"
     model_name: "mistral-7b-instruct"
