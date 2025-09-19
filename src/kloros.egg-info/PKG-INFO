@@ -5,7 +5,7 @@ Summary: KLoROS — local voice assistant glue code
 Author: KLoROS Dev
 License: MIT
 Description-Content-Type: text/markdown
-Requires-Dist: numpy==2.3.2
+Requires-Dist: numpy==2.3.3
 Requires-Dist: requests==2.32.5
 Requires-Dist: sounddevice==0.5.2
 Requires-Dist: vosk==0.3.45

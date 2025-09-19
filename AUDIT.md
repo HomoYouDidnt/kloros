@@ -5,16 +5,17 @@ Secure RAG bundle with hash verification
 | --- | --- | --- | --- | --- |
 | Resolved | src/rag.py | bandit 1.8.6 / semgrep 1.137.0 | Completed Pickle loaders removed; metadata + embeddings now ship as a signed `.npz` bundle, loader verifies SHA256 and forces `allow_pickle=False`. | [numpy.load allow_pickle](https://numpy.org/doc/stable/reference/generated/numpy.load.html), [Bandit B301/B403](https://bandit.readthedocs.io/en/1.8.6/blacklists/), [Semgrep rule](https://semgrep.dev/r/python.lang.security.deserialization.pickle.avoid-pickle) |
 | Resolved | .github/workflows/ci.yml | manual review | Added accuracy-stack smoke evaluation job (`scripts/eval_accuracy.py --limit 3`) so CI exercises the fixture corpus. | Accuracy smoke job run (local 2025-09-19) |
-| Medium | requirements.txt / pyproject.toml | pip list --outdated | Refresh numpy (2.3.2->2.3.3) and pycparser (2.22->2.23) before release; rerun regression audio pipeline after upgrade. | [NumPy releases](https://numpy.org/devdocs/release/2.3.0-notes.html), [pycparser releases](https://pypi.org/project/pycparser/2.23/) |
+| Resolved | requirements.txt / pyproject.toml | manual review | numpy bumped to 2.3.3 and pycparser to 2.23; local pytest suite green. | Dep upgrade (local 2025-09-19) |
 | Medium | src/kloros_voice.py | mypy 1.18.2 / vulture 2.14 | Tighten RAG lifecycle: add explicit doctor check, ensure `self.rag` loaded before use, prune unused helpers (`vosk_rec` slots). | Internal analysis; mypy+vulture runs (2025-09-19) |
 | Low | repo root | pre-commit plan | Adopt new `.pre-commit-config.yaml`, `.editorconfig`, and CI workflow to enforce lint/type/audit checks. | [pre-commit docs](https://pre-commit.com/), [GitHub Actions workflow syntax](https://docs.github.com/actions) |
 
 ## Dependency Report (Python)
 - Runtime stack pinned via `pyproject.toml` and `requirements.txt`; now share `requires-python = ">=3.10"` to match numpy 2.x floor.
-- Outdated direct deps: `numpy 2.3.2 -> 2.3.3` (2025-09-17 release), `pycparser 2.22 -> 2.23` (2025-02-18). Tools behind latest: `pip-audit 2.9.0` (2025-04-07), `bandit 1.8.6` (2025-07-06), `semgrep 1.137.0` (2025-09-18).
+- Direct deps now at `numpy 2.3.3`, `pycparser 2.23`. Tools behind latest: `pip-audit 2.9.0` (2025-04-07), `bandit 1.8.6` (2025-07-06), `semgrep 1.137.0` (2025-09-18).
 - `pip-audit --format json` and `osv-scanner --lockfile requirements.txt` returned no known CVEs.
 - `pipdeptree --warn silence` highlights editable package metadata duplication; keep `pip install -e .` or consider trimming stale `src/kloros.egg-info` before packaging.
 - Licenses (`pip-licenses --format json`) remain MIT/BSD-compatible; rerun before distribution.
+- Local environment still contains `numba` and `opencv-python` which pin numpy `<2.3`; they are unused here but emit resolver warnings after the upgrade. Remove or upgrade them if they become project dependencies.
 
 ## Cross-Module Risks
 - **Audio loop call map**: `KLoROS.chat()` -> `requests.post` (Ollama) and optionally `KLoROS.answer_with_rag()` -> `RAG.answer()` -> `requests.post`. Missing Ollama raises string error; add retry/backoff and distinguish HTTP vs connection failures.
