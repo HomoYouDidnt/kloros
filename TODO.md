@@ -1,16 +1,82 @@
-# Accuracy Stack TODO
+# Master Integration Backlog
 
-- [x] BGE/FAISS retrieval adapter + index builder script
-- [x] BGE reranker cross-encoder integration
-- [x] Local citation verifier with `[DOC:id]` markers
-- [x] GraphRAG local graph builder + synopsis
-- [x] Decoding selection with safe SLED/CISC fallback
-- [x] Tiny evaluation harness + expanded fixtures
-- [x] CI/docs updates (deps, eval step, docs refresh)
-
-## Next Master-Phase Tasks
-
-- [ ] Broaden CI analyzers (shellcheck, osv-scanner, npm audit, madge, jscpd, ts-prune)
-- [ ] Expand `accuracy.yml` with dual embedders, multi-provider rerank, and fallbacks
-- [ ] Add top-k and nucleus decoding modes alongside SLED/CISC
-- [ ] Implement RZERO runner (`scripts/rzero_run.py`) plus proposer/evaluator wiring and docs updates
+- [ ] T-201: Inventory analyzer toolchain gaps and draft CI wiring plan
+  - Scope: PLAN.md, AUDIT.md
+  - Accept: PLAN.md updated with analyzer rollout order; AUDIT.md checklist annotated
+  - Deps: none
+- [ ] T-202: Add shellcheck stage to CI with repo scripts coverage
+  - Scope: .github/workflows/audit.yml, scripts/
+  - Accept: shellcheck job in audit workflow, sample run green
+  - Deps: T-201
+- [ ] T-203: Integrate osv-scanner job for Python requirements
+  - Scope: .github/workflows/audit.yml, AUDIT.md
+  - Accept: audit workflow runs osv-scanner; AUDIT.md records latest scan date
+  - Deps: T-201
+- [ ] T-204: Wire npm audit stage for Node tooling
+  - Scope: .github/workflows/audit.yml, AUDIT.md
+  - Accept: audit workflow captures npm audit --audit-level=high; AUDIT.md logs outcome
+  - Deps: T-201
+- [ ] T-205: Add madge dependency graph check for JS bundles
+  - Scope: package.json, .github/workflows/audit.yml, AUDIT.md
+  - Accept: audit workflow runs npx madge --circular; AUDIT.md notes coverage
+  - Deps: T-204
+- [ ] T-206: Include jscpd duplication scan in audit workflow
+  - Scope: .github/workflows/audit.yml, AUDIT.md
+  - Accept: audit workflow executes npx jscpd; AUDIT.md documents results
+  - Deps: T-204
+- [ ] T-207: Add ts-prune dead-code check
+  - Scope: package.json, .github/workflows/audit.yml, AUDIT.md
+  - Accept: audit workflow runs npx ts-prune when tsconfig present; AUDIT.md records findings
+  - Deps: T-204
+- [ ] T-208: Align analyzer dependency pins
+  - Scope: requirements.txt, kloROS_accuracy_stack/requirements-dev.txt, package.json, AUDIT.md
+  - Accept: All analyzer versions pinned and logged with --version in AUDIT.md
+  - Deps: T-202, T-203, T-205, T-206, T-207
+- [ ] T-209: Extend retrieval config with dual embedders and fallbacks
+  - Scope: kloROS_accuracy_stack/config/accuracy.yml, retrieval modules
+  - Accept: Config supports primary/baseline embedders, trace records active embedder
+  - Deps: T-201
+- [ ] T-210: Support multi-provider reranker fallback
+  - Scope: retrieval/reranker.py, config updates, tests
+  - Accept: reranker walks provider list, trace captures attempts
+  - Deps: T-209
+- [ ] T-211: Implement retrieval/rerank fallback on low quality
+  - Scope: retrieval/embedder.py, retrieval/reranker.py, pipeline/qa.py
+  - Accept: CRAG fallback path tested; trace explains fallback decision
+  - Deps: T-209, T-210
+- [ ] T-212: Add fixtures/tests for fallback permutations
+  - Scope: kloROS_accuracy_stack/fixtures/mini, tests/test_retrieval_*.py
+  - Accept: Fixtures cover primary/baseline switch; tests assert metadata
+  - Deps: T-211
+- [ ] T-213: Implement top-k decoding mode
+  - Scope: kloROS_accuracy_stack/decoding, pipeline/qa.py, config
+  - Accept: decode(active="topk") works; tests cover mode selection
+  - Deps: T-209
+- [ ] T-214: Implement nucleus decoding mode
+  - Scope: kloROS_accuracy_stack/decoding, pipeline/qa.py, config
+  - Accept: decode(active="nucleus") works with parametrised tests
+  - Deps: T-213
+- [ ] T-215: Expand decoding tests for all modes
+  - Scope: tests/test_decoding_modes.py
+  - Accept: Parametrised tests cover greedy/sled/cisc/topk/nucleus
+  - Deps: T-213, T-214
+- [ ] T-216: Add scripts/rzero_run.py CLI scaffold
+  - Scope: scripts/rzero_run.py, rzero modules
+  - Accept: --dry-run prints plan; propose/evaluate/gatekeep commands stubbed
+  - Deps: T-201
+- [ ] T-217: Wire RZERO toggles into config and pipeline
+  - Scope: config/accuracy.yml, pipeline/qa.py, rzero/
+  - Accept: rzero_enabled flag gates execution; tests simulate offline flow
+  - Deps: T-216
+- [ ] T-218: Document RZERO workflow
+  - Scope: kloROS_accuracy_stack/docs/rzero.md, README.md
+  - Accept: Docs include CLI usage and safety notes
+  - Deps: T-217
+- [ ] T-219: Refresh README/docs with audit workflow details
+  - Scope: README.md, docs/*
+  - Accept: README references audit.yml and new decoding config knobs
+  - Deps: T-202, T-203, T-205, T-206, T-207, T-213, T-214, T-216
+- [ ] T-220: Record Master-phase completion in PLAN.md/AUDIT.md
+  - Scope: PLAN.md, AUDIT.md
+  - Accept: PLAN.md updated to next cycle, AUDIT.md logs completion of master backlog
+  - Deps: all above
