@@ -9,7 +9,7 @@ from typing import Iterable, List, Tuple
 
 import faiss  # type: ignore
 import numpy as np
-from sentence_transformers import SentenceTransformer  # type: ignore
+import sentence_transformers  # type: ignore
 
 from kloROS_accuracy_stack.retrieval.embedder import _tokenize
 
@@ -37,7 +37,7 @@ def build_index(
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model = SentenceTransformer(model_path or model_name)
+    model = sentence_transformers.SentenceTransformer(model_path or model_name)
 
     chunk_ids: List[str] = []
     chunk_texts: List[str] = []

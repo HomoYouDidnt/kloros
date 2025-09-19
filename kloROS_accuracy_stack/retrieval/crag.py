@@ -35,8 +35,10 @@ def corrective_loop(
     provider = cfg.get("retrieval", {}).get("provider", "mock").lower()
     crag_trace = trace.setdefault("crag", {})
 
-    if provider != "mock":
-        raise NotImplementedError(f"CRAG corrective loop not implemented for provider '{provider}'")
+    supported_providers = {"mock", "faiss"}
+    if provider not in supported_providers:
+        crag_trace["skipped_provider"] = provider
+        return reranked
 
     bonus = _prominent_token(question)
     expanded_query = question if bonus is None else f"{question} {bonus}"
