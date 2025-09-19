@@ -29,13 +29,18 @@ graphrag:
   max_hops: 2
 decoding:
   active: "greedy"
-  mode: ["greedy", "sled", "cisc"]
+  mode: ["greedy", "sled", "cisc", "topk", "nucleus"]
   sled:
     alpha: 0.2
     layer_frac_range: [0.3, 0.7]
     keep_final_topk_union: 100
   cisc:
     samples: 5
+  topk:
+    k: 6
+  nucleus:
+    p: 0.9
+    max_tokens: 40
   llm:
     provider: "local"
     model_name: "mistral-7b-instruct"
