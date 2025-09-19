@@ -1,4 +1,5 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 
 def rerank(question: str, hits: List[Dict[str, Any]], cfg: Dict[str, Any], trace: Dict[str, Any]) -> List[Dict[str, Any]]:
     # TODO: integrate bge-reranker-v2-m3 or provider. Here we sort by score descending.

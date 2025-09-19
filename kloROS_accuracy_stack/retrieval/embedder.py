@@ -1,4 +1,5 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 
 def retrieve(question: str, cfg: Dict[str, Any], trace: Dict[str, Any]) -> List[Dict[str, Any]]:
     # TODO: plug in bge-m3 encoder and vector store. This is a stub that returns fixture docs.

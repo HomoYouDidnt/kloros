@@ -1,23 +1,43 @@
 """Orchestrator: RAG → Rerank → CRAG → GraphRAG → Decode (SLED/CISC) → CoVe Verify."""
-import argparse, json, sys
-from typing import Tuple, Dict, Any, List
-from retrieval.embedder import retrieve
-from retrieval.reranker import rerank
-from retrieval.crag import need_correction, corrective_loop
-from retrieval.graphrag import graphrag_expand
-from decoding.sled_decoding import sled_generate
-from decoding.cisc import cisc_generate, greedy_generate
-from verify.cove import cove_verify
+import argparse
+import json
+from typing import Any, Dict, List, Tuple
+
 import yaml
 
-def build_context(reranked: List[Dict[str, Any]], synopsis: str|None=None) -> str:
-    chunks = [r.get("text", "") for r in reranked[:5]]
+from kloROS_accuracy_stack.decoding.cisc import cisc_generate, greedy_generate
+from kloROS_accuracy_stack.decoding.sled_decoding import sled_generate
+from kloROS_accuracy_stack.retrieval.crag import corrective_loop, need_correction
+from kloROS_accuracy_stack.retrieval.embedder import retrieve
+from kloROS_accuracy_stack.retrieval.graphrag import graphrag_expand
+from kloROS_accuracy_stack.retrieval.reranker import rerank
+from kloROS_accuracy_stack.verify.cove import cove_verify
+
+
+def build_context(
+    reranked: List[Dict[str, Any]], trace: Dict[str, Any], synopsis: str | None = None
+) -> str:
+    chunks: List[str] = []
+    doc_text: Dict[str, str] = {}
+    for doc in reranked[:5]:
+        text = doc.get("text", "")
+        chunks.append(text)
+        doc_id = doc.get("id")
+        if doc_id:
+            doc_text[str(doc_id)] = text
     if synopsis:
         chunks.append("[GRAPH SYNOPSIS]\n" + synopsis)
+    trace["doc_text"] = doc_text
     return "\n\n".join(chunks)
 
-def decode(question: str, context: str, cfg: Dict[str, Any], trace: Dict[str, Any]) -> Tuple[Dict[str,Any], Dict[str,Any]]:
-    mode = cfg.get("decoding", {}).get("mode", ["greedy"])[-1]  # pick last as active for simplicity
+def decode(
+    question: str, context: str, cfg: Dict[str, Any], trace: Dict[str, Any]
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    decoding_cfg = cfg.get("decoding", {})
+    mode_value = decoding_cfg.get("active") or decoding_cfg.get("mode", "greedy")
+    if isinstance(mode_value, list):
+        mode_value = mode_value[0] if mode_value else "greedy"
+    mode = str(mode_value).lower()
     if mode == "sled":
         answer = sled_generate(question, context, cfg)
     elif mode == "cisc":
@@ -32,11 +52,11 @@ def answer(question: str, cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
     hits = retrieve(question, cfg, trace)
     rr = rerank(question, hits, cfg, trace)
     if need_correction(rr, cfg):
-        rr = corrective_loop(question, cfg, trace)
+        rr = corrective_loop(question, rr, cfg, trace)
     synopsis = None
     if cfg.get("graphrag", {}).get("enabled", True):
         _, synopsis = graphrag_expand(question, rr, cfg, trace)
-    context = build_context(rr, synopsis)
+    context = build_context(rr, trace, synopsis)
     draft, meta = decode(question, context, cfg, trace)
     final = cove_verify(question, draft, context, cfg, trace)
     return final, trace

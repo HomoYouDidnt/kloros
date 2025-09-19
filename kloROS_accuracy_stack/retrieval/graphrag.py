@@ -1,4 +1,5 @@
-from typing import Tuple, List, Dict, Any
+from typing import Any, Dict, List, Tuple
+
 
 def graphrag_expand(question: str, rr: List[Dict[str, Any]], cfg: Dict[str, Any], trace: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
     # TODO: build entity graph offline; here we produce a tiny synopsis.

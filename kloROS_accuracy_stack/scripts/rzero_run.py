@@ -1,8 +1,11 @@
 #!/usr/bin/env python
-import argparse, json, os
-from rzero.proposer import propose_candidates
+import argparse
+import json
+
 from rzero.evaluator import evaluate_candidate
 from rzero.gatekeeper import gatekeep
+from rzero.proposer import propose_candidates
+
 
 def main():
     ap = argparse.ArgumentParser()

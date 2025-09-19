@@ -1,4 +1,5 @@
-from typing import Dict, Any
+from typing import Any, Dict
+
 
 def greedy_generate(question: str, context: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
     return {"answer": f"[Greedy] {context.splitlines()[0]}", "citations": ["doc1"]}

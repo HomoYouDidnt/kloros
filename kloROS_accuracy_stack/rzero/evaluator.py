@@ -1,5 +1,7 @@
-from typing import Dict, Any
-import json, os
+import json
+import os
+from typing import Any, Dict
+
 
 def evaluate_candidate(profile: Dict[str, Any], outdir: str) -> str:
     os.makedirs(outdir, exist_ok=True)

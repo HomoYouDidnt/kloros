@@ -1,4 +1,5 @@
-from typing import Dict, Any
+from typing import Any, Dict
+
 
 def gatekeep(report: Dict[str, Any], criteria: Dict[str, Any]) -> bool:
     return (

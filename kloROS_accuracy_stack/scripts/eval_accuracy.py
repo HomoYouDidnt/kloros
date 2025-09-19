@@ -1,7 +1,11 @@
 #!/usr/bin/env python
-import argparse, json
-from pipeline.qa import answer as run_answer
+import argparse
+import json
+
 import yaml
+
+from kloROS_accuracy_stack.pipeline.qa import answer as run_answer
+
 
 def main():
     ap = argparse.ArgumentParser()

@@ -1,4 +1,5 @@
-from typing import Dict, Any
+from typing import Any, Dict
+
 
 def sled_generate(question: str, context: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
     # Stub: in real code, compute hidden states and contrast logits.

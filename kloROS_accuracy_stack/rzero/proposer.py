@@ -1,5 +1,7 @@
-from typing import Dict, Any, List
-import itertools, uuid
+import itertools
+import uuid
+from typing import Any, Dict, List
+
 
 def propose_candidates(baseline_cfg: Dict[str, Any], knobs: Dict[str, List], n: int = 4) -> List[Dict[str, Any]]:
     # Produce small YAML-able patches limited to knob grid.
@@ -7,6 +9,6 @@ def propose_candidates(baseline_cfg: Dict[str, Any], knobs: Dict[str, List], n: 
     grid = list(itertools.product(*[knobs[k] for k in keys]))
     out = []
     for vals in grid[:n]:
-        patch = {'id': str(uuid.uuid4()), 'knobs': dict(zip(keys, vals))}
+        patch = {'id': str(uuid.uuid4()), 'knobs': dict(zip(keys, vals, strict=False))}
         out.append(patch)
     return out
