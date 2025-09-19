@@ -1,38 +1,31 @@
 retrieval:
-  provider: "faiss"
-  embedder: ["bge-m3"]
+  provider: "mock"
+  embedder: ["bge-m3", "baseline"]
   top_k: 30
-  index_path: "data/index/faiss"
-  corpus_path: "data/corpus"
-  model_path: "models/embeddings/bge-m3"
+  fallback_on_low_quality: true
 rerank:
-  provider: "bge-reranker-v2-m3"
+  provider: "mock"
   keep_top_k: 5
-  model_name: "BAAI/bge-reranker-v2-m3"
-  model_path: "models/rerankers/bge-reranker-v2-m3"
 crag:
   enabled: true
   quality_threshold: 0.62
   actions: ["expand_query", "multi_hop", "web_fallback"]
 graphrag:
-  provider: "local"
+  provider: "mock"
   enabled: true
-  graph_path: "data/graph/graph.json"
+  nightly_build: "0 3 * * *"
   max_hops: 2
 decoding:
   active: "greedy"
-  mode: ["greedy", "sled", "cisc"]
+  mode: ["greedy","sled","cisc"]
   sled:
     alpha: 0.2
     layer_frac_range: [0.3, 0.7]
     keep_final_topk_union: 100
   cisc:
     samples: 5
-  llm:
-    provider: "local"
-    model_name: "mistral-7b-instruct"
 verification:
-  provider: "local"
+  provider: "mock"
   cove_enabled: true
   abstain_threshold: 0.55
 self_improve:

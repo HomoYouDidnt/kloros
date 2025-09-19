@@ -7,3 +7,5 @@ semgrep==1.93.0
 vulture==2.11
 pycln==2.4.0
 PyYAML==6.0.2
+faiss-cpu==1.8.0
+sentence-transformers==3.0.1

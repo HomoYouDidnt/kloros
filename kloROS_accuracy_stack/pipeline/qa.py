@@ -39,6 +39,13 @@ def decode(
         mode_value = mode_value[0] if mode_value else "greedy"
     mode = str(mode_value).lower()
     doc_text = trace.get("doc_text", {})
+    llm_provider = decoding_cfg.get("llm", {}).get("provider", "local")
+    requested_mode = mode
+    if mode in {"sled", "cisc"} and llm_provider != "local":
+        trace.setdefault("warnings", []).append(
+            f"decoding: {mode} unavailable for provider {llm_provider}; falling back to greedy"
+        )
+        mode = "greedy"
     if mode == "sled":
         answer = sled_generate(question, context, cfg, doc_text)
     elif mode == "cisc":
@@ -46,6 +53,8 @@ def decode(
     else:
         answer = greedy_generate(question, context, cfg, doc_text)
     trace["decode_mode"] = mode
+    if mode != requested_mode:
+        trace["decode_mode_fallback"] = requested_mode
     return answer, {"mode": mode}
 
 def answer(question: str, cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -54,6 +63,8 @@ def answer(question: str, cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
     rr = rerank(question, hits, cfg, trace)
     if need_correction(rr, cfg):
         rr = corrective_loop(question, rr, cfg, trace)
+    trace["reranked_full"] = rr
+    trace["reranked_ids"] = [doc.get("id") for doc in rr]
     synopsis = None
     if cfg.get("graphrag", {}).get("enabled", True):
         _, synopsis = graphrag_expand(question, rr, cfg, trace)
