@@ -1,0 +1,55 @@
+retrieval:
+  embedder: ["bge-m3", "baseline"]
+  top_k: 30
+  fallback_on_low_quality: true
+rerank:
+  provider: ["bge-m3", "cohere"]
+  keep_top_k: 5
+crag:
+  enabled: true
+  quality_threshold: 0.62
+  actions: ["expand_query", "multi_hop", "web_fallback"]
+graphrag:
+  enabled: true
+  nightly_build: "0 3 * * *"
+  max_hops: 2
+decoding:
+  mode: ["greedy","topk","nucleus","sled","cisc"]
+  sled:
+    alpha: 0.2
+    layer_frac_range: [0.3, 0.7]
+    keep_final_topk_union: 100
+  cisc:
+    samples: 5
+verification:
+  cove_enabled: true
+  abstain_threshold: 0.55
+self_improve:
+  rzero_enabled: true
+  mode: ["offline","shadow","canary"]
+  max_parallel_candidates: 4
+  win_criteria:
+    em_delta_min: 2.0
+    faithfulness_min: 0.93
+    latency_delta_max_ms: 60
+    abstain_rate_max: 8.0
+    no_regressions_on: ["math","procedural","multi-hop"]
+  knobs:
+    sled_alpha: [0.1,0.2,0.3]
+    cisc_k: [3,5,7]
+    retrieval_topk: [20,30,40]
+    rerank_keep: [3,5,7]
+    crag_threshold: [0.55,0.62,0.7]
+    graphrag_hops: [1,2]
+    compress_budget: ["auto","-20%","-35%"]
+  datasets:
+    train: data/eval/train_qa.jsonl
+    heldout: data/eval/heldout_qa.jsonl
+    canary: data/eval/canary_qa.jsonl
+  safety:
+    max_prompt_delta_tokens: 120
+    forbid_patterns: ["disable_verification","skip_citations"]
+    require_citations: true
+  promotion:
+    require_two_pass: true
+    human_approval_required: true
