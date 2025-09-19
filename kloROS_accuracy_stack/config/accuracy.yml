@@ -1,12 +1,19 @@
 retrieval:
   provider: "faiss"
-  embedder: ["bge-m3"]
+  embedders:
+    primary:
+      name: "BAAI/bge-m3"
+      path: "models/embeddings/bge-m3"
+    baseline:
+      name: "sentence-transformers/all-MiniLM-L6-v2"
   top_k: 30
   index_path: "data/index/faiss"
   corpus_path: "data/corpus"
-  model_path: "models/embeddings/bge-m3"
+  fallback_on_low_quality: true
 rerank:
-  provider: "bge-reranker-v2-m3"
+  rerankers:
+    - "bge-reranker-v2-m3"
+    - "mock"
   keep_top_k: 5
   model_name: "BAAI/bge-reranker-v2-m3"
   model_path: "models/rerankers/bge-reranker-v2-m3"
@@ -18,6 +25,7 @@ graphrag:
   provider: "local"
   enabled: true
   graph_path: "data/graph/graph.json"
+  nightly_build: false
   max_hops: 2
 decoding:
   active: "greedy"

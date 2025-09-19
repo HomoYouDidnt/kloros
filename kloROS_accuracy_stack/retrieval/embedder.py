@@ -48,6 +48,56 @@ def _tokenize(text: str) -> List[str]:
     return [tok for tok in re.findall(r"[a-z0-9]+", text.lower()) if tok and tok not in _STOPWORDS]
 
 
+def _resolve_embedders(retrieval_cfg: Dict[str, Any]) -> Dict[str, Tuple[Optional[str], str]]:
+    embedders: Dict[str, Tuple[Optional[str], str]] = {}
+    raw = retrieval_cfg.get("embedders")
+    if isinstance(raw, dict):
+        for role in ("primary", "baseline"):
+            entry = raw.get(role)
+            if isinstance(entry, dict):
+                name = (
+                    entry.get("name")
+                    or entry.get("model")
+                    or entry.get("id")
+                    or entry.get("provider")
+                )
+                path = entry.get("path") or entry.get("model_path")
+                if name:
+                    embedders[role] = (path, str(name))
+            elif isinstance(entry, str):
+                embedders[role] = (None, entry)
+    if "primary" not in embedders:
+        legacy = retrieval_cfg.get("embedder")
+        model_path = retrieval_cfg.get("model_path")
+        if isinstance(legacy, list) and legacy:
+            embedders["primary"] = (model_path, str(legacy[0]))
+        elif isinstance(legacy, str):
+            embedders["primary"] = (model_path, str(legacy))
+        else:
+            embedders["primary"] = (model_path, "BAAI/bge-m3")
+    if "baseline" not in embedders:
+        baseline = retrieval_cfg.get("baseline_embedder")
+        if isinstance(baseline, str):
+            embedders["baseline"] = (None, baseline)
+        else:
+            embedders["baseline"] = embedders["primary"]
+    return embedders
+
+
+def _record_retrieval_meta(
+    retrieval_cfg: Dict[str, Any],
+    trace: Dict[str, Any],
+    embedders: Dict[str, Tuple[Optional[str], str]],
+    active_embedder: str,
+) -> None:
+    meta = trace.setdefault("retrieval", {})
+    embedder_meta = meta.setdefault("embedders", {})
+    for role, (_, name) in embedders.items():
+        embedder_meta[role] = name
+    meta["active_embedder"] = active_embedder
+    meta["fallback_on_low_quality"] = bool(retrieval_cfg.get("fallback_on_low_quality", False))
+
+
 @lru_cache(maxsize=1)
 def _load_fixture_docs() -> List[Dict[str, Any]]:
     docs: List[Dict[str, Any]] = []
@@ -90,6 +140,9 @@ def _retrieve_mock(
     query_override: Optional[str] = None,
     trace_target: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
+    retrieval_cfg = cfg.get("retrieval", {})
+    embedders = _resolve_embedders(retrieval_cfg)
+    _record_retrieval_meta(retrieval_cfg, trace, embedders, embedders["primary"][1])
     query = query_override or question
     target = trace_target if trace_target is not None else trace
     docs = _load_fixture_docs()
@@ -155,10 +208,11 @@ def _retrieve_faiss(
 ) -> List[Dict[str, Any]]:
     retrieval_cfg = cfg.get("retrieval", {})
     index_dir = Path(retrieval_cfg.get("index_path", "data/index/faiss"))
-    model_path = retrieval_cfg.get("model_path")
-    model_name = retrieval_cfg.get("embedder", ["BAAI/bge-m3"])[0]
+    embedders = _resolve_embedders(retrieval_cfg)
+    primary_path, primary_name = embedders["primary"]
+    _record_retrieval_meta(retrieval_cfg, trace, embedders, primary_name)
     top_k = int(retrieval_cfg.get("top_k", 10))
-    model = _get_sentence_transformer(model_path, model_name)
+    model = _get_sentence_transformer(primary_path, primary_name)
     index, meta = _load_faiss_resources(index_dir)
     query = query_override or question
     vector = model.encode([query], convert_to_numpy=True, normalize_embeddings=True)[0]
