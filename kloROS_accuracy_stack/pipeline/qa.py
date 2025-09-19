@@ -21,12 +21,12 @@ def build_context(
     doc_text: Dict[str, str] = {}
     for doc in reranked[:5]:
         text = doc.get("text", "")
-        chunks.append(text)
-        doc_id = doc.get("id")
-        if doc_id:
-            doc_text[str(doc_id)] = text
+        doc_id = str(doc.get("id", "unknown"))
+        chunk = "[DOC:{}]\n{}".format(doc_id, text).strip()
+        chunks.append(chunk)
+        doc_text[doc_id] = chunk
     if synopsis:
-        chunks.append("[GRAPH SYNOPSIS]\n" + synopsis)
+        chunks.append("[GRAPH SYNOPSIS]\n{}".format(synopsis))
     trace["doc_text"] = doc_text
     return "\n\n".join(chunks)
 
