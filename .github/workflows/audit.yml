@@ -1,0 +1,74 @@
+name: Audit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  shellcheck:
+    name: Shellcheck Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      - name: Run shellcheck
+        run: |
+          bash -lc 'shopt -s globstar nullglob; shellcheck **/*.sh'
+
+  osv:
+    name: OSV Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run osv-scanner
+        uses: google/osv-scanner-action@v1
+        with:
+          path: "."
+
+  node_audit:
+    name: npm Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+      - name: npm audit
+        run: npm audit --audit-level=high
+
+  madge_jscpd:
+    name: Madge / jscpd / ts-prune
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install analyzers
+        run: |
+          npm install --no-save madge jscpd ts-prune
+      - name: Madge circular check
+        run: |
+          npx madge --circular .
+      - name: jscpd duplication scan
+        run: |
+          npx jscpd --silent --threshold 1 --reporters console
+      - name: ts-prune dead code check
+        run: |
+          if [ -f tsconfig.json ]; then
+            npx ts-prune
+          else
+            echo "No tsconfig.json; skipping ts-prune"
+          fi
