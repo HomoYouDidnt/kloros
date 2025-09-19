@@ -1,12 +1,30 @@
+"""Mock CRAG corrective loop for the accuracy stack."""
+from __future__ import annotations
+
+import re
 from typing import Any, Dict, List
 
+from kloROS_accuracy_stack.retrieval.embedder import retrieve
 
-def _quality(rr: List[Dict[str, Any]]) -> float:
-    return sum(d.get("score", 0) for d in rr) / max(1, len(rr))
 
-def need_correction(rr: List[Dict[str, Any]], cfg: Dict[str, Any]) -> bool:
-    th = cfg.get("crag", {}).get("quality_threshold", 0.62)
-    return _quality(rr) < th
+def _prominent_token(question: str) -> str | None:
+    tokens = [tok for tok in re.findall(r"[A-Za-z]+", question) if len(tok) > 3]
+    if not tokens:
+        return None
+    tokens.sort(key=lambda t: (-len(t), t.lower()))
+    return tokens[0]
+
+
+def _quality(reranked: List[Dict[str, Any]]) -> float:
+    if not reranked:
+        return 0.0
+    return sum(doc.get("score", 0.0) for doc in reranked) / len(reranked)
+
+
+def need_correction(reranked: List[Dict[str, Any]], cfg: Dict[str, Any]) -> bool:
+    threshold = cfg.get("crag", {}).get("quality_threshold", 0.62)
+    return _quality(reranked) < threshold
+
 
 def corrective_loop(
     question: str,
@@ -14,6 +32,21 @@ def corrective_loop(
     cfg: Dict[str, Any],
     trace: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """Placeholder corrective loop that currently returns the existing reranked docs."""
-    trace["crag_branch"] = "noop"
-    return reranked
+    provider = cfg.get("retrieval", {}).get("provider", "mock").lower()
+    crag_trace = trace.setdefault("crag", {})
+
+    if provider != "mock":
+        raise NotImplementedError(f"CRAG corrective loop not implemented for provider '{provider}'")
+
+    bonus = _prominent_token(question)
+    expanded_query = question if bonus is None else f"{question} {bonus}"
+    crag_trace["expanded_query"] = expanded_query
+    alternative = retrieve(
+        question,
+        cfg,
+        trace,
+        query_override=expanded_query,
+        trace_target=crag_trace.setdefault("retrieval", {}),
+    )
+    trace["crag_branch"] = "expanded" if alternative else "noop"
+    return alternative or reranked

@@ -1,20 +1,23 @@
 retrieval:
+  provider: "mock"
   embedder: ["bge-m3", "baseline"]
   top_k: 30
   fallback_on_low_quality: true
 rerank:
-  provider: ["bge-m3", "cohere"]
+  provider: "mock"
   keep_top_k: 5
 crag:
   enabled: true
   quality_threshold: 0.62
   actions: ["expand_query", "multi_hop", "web_fallback"]
 graphrag:
+  provider: "mock"
   enabled: true
   nightly_build: "0 3 * * *"
   max_hops: 2
 decoding:
-  mode: ["greedy","topk","nucleus","sled","cisc"]
+  active: "greedy"
+  mode: ["greedy","sled","cisc"]
   sled:
     alpha: 0.2
     layer_frac_range: [0.3, 0.7]
@@ -22,10 +25,11 @@ decoding:
   cisc:
     samples: 5
 verification:
+  provider: "mock"
   cove_enabled: true
   abstain_threshold: 0.55
 self_improve:
-  rzero_enabled: true
+  rzero_enabled: false
   mode: ["offline","shadow","canary"]
   max_parallel_candidates: 4
   win_criteria:
