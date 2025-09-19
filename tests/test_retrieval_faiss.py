@@ -53,8 +53,10 @@ def test_build_index_and_retrieve_faiss(monkeypatch: pytest.MonkeyPatch, fixture
             'provider': 'faiss',
             'top_k': 3,
             'index_path': str(index_dir),
-            'model_path': None,
-            'embedder': ['dummy-model'],
+            'embedders': {
+                'primary': {'name': 'dummy-model'},
+                'baseline': {'name': 'dummy-model-baseline'},
+            },
         }
     }
     trace: Dict[str, Any] = {}

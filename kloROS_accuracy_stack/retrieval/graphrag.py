@@ -65,6 +65,7 @@ def graphrag_expand(
         "nodes": len(graph["nodes"]),
         "edges": len(graph["edges"]),
         "provider": provider,
+        "nightly_build": bool(cfg.get("graphrag", {}).get("nightly_build", False)),
     }
 
     return graph, synopsis

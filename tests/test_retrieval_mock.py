@@ -7,8 +7,16 @@ from kloROS_accuracy_stack.retrieval.reranker import rerank
 
 def _cfg() -> Dict[str, Any]:
     return {
-        "retrieval": {"provider": "mock", "top_k": 5},
-        "rerank": {"provider": "mock", "keep_top_k": 3},
+        "retrieval": {
+            "provider": "mock",
+            "top_k": 5,
+            "embedders": {
+                "primary": {"name": "BAAI/bge-m3"},
+                "baseline": {"name": "sentence-transformers/all-MiniLM-L6-v2"},
+            },
+            "fallback_on_low_quality": False,
+        },
+        "rerank": {"rerankers": ["mock"], "keep_top_k": 3},
         "crag": {"quality_threshold": 0.8},
     }
 

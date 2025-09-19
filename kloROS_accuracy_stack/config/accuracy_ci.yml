@@ -1,9 +1,15 @@
 retrieval:
   provider: "mock"
-  embedder: ["bge-m3"]
+  embedders:
+    primary:
+      name: "BAAI/bge-m3"
+    baseline:
+      name: "sentence-transformers/all-MiniLM-L6-v2"
   top_k: 5
+  fallback_on_low_quality: false
 rerank:
-  provider: "mock"
+  rerankers:
+    - "mock"
   keep_top_k: 3
 crag:
   enabled: true
