@@ -15,7 +15,6 @@ Secure RAG bundle with hash verification
 - `pip-audit --format json` and `osv-scanner --lockfile requirements.txt` returned no known CVEs.
 - `pipdeptree --warn silence` highlights editable package metadata duplication; keep `pip install -e .` or consider trimming stale `src/kloros.egg-info` before packaging.
 - Licenses (`pip-licenses --format json`) remain MIT/BSD-compatible; rerun before distribution.
-- Local environment still contains `numba` and `opencv-python` which pin numpy `<2.3`; they are unused here but emit resolver warnings after the upgrade. Remove or upgrade them if they become project dependencies.
 
 ## Cross-Module Risks
 - **Audio loop call map**: `KLoROS.chat()` -> `requests.post` (Ollama) and optionally `KLoROS.answer_with_rag()` -> `RAG.answer()` -> `requests.post`. Missing Ollama raises string error; add retry/backoff and distinguish HTTP vs connection failures.
