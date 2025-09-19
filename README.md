@@ -82,6 +82,7 @@ $env:KLR_INPUT_IDX = 3  # PowerShell (dev)
 
 ## Contributing / PRs
 
+- Start each coding session by reading PLAN.md and the active task in TODO.md.
 - I created a small set of Windows-safe guards and a device helper. If you'd like, I can open a branch & PR with these changes plus a short changelog. Otherwise, apply the changes directly on `main`.
 
 ---
