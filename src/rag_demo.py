@@ -10,18 +10,20 @@ Run the demo like:
 
 The demo will print the Ollama response and the retrieval context.
 """
+
 from __future__ import annotations
 
 import os
 import sys
+
 import numpy as np
 
 # Ensure repo root is on sys.path when executed as a script (helps import during tooling/tests)
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if repo_root not in sys.path:
     sys.path.insert(0, repo_root)
 
-from src.rag import RAG
+from src.rag import RAG  # noqa: E402
 
 
 def dummy_embedder(text: str) -> np.ndarray:
@@ -32,18 +34,18 @@ def dummy_embedder(text: str) -> np.ndarray:
 
 def main():
     # adjust paths to your data
-    metadata_path = os.getenv('RAG_METADATA') or 'configs/rag_metadata.json'
-    embeddings_path = os.getenv('RAG_EMBEDDINGS') or 'configs/rag_embeddings.npy'
+    metadata_path = os.getenv("RAG_METADATA") or "configs/rag_metadata.json"
+    embeddings_path = os.getenv("RAG_EMBEDDINGS") or "configs/rag_embeddings.npy"
 
     rag = RAG(metadata_path=metadata_path, embeddings_path=embeddings_path)
     question = "Give a short line in the voice of KLoROS about patience."
 
     out = rag.answer(question, embedder=dummy_embedder, top_k=5)
-    print('Prompt:')
-    print(out['prompt'][:2000])
-    print('\nResponse:')
-    print(out['response'])
+    print("Prompt:")
+    print(out["prompt"][:2000])
+    print("\nResponse:")
+    print(out["response"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

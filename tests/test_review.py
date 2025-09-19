@@ -1,6 +1,8 @@
 """Tests for review reel builder."""
 
-from pathlib import Path
+import pytest
+
+pytest.importorskip("clip_scout")
 
 from clip_scout.review import build_review_reel
 

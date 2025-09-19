@@ -4,18 +4,25 @@ This script is intended for dev machines and should be tolerant when
 system tools (piper/aplay/pactl) are not present. It uses environment
 paths consistent with `src/kloros_voice.py`.
 """
-import json
+
+import importlib
 import os
 import shutil
 import subprocess
+
 import requests  # type: ignore
+
 
 def _main() -> None:
     # Test Ollama (defensive)
     try:
         response = requests.post(
             "http://localhost:11434/api/generate",
-            json={"model": "nous-hermes:13b-q4_0", "prompt": "Say hello in one sentence", "stream": False},
+            json={
+                "model": "nous-hermes:13b-q4_0",
+                "prompt": "Say hello in one sentence",
+                "stream": False,
+            },
             timeout=10,
         )
         if response.status_code == 200:
@@ -35,18 +42,22 @@ def _main() -> None:
     else:
         try:
             # Call piper directly, supplying text as stdin bytes (cross-platform)
-            subprocess.run([piper_exe, "--model", piper_model, "--output_file", "test_voice.wav"], input=b"Testing GLaDOS voice", check=False)
+            subprocess.run(
+                [piper_exe, "--model", piper_model, "--output_file", "test_voice.wav"],
+                input=b"Testing GLaDOS voice",
+                check=False,
+            )
             print("TTS Test: Created test_voice.wav (if piper supports this host)")
         except Exception as e:
             print("TTS Test: failed:", e)
 
     # Test Vosk import
     try:
-        import vosk  # type: ignore
+        importlib.import_module("vosk")
         print("STT Test: Vosk imported successfully")
     except Exception as e:
         print("STT Test: vosk import failed:", e)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     _main()

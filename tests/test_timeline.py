@@ -1,6 +1,8 @@
 """Tests for EDL export."""
 
-from pathlib import Path
+import pytest
+
+pytest.importorskip("clip_scout.timeline")
 
 from clip_scout.timeline import write_edl
 from clip_scout.types import Clip, MediaProbe

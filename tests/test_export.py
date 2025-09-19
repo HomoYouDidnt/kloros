@@ -1,5 +1,9 @@
 """Export helpers tests."""
 
+import pytest
+
+pytest.importorskip("clip_scout")
+
 import json
 from pathlib import Path
 

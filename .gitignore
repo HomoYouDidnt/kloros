@@ -10,6 +10,7 @@ Thumbs.db
 .idea/
 *.cache/
 
+# Project artefacts
 runs/
 clip_scout_models/
-\n# Project artefacts\nruns/\nclip_scout_models/\ntools/\
+tools/

@@ -9,35 +9,47 @@ KLoROS voice loop: Vosk (offline STT) + Piper (TTS) + Ollama (LLM)
 - Energy & confidence gates to cut false wakes
 - Pronounces "KLoROS" as /klɔr-oʊs/ via eSpeak phonemes [[ 'klOroUs ]]
 """
+
 import collections
 import json
 import os
+import platform
 import queue
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 from datetime import datetime
-from typing import List, Callable, Optional, Any
-import platform
-import sys
 from pathlib import Path
-
-_repo_root = Path(__file__).resolve().parent.parent
-if str(_repo_root) not in sys.path:
-    sys.path.insert(0, str(_repo_root))
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 import numpy as np
 import requests  # type: ignore
 import sounddevice as sd
 import vosk
-from src.compat import webrtcvad
+
+if TYPE_CHECKING:
+    from src.rag import RAG as RAGType
+else:
+    RAGType = Any  # pragma: no cover
+
+_RAGClass: type["RAGType"] | None
+
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
+from src.compat import webrtcvad  # noqa: E402
+
 try:
-    from src.rag import RAG
+    from src.rag import RAG as _ImportedRAG  # noqa: E402
+
+    _RAGClass = _ImportedRAG
 except Exception:
-    RAG = None
+    _RAGClass = None
 
 
 class KLoROS:
@@ -94,6 +106,8 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         self.ollama_model = "nous-hermes:13b-q4_0"
         self.ollama_url = "http://localhost:11434/api/generate"
 
+        self.rag: Optional["RAGType"] = None
+
         # ----------------- Audio device -----------------
         self.input_device_index = None
         idx_env = os.getenv("KLR_INPUT_IDX")
@@ -119,10 +133,12 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
                 print("[audio] failed to query devices:", e)
                 self.input_device_index = None
 
-        # Detect device default sample rate (fallback 48000)
+            # Detect device default sample rate (fallback 48000)
             try:
                 idev = sd.query_devices(
-                    self.input_device_index if self.input_device_index is not None else sd.default.device[0],
+                    self.input_device_index
+                    if self.input_device_index is not None
+                    else sd.default.device[0],
                     "input",
                 )
                 # device entries can be mapping-like; attempt dict-like access, fallback to attribute access
@@ -138,11 +154,15 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         self.channels = 1
         self.input_gain = float(os.getenv("KLR_INPUT_GAIN", "1.0"))  # 1.0–2.0
 
-        print(f"[audio] input index={self.input_device_index}  SR={self.sample_rate}  block={self.blocksize}")
+        print(
+            f"[audio] input index={self.input_device_index}  SR={self.sample_rate}  block={self.blocksize}"
+        )
 
         # -------------------- Models --------------------
         self.piper_model = os.path.expanduser("~/kloros_models/piper/glados_piper_medium.onnx")
-        self.piper_config = os.path.expanduser("~/kloros_models/piper/glados_piper_medium.onnx.json")
+        self.piper_config = os.path.expanduser(
+            "~/kloros_models/piper/glados_piper_medium.onnx.json"
+        )
         # Load Vosk model defensively — missing model should not crash the process.
         self.vosk_model = None
         try:
@@ -161,25 +181,27 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
 
         # thresholds you can tune via env
         self.wake_conf_min = float(os.getenv("KLR_WAKE_CONF_MIN", "0.65"))  # 0.0–1.0
-        self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))      # 16-bit RMS energy gate
+        self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))  # 16-bit RMS energy gate
 
         self.wake_grammar = json.dumps(self.wake_phrases + ["[unk]"])
         # Create recognizers only if the model loaded successfully
         if self.vosk_model is not None:
-            self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
+            self.wake_rec = vosk.KaldiRecognizer(
+                self.vosk_model, self.sample_rate, self.wake_grammar
+            )
             self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
         else:
             self.wake_rec = None
             self.vosk_rec = None
 
         # -------------------- VAD (more patient) -----------------
-        self.vad = webrtcvad.Vad(1)      # less aggressive than 2
-        self.frame_ms = 20               # 10/20/30 supported
-        self.max_cmd_s = 12.0            # allow a bit longer
-        self.silence_end_ms = 1400       # wait longer before stopping
-        self.preroll_ms = 600            # include some audio before start
-        self.start_timeout_ms = 3500     # time to begin speaking after wake
-        self.min_cmd_ms = 900            # require ~0.9s of speech before ending
+        self.vad = webrtcvad.Vad(1)  # less aggressive than 2
+        self.frame_ms = 20  # 10/20/30 supported
+        self.max_cmd_s = 12.0  # allow a bit longer
+        self.silence_end_ms = 1400  # wait longer before stopping
+        self.preroll_ms = 600  # include some audio before start
+        self.start_timeout_ms = 3500  # time to begin speaking after wake
+        self.min_cmd_ms = 900  # require ~0.9s of speech before ending
 
         # -------------------- State ---------------------
         self.audio_queue: "queue.Queue[bytes]" = queue.Queue(maxsize=64)
@@ -242,15 +264,17 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         return resp
 
     # =============== RAG integration helpers ===============
-    def load_rag(self, metadata_path: str, embeddings_path: str, faiss_index: str | None = None) -> None:
+    def load_rag(
+        self, metadata_path: str, embeddings_path: str, faiss_index: str | None = None
+    ) -> None:
         """Load RAG artifacts for later retrieval. Uses src.rag.RAG.
 
         metadata_path and embeddings_path should point to files on the local filesystem (KLoROS host).
         If a faiss index is available, pass its path as faiss_index (optional).
         """
-        if RAG is None:
+        if _RAGClass is None:
             raise RuntimeError("RAG module not available; ensure src/rag.py is present")
-        self.rag = RAG(metadata_path=metadata_path, embeddings_path=embeddings_path)
+        self.rag = _RAGClass(metadata_path=metadata_path, embeddings_path=embeddings_path)
         # try to load faiss index if provided
         if faiss_index:
             try:
@@ -259,26 +283,39 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
                 faiss = importlib.import_module("faiss")
                 idx = faiss.read_index(faiss_index)
                 # assign onto the RAG instance (attribute added in src/rag.py)
-                setattr(self.rag, "faiss_index", idx)
+                if self.rag is not None:
+                    self.rag.faiss_index = idx  # type: ignore[attr-defined]
             except Exception as e:
                 print("[RAG] failed to load faiss index:", e)
 
-    def answer_with_rag(self, question: str, top_k: int = 5, embedder: Optional[Callable[..., Any]] = None, speak: bool = False) -> str:
+    def answer_with_rag(
+        self,
+        question: str,
+        top_k: int = 5,
+        embedder: Optional[Callable[..., Any]] = None,
+        speak: bool = False,
+    ) -> str:
         """Retrieve context and ask Ollama for a grounded response. Optionally speak result via Piper.
 
         Provide either an embedder callable or ensure the RAG object can accept a precomputed query embedding.
         """
-        if not hasattr(self, 'rag') or self.rag is None:
+        if not hasattr(self, "rag") or self.rag is None:
             raise RuntimeError("RAG not loaded. Call load_rag() first.")
         if embedder is None:
             raise ValueError("Provide an embedder callable for query embedding")
-        out = self.rag.answer(question, embedder=embedder, top_k=top_k, ollama_url=self.ollama_url, model=self.ollama_model)
-        resp = out.get('response', '')
+        out = self.rag.answer(
+            question,
+            embedder=embedder,
+            top_k=top_k,
+            ollama_url=self.ollama_url,
+            model=self.ollama_model,
+        )
+        resp = out.get("response", "")
         if speak and resp:
             try:
                 self.speak(resp)
             except Exception as e:
-                print('[RAG] speak failed:', e)
+                print("[RAG] speak failed:", e)
         return resp
 
     # =================== Output helpers =================
@@ -287,8 +324,12 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         try:
             # Only run Pulse/PipeWire commands on Linux; dev machines (Windows) skip.
             if platform.system() == "Linux":
-                subprocess.run(["pactl", "suspend-sink", "@DEFAULT_SINK@", "0"],
-                               capture_output=True, timeout=2, check=False)
+                subprocess.run(
+                    ["pactl", "suspend-sink", "@DEFAULT_SINK@", "0"],
+                    capture_output=True,
+                    timeout=2,
+                    check=False,
+                )
         except Exception:
             pass
 
@@ -298,9 +339,22 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
             # aplay is Linux/ALSA-specific. Only attempt on Linux hosts.
             if platform.system() == "Linux":
                 subprocess.run(
-                    ["aplay", "-q", "-t", "raw", "-f", "S16_LE",
-                     "-r", str(self.sample_rate), "-d", str(seconds), "/dev/zero"],
-                    capture_output=True, timeout=3, check=False,
+                    [
+                        "aplay",
+                        "-q",
+                        "-t",
+                        "raw",
+                        "-f",
+                        "S16_LE",
+                        "-r",
+                        str(self.sample_rate),
+                        "-d",
+                        str(seconds),
+                        "/dev/zero",
+                    ],
+                    capture_output=True,
+                    timeout=3,
+                    check=False,
                 )
         except Exception:
             pass
@@ -309,7 +363,8 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
         def keepalive() -> None:
             while self.keep_bluetooth_alive:
                 self._play_silence(0.12)  # tiny, inaudible tick
-                time.sleep(5)             # frequent to avoid ramp-up delay
+                time.sleep(5)  # frequent to avoid ramp-up delay
+
         threading.Thread(target=keepalive, daemon=True).start()
 
     def _normalize_tts_text(self, text: str) -> str:
@@ -359,7 +414,7 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
                 pass
 
     # ================== Input / STT side =================
-    def audio_callback(self, indata, frames, time_info, status) -> None:
+    def audio_callback(self, indata, frames, _time_info, status) -> None:
         if status:
             print(f"[audio] {status}")
         # optional software preamp (keep modest)
@@ -513,8 +568,12 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
                             self.handle_conversation()
                             # reset recognizers for next round (guarded creation)
                             if self.vosk_model is not None:
-                                self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
-                                self.wake_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate, self.wake_grammar)
+                                self.vosk_rec = vosk.KaldiRecognizer(
+                                    self.vosk_model, self.sample_rate
+                                )
+                                self.wake_rec = vosk.KaldiRecognizer(
+                                    self.vosk_model, self.sample_rate, self.wake_grammar
+                                )
                     else:
                         p = json.loads(self.wake_rec.PartialResult()).get("partial", "")
                         if p:
@@ -530,7 +589,7 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
 
         print("[DEBUG] Listening for command (VAD)…")
         audio_bytes = self.record_until_silence()
-        print(f"[DEBUG] Collected {len(audio_bytes)//2} samples")
+        print(f"[DEBUG] Collected {len(audio_bytes) // 2} samples")
 
         transcript = ""
         # Allow an env override for tests/dev when model isn't present
@@ -561,7 +620,11 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
             rfinal = json.loads(command_rec.FinalResult())
             transcript = (rfinal.get("text") or "").strip()
 
-        print(f"[DEBUG] Recognized command: '{transcript}'" if transcript else "[DEBUG] No command recognized")
+        print(
+            f"[DEBUG] Recognized command: '{transcript}'"
+            if transcript
+            else "[DEBUG] No command recognized"
+        )
 
         if transcript:
             print(f"[COMMAND] {transcript}")
@@ -590,3 +653,4 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
 if __name__ == "__main__":
     kloros = KLoROS()
     kloros.run()
+

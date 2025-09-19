@@ -8,9 +8,8 @@ CI environments without the native extension.
 Note: the shim is intentionally simple and deterministic; it is not a
 production replacement for `webrtcvad`.
 """
-from typing import Optional
-import os
 
+import os
 
 _force = os.environ.get("KLR_FORCE_WEBSHIM")
 _use_shim = False
@@ -21,6 +20,7 @@ _real_vad = None
 if not _use_shim:
     try:
         import webrtcvad as _real_webrtcvad  # type: ignore
+
         _real_vad = getattr(_real_webrtcvad, "Vad", None)
     except Exception:
         _real_vad = None
@@ -44,4 +44,3 @@ class _ShimVad:
 
 # Final exported Vad: prefer real extension, fall back to shim
 Vad = _real_vad or _ShimVad
-

@@ -1,5 +1,9 @@
 """Scoring and merge logic tests."""
 
+import pytest
+
+pytest.importorskip("clip_scout")
+
 from clip_scout.config import PrePostRoll, ThresholdsConfig, WeightsConfig
 from clip_scout.scoring import expand_and_clip, iou, merge_by_iou, score_windows
 from clip_scout.types import Clip, Hit

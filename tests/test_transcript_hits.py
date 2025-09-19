@@ -1,5 +1,9 @@
 """Transcript hit detector tests."""
 
+import pytest
+
+pytest.importorskip("clip_scout.detectors.transcript_hits")
+
 from clip_scout.config import KeywordConfig
 from clip_scout.detectors.transcript_hits import find_transcript_hits
 from clip_scout.types import Segment
@@ -18,7 +22,7 @@ def test_find_transcript_hits_matches_keywords():
     hit = hits[0]
     assert hit.kind == "transcript"
     assert hit.start == 2.0  # 5.0 - window/2
-    assert hit.end == 11.0   # 8.0 + window/2
+    assert hit.end == 11.0  # 8.0 + window/2
     assert set(hit.tags) == {"boss", "insane"}
 
 

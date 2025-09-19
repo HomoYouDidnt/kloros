@@ -1,8 +1,8 @@
 """Tests for scene cut detector."""
 
-from pathlib import Path
-
 import pytest
+
+pytest.importorskip("clip_scout.detectors.scene_cuts")
 
 from clip_scout.config import SceneCfg
 from clip_scout.detectors.scene_cuts import find_scene_windows

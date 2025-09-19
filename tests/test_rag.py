@@ -1,5 +1,7 @@
-import numpy as np
 import os
+
+import numpy as np
+
 from src.rag import RAG
 
 
@@ -29,14 +31,20 @@ def test_rag_retrieval_and_prompt(tmp_path, monkeypatch):
         def json(self):
             return {"response": "Dummy Ollama response"}
 
-
-    def fake_post(url, json, timeout=None):
+    def fake_post(_url, json, timeout=None):
         # ensure prompt was constructed
         assert "prompt" in json
+        _ = timeout
         return DummyResp()
 
     monkeypatch.setattr("requests.post", fake_post)
 
-    out = r.answer("What is KLoROS?", embedder=dummy_embedder, top_k=3, ollama_url="http://localhost:11434/api/generate", model="nous-hermes:13b-q4_0")
+    out = r.answer(
+        "What is KLoROS?",
+        embedder=dummy_embedder,
+        top_k=3,
+        ollama_url="http://localhost:11434/api/generate",
+        model="nous-hermes:13b-q4_0",
+    )
     assert "response" in out
     assert out["response"] == "Dummy Ollama response"

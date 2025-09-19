@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Thin wrapper around the webrtcvad extension without pkg_resources usage.
 
 The upstream Python module imports pkg_resources solely to expose __version__.
@@ -9,20 +7,37 @@ rest of the project can import webrtcvad without that dependency while still
 relying on the compiled `_webrtcvad` extension installed from PyPI.
 """
 
-try:  # Python >=3.8
-    import importlib.metadata as _metadata
-except Exception:  # pragma: no cover - fallback for very old runtimes
-    _metadata = None  # type: ignore[assignment]
+from __future__ import annotations
 
-import _webrtcvad
+from types import ModuleType
+
+import _webrtcvad  # noqa: E402
+
+
+def _load_metadata() -> ModuleType | None:
+    try:
+        from importlib import metadata  # type: ignore[import]
+
+        return metadata
+    except ImportError:
+        try:
+            import importlib_metadata  # type: ignore[import]
+
+            return importlib_metadata
+        except ImportError:
+            return None
 
 
 def _dist_version(package: str) -> str:
-    if _metadata is None:
+    metadata = _load_metadata()
+    if metadata is None:
+        return "unknown"
+    version = getattr(metadata, "version", None)
+    if version is None:
         return "unknown"
     try:
-        return _metadata.version(package)
-    except _metadata.PackageNotFoundError:  # type: ignore[attr-defined]
+        return str(version(package))
+    except Exception:
         return "unknown"
 
 

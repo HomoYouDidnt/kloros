@@ -1,8 +1,5 @@
 import os
 import subprocess
-from unittest import mock
-
-import pytest
 
 
 def test_ollama_call(monkeypatch):
@@ -12,8 +9,9 @@ def test_ollama_call(monkeypatch):
         def json(self):
             return {"response": "Hello from Ollama"}
 
-    def fake_post(url, json, timeout=None):
+    def fake_post(_url, json, timeout=None):
         assert "model" in json
+        _ = timeout
         return DummyResp()
 
     monkeypatch.setattr("requests.post", fake_post)
@@ -33,7 +31,9 @@ def test_piper_run(monkeypatch, tmp_path):
     calls = []
 
     def fake_run(cmd, input=None, capture_output=False, check=False, timeout=None):
+        _ = timeout
         calls.append(cmd)
+
         class R:
             returncode = 0
 
