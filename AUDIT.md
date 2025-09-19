@@ -4,6 +4,7 @@ Secure RAG bundle with hash verification
 | Severity | Files | Tool | Recommended fix | Sources (accessed 2025-09-19) |
 | --- | --- | --- | --- | --- |
 | Resolved | src/rag.py | bandit 1.8.6 / semgrep 1.137.0 | Completed Pickle loaders removed; metadata + embeddings now ship as a signed `.npz` bundle, loader verifies SHA256 and forces `allow_pickle=False`. | [numpy.load allow_pickle](https://numpy.org/doc/stable/reference/generated/numpy.load.html), [Bandit B301/B403](https://bandit.readthedocs.io/en/1.8.6/blacklists/), [Semgrep rule](https://semgrep.dev/r/python.lang.security.deserialization.pickle.avoid-pickle) |
+| Resolved | .github/workflows/ci.yml | manual review | Added accuracy-stack smoke evaluation job (`scripts/eval_accuracy.py --limit 3`) so CI exercises the fixture corpus. | Accuracy smoke job run (local 2025-09-19) |
 | Medium | tests/test_export.py etc. | pytest 8.4.2 | Provide optional clip_scout stubs or document Node build dependency; add CI job to install/skip deterministically. | clip_scout test failures (local pytest run, 2025-09-19) |
 | Medium | requirements.txt / pyproject.toml | pip list --outdated | Refresh numpy (2.3.2->2.3.3) and pycparser (2.22->2.23) before release; rerun regression audio pipeline after upgrade. | [NumPy releases](https://numpy.org/devdocs/release/2.3.0-notes.html), [pycparser releases](https://pypi.org/project/pycparser/2.23/) |
 | Medium | src/kloros_voice.py | mypy 1.18.2 / vulture 2.14 | Tighten RAG lifecycle: add explicit doctor check, ensure `self.rag` loaded before use, prune unused helpers (`vosk_rec` slots). | Internal analysis; mypy+vulture runs (2025-09-19) |
@@ -51,6 +52,7 @@ Secure RAG bundle with hash verification
 - `mypy --version` -> 1.18.2 (PyPI 2025-09-19T00:11:10Z).
 - `osv-scanner --version` -> 2.2.2 (GitHub release 2025-08-27T03:34:15Z).
 - `pytest -q` -> `3 passed, 6 skipped` (clip_scout-dependent suites skipped intentionally).
+- `python scripts/eval_accuracy.py --config kloROS_accuracy_stack/config/accuracy_ci.yml --qa kloROS_accuracy_stack/fixtures/mini/qa.jsonl --out out/smoke --limit 3` -> tiny accuracy smoke report generated.
 
 ## KLoROS Environment Report
 - **OS/Kernel**: `uname`, `cat /etc/os-release`, `systemctl`, `ss`, `sed`, `lscpu` unavailable in capture host (Windows). Debian 13 target must confirm via live doctor script.

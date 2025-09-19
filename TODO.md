@@ -6,4 +6,4 @@
 - [x] GraphRAG local graph builder + synopsis
 - [x] Decoding selection with safe SLED/CISC fallback
 - [x] Tiny evaluation harness + expanded fixtures
-- [ ] CI/docs updates (deps, eval step, docs refresh)
+- [x] CI/docs updates (deps, eval step, docs refresh)

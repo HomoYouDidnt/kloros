@@ -1,0 +1,29 @@
+retrieval:
+  provider: "mock"
+  embedder: ["bge-m3"]
+  top_k: 5
+rerank:
+  provider: "mock"
+  keep_top_k: 3
+crag:
+  enabled: true
+  quality_threshold: 0.5
+  actions: ["expand_query"]
+graphrag:
+  provider: "mock"
+  enabled: true
+decoding:
+  active: "greedy"
+  mode: ["greedy", "sled", "cisc"]
+  sled:
+    alpha: 0.2
+    keep_final_topk_union: 40
+  cisc:
+    samples: 3
+  llm:
+    provider: "local"
+    model_name: "mistral-7b-instruct"
+verification:
+  provider: "local"
+  cove_enabled: true
+  abstain_threshold: 0.5

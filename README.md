@@ -38,6 +38,23 @@ To list audio devices and suggested `KLR_INPUT_IDX` values (useful on dev machin
 python -m src.kloros_voice --list-devices
 ```
 
+## Accuracy stack smoke test
+
+The accuracy stack ships with a tiny fixture corpus and evaluation harness. Run a quick
+check after installing requirements:
+
+```bash
+python scripts/eval_accuracy.py \
+  --config kloROS_accuracy_stack/config/accuracy_ci.yml \
+  --qa kloROS_accuracy_stack/fixtures/mini/qa.jsonl \
+  --out out/smoke \
+  --limit 3
+cat out/smoke/eval_report.md
+```
+
+Use `kloROS_accuracy_stack/config/accuracy.yml` for full runs with FAISS indexes when the
+corpus and models are available locally.
+
 Examples to set the device environment variable:
 
 ```bash
