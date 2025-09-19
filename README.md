@@ -55,6 +55,16 @@ cat out/smoke/eval_report.md
 Use `kloROS_accuracy_stack/config/accuracy.yml` for full runs with FAISS indexes when the
 corpus and models are available locally.
 
+## CI & audit hygiene
+
+- Core CI lives in `.github/workflows/ci.yml` and runs linting, typing, security, tests,
+  and the accuracy smoke evaluation.
+- Heavy analyzers are isolated in `.github/workflows/audit.yml` to keep the main workflow
+  fast. Jobs cover `shellcheck`, `osv-scanner`, `npm audit --audit-level=high`,
+  `madge --circular`, `jscpd`, and `ts-prune` (skips automatically if no TS config is found).
+- Trigger the audit suite manually with the **Audit** workflow in GitHub Actions when
+  preparing releases.
+
 Examples to set the device environment variable:
 
 ```bash
@@ -83,6 +93,9 @@ $env:KLR_INPUT_IDX = 3  # PowerShell (dev)
 ## Contributing / PRs
 
 - Start each coding session by reading PLAN.md and the active task in TODO.md.
+- `scripts/rzero_run.py --dry-run` prints the sandbox self-improvement plan. When
+  `self_improve.rzero_enabled` is flipped on you can run `propose`, `evaluate`, and
+  `gatekeep` stages locally before promoting candidates.
 - I created a small set of Windows-safe guards and a device helper. If you'd like, I can open a branch & PR with these changes plus a short changelog. Otherwise, apply the changes directly on `main`.
 
 ---
