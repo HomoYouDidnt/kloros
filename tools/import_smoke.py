@@ -1,12 +1,16 @@
-import sys, os, runpy, traceback, io, contextlib
+import contextlib
+import io
+import os
+import runpy
+import traceback
 
-root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-src_dir = os.path.join(root, 'src')
-files = ['kloros_voice.py', 'test_audio.py', 'test_components.py', 'rag.py', 'rag_demo.py']
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+src_dir = os.path.join(root, "src")
+files = ["kloros_voice.py", "test_audio.py", "test_components.py", "rag.py", "rag_demo.py"]
 results = {}
 for fn in files:
     path = os.path.join(src_dir, fn)
-    run_name = 'loaded_' + fn[:-3]
+    run_name = "loaded_" + fn[:-3]
     try:
         buf_out = io.StringIO()
         buf_err = io.StringIO()
@@ -15,16 +19,16 @@ for fn in files:
             runpy.run_path(path, run_name=run_name)
         out = buf_out.getvalue()
         err = buf_err.getvalue()
-        results[fn] = ('ok', out, err)
+        results[fn] = ("ok", out, err)
     except Exception:
-        results[fn] = ('error', traceback.format_exc(), None)
+        results[fn] = ("error", traceback.format_exc(), None)
 
 for fn, (status, out, err) in results.items():
-    print('FILE:', fn, 'STATUS:', status)
+    print("FILE:", fn, "STATUS:", status)
     if out:
-        print('--- STDOUT ---')
+        print("--- STDOUT ---")
         print(out.strip())
     if err:
-        print('--- STDERR ---')
+        print("--- STDERR ---")
         print(err.strip())
-    print('---')
+    print("---")

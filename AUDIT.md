@@ -1,9 +1,9 @@
 # Repository Audit
-
+Secure RAG bundle with hash verification
 ## Summary
 | Severity | Files | Tool | Recommended fix | Sources (accessed 2025-09-19) |
 | --- | --- | --- | --- | --- |
-| Resolved | src/rag.py | bandit 1.8.6 / semgrep 1.137.0 | Completed Pickle loaders removed; `_load_embeddings` now enforces npy/npz/json inputs with `allow_pickle=False`, metadata rejects pickle formats. | [numpy.load allow_pickle](https://numpy.org/doc/stable/reference/generated/numpy.load.html), [Bandit B301/B403](https://bandit.readthedocs.io/en/1.8.6/blacklists/), [Semgrep rule](https://semgrep.dev/r/python.lang.security.deserialization.pickle.avoid-pickle) |
+| Resolved | src/rag.py | bandit 1.8.6 / semgrep 1.137.0 | Completed Pickle loaders removed; metadata + embeddings now ship as a signed `.npz` bundle, loader verifies SHA256 and forces `allow_pickle=False`. | [numpy.load allow_pickle](https://numpy.org/doc/stable/reference/generated/numpy.load.html), [Bandit B301/B403](https://bandit.readthedocs.io/en/1.8.6/blacklists/), [Semgrep rule](https://semgrep.dev/r/python.lang.security.deserialization.pickle.avoid-pickle) |
 | Medium | tests/test_export.py etc. | pytest 8.4.2 | Provide optional clip_scout stubs or document Node build dependency; add CI job to install/skip deterministically. | clip_scout test failures (local pytest run, 2025-09-19) |
 | Medium | requirements.txt / pyproject.toml | pip list --outdated | Refresh numpy (2.3.2->2.3.3) and pycparser (2.22->2.23) before release; rerun regression audio pipeline after upgrade. | [NumPy releases](https://numpy.org/devdocs/release/2.3.0-notes.html), [pycparser releases](https://pypi.org/project/pycparser/2.23/) |
 | Medium | src/kloros_voice.py | mypy 1.18.2 / vulture 2.14 | Tighten RAG lifecycle: add explicit doctor check, ensure `self.rag` loaded before use, prune unused helpers (`vosk_rec` slots). | Internal analysis; mypy+vulture runs (2025-09-19) |
@@ -18,7 +18,7 @@
 
 ## Cross-Module Risks
 - **Audio loop call map**: `KLoROS.chat()` -> `requests.post` (Ollama) and optionally `KLoROS.answer_with_rag()` -> `RAG.answer()` -> `requests.post`. Missing Ollama raises string error; add retry/backoff and distinguish HTTP vs connection failures.
-- **RAG ingestion**: `_load_embeddings/_load_metadata` now refuse pickle input and only accept npy/npz/json/csv/parquet, but still rely on local files being trustworthy. Add hash/signature checks for `rag_data` before loading in production.
+- **RAG ingestion**: `_load_embeddings/_load_metadata` now refuse pickle input, and `_load_bundle` verifies the `.sha256` before loading npz bundles. Still consider publishing signed artifacts for production rotation.
 - **Wake/stt pipeline**: `KLoROS.audio_callback()` depends on `self.vosk_rec` reinitialised in `_ensure_vosk` else branch; guard before use to avoid AttributeError when model missing.
 - **Tests vs. external services**: Seven pytest modules now skip when `clip_scout` absent. Document Node/ffmpeg expectations and consider smoke stubs to keep regression coverage meaningful.
 - **Packaging**: Added `src/__init__.py` to stabilise namespace; ensure importers transition to `from kloros import ...` long-term to avoid `sys.path` patching.

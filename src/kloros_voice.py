@@ -265,24 +265,33 @@ DO NOT EXPLAIN OR OFFER OPTIONS. Every response is a *performance*. Punchy. Shor
 
     # =============== RAG integration helpers ===============
     def load_rag(
-        self, metadata_path: str, embeddings_path: str, faiss_index: str | None = None
+        self,
+        metadata_path: str | None = None,
+        embeddings_path: str | None = None,
+        faiss_index: str | None = None,
+        bundle_path: str | None = None,
     ) -> None:
         """Load RAG artifacts for later retrieval. Uses src.rag.RAG.
 
-        metadata_path and embeddings_path should point to files on the local filesystem (KLoROS host).
-        If a faiss index is available, pass its path as faiss_index (optional).
+        Either provide a secure .npz bundle via ``bundle_path`` (preferred) or supply
+        separate ``metadata_path`` + ``embeddings_path``. Paths should point to files on
+        the local filesystem. If a Faiss index is available, pass its path via
+        ``faiss_index`` (optional).
         """
         if _RAGClass is None:
             raise RuntimeError("RAG module not available; ensure src/rag.py is present")
-        self.rag = _RAGClass(metadata_path=metadata_path, embeddings_path=embeddings_path)
-        # try to load faiss index if provided
+        if bundle_path:
+            self.rag = _RAGClass(bundle_path=bundle_path)
+        else:
+            if metadata_path is None or embeddings_path is None:
+                raise ValueError("metadata_path and embeddings_path are required when bundle_path is not provided")
+            self.rag = _RAGClass(metadata_path=metadata_path, embeddings_path=embeddings_path)
         if faiss_index:
             try:
                 import importlib
 
                 faiss = importlib.import_module("faiss")
                 idx = faiss.read_index(faiss_index)
-                # assign onto the RAG instance (attribute added in src/rag.py)
                 if self.rag is not None:
                     self.rag.faiss_index = idx  # type: ignore[attr-defined]
             except Exception as e:

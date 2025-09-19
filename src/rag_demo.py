@@ -1,8 +1,8 @@
 """Simple demo for RAG module
 
 This demo assumes you have:
-- precomputed document embeddings in a .npy or .pkl file
-- metadata in JSON/CSV/Pickle/parquet
+- precomputed document embeddings + metadata bundled in an .npz file (see rag_data/rag_store.npz)
+- or, as a fallback, separate embeddings (.npy) and metadata (.json/.csv/.parquet)
 - an embedder callable (or you can pass a precomputed query embedding)
 
 Run the demo like:
@@ -34,10 +34,17 @@ def dummy_embedder(text: str) -> np.ndarray:
 
 def main():
     # adjust paths to your data
-    metadata_path = os.getenv("RAG_METADATA") or "configs/rag_metadata.json"
-    embeddings_path = os.getenv("RAG_EMBEDDINGS") or "configs/rag_embeddings.npy"
+    bundle_path = os.getenv("RAG_BUNDLE") or "rag_data/rag_store.npz"
+    metadata_path = os.getenv("RAG_METADATA")
+    embeddings_path = os.getenv("RAG_EMBEDDINGS")
 
-    rag = RAG(metadata_path=metadata_path, embeddings_path=embeddings_path)
+    if metadata_path or embeddings_path:
+        rag = RAG(
+            metadata_path=metadata_path or "rag_data/metadata.json",
+            embeddings_path=embeddings_path or "rag_data/embeddings.npy",
+        )
+    else:
+        rag = RAG(bundle_path=bundle_path)
     question = "Give a short line in the voice of KLoROS about patience."
 
     out = rag.answer(question, embedder=dummy_embedder, top_k=5)
