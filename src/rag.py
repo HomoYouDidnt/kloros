@@ -32,6 +32,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import requests  # type: ignore
 
+from src.logic.kloros import log_event
+
 
 class RAG:
     def __init__(
@@ -71,12 +73,23 @@ class RAG:
             if embeddings_path:
                 self.embeddings = self._load_embeddings(embeddings_path)
 
-        if self.embeddings is not None and self.metadata:
-            if len(self.metadata) != len(self.embeddings):
-                # allow more flexible shapes but warn
-                print(
-                    f"[RAG] warning: metadata ({len(self.metadata)}) != embeddings ({len(self.embeddings)})"
-                )
+        doc_count = len(self.metadata)
+        embed_rows = int(self.embeddings.shape[0]) if self.embeddings is not None else 0
+        log_event(
+            "rag_init",
+            docs=doc_count,
+            embeddings=embed_rows,
+            from_bundle=bool(self.bundle_path),
+        )
+        if doc_count and embed_rows and doc_count != embed_rows:
+            log_event(
+                "rag_mismatch",
+                docs=doc_count,
+                embeddings=embed_rows,
+            )
+            print(
+                f"[RAG] warning: metadata ({doc_count}) != embeddings ({embed_rows})"
+            )
 
     @staticmethod
     def _detect_bundle(
@@ -99,9 +112,18 @@ class RAG:
             embeddings = self._validate_embedding_array(data["embeddings"], str(bundle_path))
             metadata_bytes = np.asarray(data["metadata_json"], dtype=np.uint8).tobytes()
         metadata = json.loads(metadata_bytes.decode("utf-8"))
-        return self._validate_metadata(metadata, str(bundle_path)), embeddings
+        metadata_list = self._validate_metadata(metadata, str(bundle_path))
+        log_event(
+            "rag_bundle_loaded",
+            path=str(bundle_path),
+            docs=len(metadata_list),
+            embeddings=int(embeddings.shape[0]),
+            verified=bool(verify_hash),
+        )
+        return metadata_list, embeddings
 
     def _verify_bundle_hash(self, bundle_path: Path) -> None:
+(self, bundle_path: Path) -> None:
         hash_path = bundle_path.with_suffix(".sha256")
         if not hash_path.exists():
             raise FileNotFoundError(f"Missing hash file for bundle: {hash_path}")
@@ -119,10 +141,10 @@ class RAG:
     def _load_embeddings(self, path: str) -> np.ndarray:
         normalized_path = os.path.expanduser(path)
         lower_path = normalized_path.lower()
+
         if lower_path.endswith(".npy"):
-            arr = np.load(normalized_path, allow_pickle=False)
-            return self._validate_embedding_array(arr, normalized_path)
-        if lower_path.endswith(".npz"):
+            data = np.load(normalized_path, allow_pickle=False)
+        elif lower_path.endswith(".npz"):
             with np.load(normalized_path, allow_pickle=False) as data:
                 if "embeddings" in data.files:
                     candidate = data["embeddings"]
@@ -132,24 +154,21 @@ class RAG:
                     raise ValueError(
                         "NPZ embeddings must contain an 'embeddings' array or a single unnamed array"
                     )
-            return self._validate_embedding_array(candidate, normalized_path)
-        if lower_path.endswith(".json") or lower_path.endswith(".ndjson"):
+            data = candidate
+        elif lower_path.endswith(".json") or lower_path.endswith(".ndjson"):
             with open(normalized_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
-            return self._validate_embedding_array(payload, normalized_path)
+            data = payload
+        else:
+            raise ValueError(
+                "Unsupported embeddings file type. Expected .npy/.npz/.json/.ndjson. "
+                "Pickle-based formats are not allowed."
+            )
 
-        raise ValueError(
-            "Unsupported embeddings file type. Expected .npy/.npz/.json/.ndjson. "
-            "Pickle-based formats are not allowed."
-        )
-
-    @staticmethod
-    def _validate_embedding_array(data: Any, source: str) -> np.ndarray:
-        arr = np.asarray(data)
-        if arr.dtype == object or not np.issubdtype(arr.dtype, np.number):
-            raise ValueError(f"Embedding data in {source} must be numeric; got dtype {arr.dtype}")
-        if arr.ndim == 1:
-            arr = arr.reshape(1, -1)
+        arr = self._validate_embedding_array(data, normalized_path)
+        rows = int(arr.shape[0]) if arr.ndim >= 1 else len(arr)
+        dims = int(arr.shape[1]) if arr.ndim >= 2 else 0
+        log_event("rag_embeddings_loaded", path=normalized_path, rows=rows, dims=dims)
         return arr
 
     def _load_metadata(self, path: str) -> List[Dict[str, Any]]:
@@ -162,12 +181,10 @@ class RAG:
                 payload: Any = df.to_dict(orient="records")
             except Exception as e:
                 raise RuntimeError("Failed to load parquet metadata: " + str(e)) from e
-            return self._validate_metadata(payload, normalized_path)
-        if normalized_path.endswith(".json") or normalized_path.endswith(".ndjson"):
+        elif normalized_path.endswith(".json") or normalized_path.endswith(".ndjson"):
             with open(normalized_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
-            return self._validate_metadata(payload, normalized_path)
-        if normalized_path.endswith(".csv"):
+        elif normalized_path.endswith(".csv"):
             try:
                 import csv
 
@@ -176,10 +193,15 @@ class RAG:
                     reader = csv.DictReader(f)
                     for r in reader:
                         rows.append(dict(r))
+                payload = rows
             except Exception as e:
                 raise RuntimeError("Failed to load csv metadata: " + str(e)) from e
-            return self._validate_metadata(rows, normalized_path)
-        raise ValueError("Unsupported metadata file type. Expected .json/.ndjson/.csv/.parquet")
+        else:
+            raise ValueError("Unsupported metadata file type. Expected .json/.ndjson/.csv/.parquet")
+
+        metadata = self._validate_metadata(payload, normalized_path)
+        log_event("rag_metadata_loaded", path=normalized_path, docs=len(metadata))
+        return metadata
 
     @staticmethod
     def _validate_metadata(payload: Any, source: str) -> List[Dict[str, Any]]:
@@ -215,6 +237,12 @@ class RAG:
         for i in idx:
             meta = self.metadata[i] if i < len(self.metadata) else {"id": int(i)}
             results.append((meta, float(sims[i])))
+        log_event(
+            "rag_retrieve",
+            top_k=top_k,
+            returned=len(results),
+            docs_available=int(self.embeddings.shape[0]),
+        )
         return results
 
     def retrieve_by_text(
@@ -263,13 +291,18 @@ class RAG:
         model: str = "nous-hermes:13b-q4_0",
     ) -> str:
         payload = {"model": model, "prompt": prompt, "stream": False}
+        log_event("rag_generate_request", model=model, url=ollama_url)
         try:
             r = requests.post(ollama_url, json=payload, timeout=60)
             if r.status_code == 200:
-                return r.json().get("response", "").strip()
-            else:
-                return f"Ollama error: HTTP {r.status_code}"
+                response = r.json().get("response", "").strip()
+                log_event("rag_generate_response", model=model, status="ok", length=len(response))
+                return response
+            msg = f"Ollama error: HTTP {r.status_code}"
+            log_event("rag_generate_response", model=model, status="http_error", code=int(r.status_code))
+            return msg
         except requests.RequestException as e:
+            log_event("rag_generate_response", model=model, status="exception", error=str(e))
             return f"Ollama request failed: {e}"
 
     def answer(
@@ -287,10 +320,28 @@ class RAG:
             if embedder is None:
                 raise ValueError("Embedder callable required when query_embedding is absent")
             query_embedding = embedder(question)
+        fingerprint = hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
+        log_event(
+            "rag_answer",
+            question=fingerprint,
+            top_k=top_k,
+            embedder_supplied=bool(embedder),
+            query_supplied=query_embedding is not None,
+        )
         retrieved = self.retrieve_by_embedding(query_embedding, top_k=top_k)
+        log_event("rag_retrieved_docs", question=fingerprint, count=len(retrieved))
         prompt = self.build_prompt(question, retrieved)
         response = self.generate_with_ollama(prompt, ollama_url=ollama_url, model=model)
+        status = "ok" if response and not response.lower().startswith("ollama error") else "error"
+        log_event(
+            "rag_answer_complete",
+            question=fingerprint,
+            status=status,
+            length=len(response),
+        )
         return {"response": response, "prompt": prompt, "retrieved": retrieved}
 
 
 # end
+
+

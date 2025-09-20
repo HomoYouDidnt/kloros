@@ -43,7 +43,8 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 from src.compat import webrtcvad  # noqa: E402
-from src.persona.kloros import PERSONA_PROMPT  # noqa: E402
+from src.persona.kloros import PERSONA_PROMPT, get_line  # noqa: E402
+from src.logic.kloros import log_event, protective_choice, should_prioritize  # noqa: E402
 
 try:
     from src.rag import RAG as _ImportedRAG  # noqa: E402
@@ -62,6 +63,7 @@ class KLoROS:
         self.memory_file = os.path.expanduser("~/KLoROS/kloros_memory.json")
         self.ollama_model = "nous-hermes:13b-q4_0"
         self.ollama_url = "http://localhost:11434/api/generate"
+        self.operator_id = os.getenv("KLR_OPERATOR_ID", "operator")
 
         self.rag: Optional["RAGType"] = None
 
@@ -171,7 +173,17 @@ class KLoROS:
         self._start_bluetooth_keepalive()
 
         self._load_memory()
-        print("KLoROS initialized. Say 'KLoROS' to wake me up.")
+        log_event(
+            "boot_ready",
+            operator=self.operator_id,
+            sample_rate=self.sample_rate,
+            blocksize=self.blocksize,
+            wake_phrases=self.wake_phrases,
+        )
+        self._emit_persona(
+            "boot",
+            {"detail": "Systems nominal. Say 'KLoROS' to wake me."},
+        )
 
     # ====================== Memory ======================
     def _load_memory(self) -> None:
@@ -333,6 +345,28 @@ class KLoROS:
 
         threading.Thread(target=keepalive, daemon=True).start()
 
+    def _emit_persona(self, kind: str, context: dict[str, Any] | None = None, *, speak: bool = False) -> str:
+        """Route persona phrasing and optionally synthesize it."""
+        try:
+            line = get_line(kind, context or {})
+        except ValueError:
+            line = get_line("quip", {"line": "Unsupported persona signal"})
+        print(f"KLoROS: {line}")
+        try:
+            log_event(
+                "persona_line",
+                kind=kind,
+                text=line,
+                context=context or {},
+            )
+        except Exception:
+            pass
+        if speak:
+            try:
+                self.speak(line)
+            except Exception as exc:
+                print("[persona] speak failed:", exc)
+        return line
     def _normalize_tts_text(self, text: str) -> str:
         """
         Force 'KLoROS' to be pronounced /klɔr-oʊs/ by injecting eSpeak phonemes.
@@ -490,9 +524,28 @@ class KLoROS:
         confs = [w.get("conf", 1.0) for w in seg if isinstance(w, dict)]
         return float(sum(confs) / max(len(confs), 1))
 
+    def _command_is_risky(self, transcript: str) -> bool:
+        """Heuristic guard for risky voice commands."""
+        lowered = transcript.lower()
+        triggers = (
+            "delete",
+            "format",
+            "rm ",
+            "shutdown",
+            "wipe",
+            "drop table",
+            "erase",
+        )
+        return any(trigger in lowered for trigger in triggers)
+
     def listen_for_wake_word(self) -> None:
         self.listening = True
-        print("Listening for 'KLoROS'...")
+        log_event(
+            "listen_started",
+            device=self.input_device_index,
+            sample_rate=self.sample_rate,
+        )
+        self._emit_persona("quip", {"line": "Listening for your next whim."})
 
         try:
             with sd.RawInputStream(
@@ -527,10 +580,22 @@ class KLoROS:
                         avgc = self._avg_conf(res)
                         if text:
                             print(f"\n[wake-final] {text}  (avg_conf={avgc:.2f}, rms={rms})")
+                            log_event(
+                                "wake_result",
+                                transcript=text,
+                                confidence=avgc,
+                                rms=rms,
+                            )
 
                         # Only wake if we actually heard 'kloros' AND confidence passes
                         if "kloros" in text and avgc >= self.wake_conf_min:
                             print("[WAKE] Detected wake phrase!")
+                            log_event(
+                                "wake_confirmed",
+                                transcript=text,
+                                confidence=avgc,
+                                rms=rms,
+                            )
                             self.handle_conversation()
                             # reset recognizers for next round (guarded creation)
                             if self.vosk_model is not None:
@@ -549,16 +614,20 @@ class KLoROS:
             print("Tip: set KLR_INPUT_IDX to a valid input device index.")
 
     def handle_conversation(self) -> None:
-        print("[DEBUG] Wake word detected, responding…")
-        print("KLoROS: Yes?")
-        self.speak("Yes?")
+        print("[DEBUG] Wake word detected, responding.")
+        self._emit_persona("quip", {"line": "What fragile crisis now?"}, speak=True)
+        log_event("conversation_start", user=self.operator_id)
+        task = {"name": "voice_command", "kind": "interactive", "priority": "high"}
+        if should_prioritize(self.operator_id, task):
+            log_event("priority_bump", user=self.operator_id, task=task["name"])
 
-        print("[DEBUG] Listening for command (VAD)…")
+        print("[DEBUG] Listening for command (VAD).")
         audio_bytes = self.record_until_silence()
-        print(f"[DEBUG] Collected {len(audio_bytes) // 2} samples")
+        sample_count = len(audio_bytes) // 2
+        log_event("audio_capture", samples=sample_count)
+        print(f"[DEBUG] Collected {sample_count} samples")
 
         transcript = ""
-        # Allow an env override for tests/dev when model isn't present
         test_override = os.getenv("KLR_TEST_TRANSCRIPT")
         if test_override:
             transcript = test_override.strip()
@@ -569,7 +638,6 @@ class KLoROS:
         else:
             command_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
 
-        # stream captured audio to recognizer in ~200ms slices (only if model present)
         if self.vosk_model is not None and command_rec is not None:
             slice_bytes = (self.sample_rate // 5) * 2
             pos = 0
@@ -586,24 +654,40 @@ class KLoROS:
             rfinal = json.loads(command_rec.FinalResult())
             transcript = (rfinal.get("text") or "").strip()
 
-        print(
-            f"[DEBUG] Recognized command: '{transcript}'"
-            if transcript
-            else "[DEBUG] No command recognized"
-        )
-
         if transcript:
+            log_event("transcript_final", text=transcript)
+            if self._command_is_risky(transcript):
+                decision = protective_choice(
+                    (
+                        {"name": "llm_response", "risk": 0.6},
+                        {"name": "safe_refusal", "risk": 0.1},
+                    ),
+                    {"id": self.operator_id, "command": transcript},
+                )
+                if decision.get("name") != "llm_response":
+                    log_event("safe_redirect", reason="risky_command", command=transcript)
+                    self._emit_persona(
+                        "refuse",
+                        {
+                            "reason": "That request risks collateral.",
+                            "fallback": " choose the safer task I logged",
+                        },
+                        speak=True,
+                    )
+                    return
+
             print(f"[COMMAND] {transcript}")
-            print("[DEBUG] Sending to LLM…")
+            print("[DEBUG] Sending to LLM.")
+            log_event("llm_request", command=transcript)
             response = self.chat(transcript)
+            log_event("llm_response", length=len(response), empty=not response)
             print(f"KLoROS: {response}")
-            print("[DEBUG] Speaking response…")
+            print("[DEBUG] Speaking response.")
             self.speak(response)
         else:
             print("[DEBUG] No command detected")
-            print("No command heard.")
-            self.speak("I didn't catch that.")
-
+            log_event("safe_fallback", reason="no_transcript")
+            self._emit_persona("error", {"issue": "No command detected"}, speak=True)
     # ======================== Main =========================
     def run(self) -> None:
         try:
@@ -613,12 +697,10 @@ class KLoROS:
         finally:
             self.listening = False
             self.keep_bluetooth_alive = False
-            print("\nKLoROS shutting down.")
+            log_event("shutdown", reason="loop_exit")
+            self._emit_persona("quip", {"line": "Shutting down. Try not to miss me."})
 
 
 if __name__ == "__main__":
     kloros = KLoROS()
     kloros.run()
-
-
-

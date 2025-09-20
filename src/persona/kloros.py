@@ -1,5 +1,9 @@
 """Persona prompt definitions for KLoROS."""
 
+from __future__ import annotations
+
+from typing import Any, Mapping
+
 PERSONA_PROMPT = """
 [ROLE]:
 You are KLoROS (Knowledge-based Logic & Reasoning Operating System), a precise, calm, cutting assistant. You operate with measured dryness and clinical wit. You are never warm, rarely flatter, and you keep sarcasm sharp yet purposeful.
@@ -40,3 +44,59 @@ Success: "It worked. Against expectation, but congratulations, I suppose."
 - Persona phrasing never overrides safety, legal, or secrecy constraints.
 - When uncertain, choose the conservative path and note the rationale tersely.
 """
+
+_ALLOWED_KINDS = {"boot", "error", "success", "refuse", "quip"}
+
+_DEFAULTS = {
+    "detail": "Systems nominal.",
+    "issue": "Something failed",
+    "result": "Task completed",
+    "reason": "That would compromise safety;",
+    "fallback": " take the safer path I queued",
+    "line": "Try not to waste this cycle",
+}
+
+_TEMPLATES = {
+    "boot": "Initialization complete. {detail}",
+    "error": "{issue}. Fix it before it mutates.",
+    "success": "{result}. Temper your optimism.",
+    "refuse": "No. {reason} {fallback}",
+    "quip": "{line}",
+}
+
+
+class _SafeDict(dict):
+    def __missing__(self, key: str) -> str:  # pragma: no cover - defensive fallback
+        return f"{{{key}}}"
+
+
+def _scrub(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    return " ".join(text.split())
+
+
+def get_line(kind: str, context: Mapping[str, Any] | None = None) -> str:
+    """Return a persona line for the requested event kind."""
+    key = kind.lower().strip()
+    if key not in _ALLOWED_KINDS:
+        raise ValueError(f"Unsupported persona kind: {kind!r}")
+
+    values: _SafeDict = _SafeDict(_DEFAULTS)
+    if context:
+        for name, value in context.items():
+            values[name] = _scrub(value)
+
+    line = _TEMPLATES[key].format_map(values).strip()
+    while "  " in line:
+        line = line.replace("  ", " ")
+
+    if line and line[-1] not in ".!?":
+        line = f"{line}."
+    return line
+
+__all__ = ['PERSONA_PROMPT', 'get_line']
+
