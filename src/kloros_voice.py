@@ -45,6 +45,41 @@ if str(_repo_root) not in sys.path:
 from src.compat import webrtcvad  # noqa: E402
 from src.persona.kloros import PERSONA_PROMPT, get_line  # noqa: E402
 from src.logic.kloros import log_event, protective_choice, should_prioritize  # noqa: E402
+from src.fuzzy_wakeword import fuzzy_wake_match  # noqa: E402
+
+try:
+    from src.audio.calibration import load_profile  # noqa: E402
+except ImportError:
+    load_profile = None
+
+try:
+    from src.stt.base import create_stt_backend, SttBackend  # noqa: E402
+except ImportError:
+    create_stt_backend = None
+    SttBackend = None
+
+try:
+    from src.audio.vad import detect_voiced_segments, select_primary_segment  # noqa: E402
+except ImportError:
+    detect_voiced_segments = None
+    select_primary_segment = None
+
+try:
+    from src.tts.base import create_tts_backend, TtsBackend  # noqa: E402
+except ImportError:
+    create_tts_backend = None
+    TtsBackend = None
+
+try:
+    from src.core.turn import run_turn, new_trace_id  # noqa: E402
+except ImportError:
+    run_turn = None
+    new_trace_id = None
+
+try:
+    from src.reasoning.base import create_reasoning_backend  # noqa: E402
+except ImportError:
+    create_reasoning_backend = None
 
 try:
     from src.rag import RAG as _ImportedRAG  # noqa: E402
@@ -52,6 +87,18 @@ try:
     _RAGClass = _ImportedRAG
 except Exception:
     _RAGClass = None
+
+try:
+    from src.audio.capture import create_audio_backend, AudioInputBackend  # noqa: E402
+except ImportError:
+    create_audio_backend = None
+    AudioInputBackend = None
+
+try:
+    from src.logging.json_logger import create_logger_from_env, JsonFileLogger  # noqa: E402
+except ImportError:
+    create_logger_from_env = None
+    JsonFileLogger = None
 
 
 class KLoROS:
@@ -117,6 +164,28 @@ class KLoROS:
             f"[audio] input index={self.input_device_index}  SR={self.sample_rate}  block={self.blocksize}"
         )
 
+        # Audio capture backend configuration
+        self.audio_backend_name = os.getenv("KLR_AUDIO_BACKEND", "sounddevice")
+        self.audio_device_index = None
+        device_env = os.getenv("KLR_AUDIO_DEVICE_INDEX")
+        if device_env:
+            try:
+                self.audio_device_index = int(device_env)
+            except ValueError:
+                pass
+        if self.audio_device_index is None:
+            self.audio_device_index = self.input_device_index
+
+        self.audio_sample_rate = int(os.getenv("KLR_AUDIO_SAMPLE_RATE", str(self.sample_rate)))
+        self.audio_block_ms = int(os.getenv("KLR_AUDIO_BLOCK_MS", "30"))
+        self.audio_channels = int(os.getenv("KLR_AUDIO_CHANNELS", "1"))
+        self.audio_ring_secs = float(os.getenv("KLR_AUDIO_RING_SECS", "2.0"))
+        self.audio_warmup_ms = int(os.getenv("KLR_AUDIO_WARMUP_MS", "200"))
+        self.enable_wakeword = int(os.getenv("KLR_ENABLE_WAKEWORD", "1"))
+
+        # Audio backend will be initialized later
+        self.audio_backend: Optional[AudioInputBackend] = None
+
         # -------------------- Models --------------------
         self.piper_model = os.path.expanduser("~/kloros_models/piper/glados_piper_medium.onnx")
         self.piper_config = os.path.expanduser(
@@ -141,6 +210,45 @@ class KLoROS:
         # thresholds you can tune via env
         self.wake_conf_min = float(os.getenv("KLR_WAKE_CONF_MIN", "0.65"))  # 0.0–1.0
         self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))  # 16-bit RMS energy gate
+        self.fuzzy_threshold = float(os.getenv("KLR_FUZZY_THRESHOLD", "0.8"))  # fuzzy matching threshold
+        self.wake_debounce_ms = int(os.getenv("KLR_WAKE_DEBOUNCE_MS", "400"))  # debounce within utterance
+        self.wake_cooldown_ms = int(os.getenv("KLR_WAKE_COOLDOWN_MS", "2000"))  # cooldown between wakes
+        self._last_wake_ms = 0
+        self._last_emit_ms = 0
+
+        # Calibration-derived thresholds (will be set by _load_calibration_profile)
+        self.vad_threshold_dbfs = None  # VAD threshold in dBFS, if calibrated
+        self.agc_gain_db = 0.0  # AGC gain in dB, if calibrated
+
+        # STT configuration
+        self.enable_stt = int(os.getenv("KLR_ENABLE_STT", "0"))
+        self.stt_backend_name = os.getenv("KLR_STT_BACKEND", "mock")
+        self.stt_lang = os.getenv("KLR_STT_LANG", "en-US")
+        self.max_turn_seconds = float(os.getenv("KLR_MAX_TURN_SECONDS", "30.0"))
+        self.stt_backend = None  # Will be initialized later if needed
+
+        # VAD configuration
+        self.vad_use_calibration = int(os.getenv("KLR_VAD_USE_CALIBRATION", "1"))
+        self.vad_threshold_dbfs_fallback = float(os.getenv("KLR_VAD_THRESHOLD_DBFS", "-48.0"))
+        self.vad_frame_ms = int(os.getenv("KLR_VAD_FRAME_MS", "30"))
+        self.vad_hop_ms = int(os.getenv("KLR_VAD_HOP_MS", "10"))
+        self.vad_attack_ms = int(os.getenv("KLR_VAD_ATTACK_MS", "50"))
+        self.vad_release_ms = int(os.getenv("KLR_VAD_RELEASE_MS", "200"))
+        self.vad_min_active_ms = int(os.getenv("KLR_VAD_MIN_ACTIVE_MS", "200"))
+        self.vad_margin_db = float(os.getenv("KLR_VAD_MARGIN_DB", "2.0"))
+        self.log_vad_frames = int(os.getenv("KLR_LOG_VAD_FRAMES", "0"))
+
+        # TTS configuration
+        self.enable_tts = int(os.getenv("KLR_ENABLE_TTS", "1"))
+        self.tts_backend_name = os.getenv("KLR_TTS_BACKEND", "piper")
+        self.tts_sample_rate = int(os.getenv("KLR_TTS_SAMPLE_RATE", "22050"))
+        self.tts_out_dir = os.getenv("KLR_TTS_OUT_DIR")
+        self.fail_open_tts = int(os.getenv("KLR_FAIL_OPEN_TTS", "1"))
+        self.tts_backend = None  # Will be initialized later if needed
+
+        # Reasoning configuration
+        self.reason_backend_name = os.getenv("KLR_REASON_BACKEND", "mock")
+        self.reason_backend = None  # Will be initialized later if needed
 
         self.wake_grammar = json.dumps(self.wake_phrases + ["[unk]"])
         # Create recognizers only if the model loaded successfully
@@ -173,6 +281,12 @@ class KLoROS:
         self._start_bluetooth_keepalive()
 
         self._load_memory()
+        self._load_calibration_profile()
+        self._init_json_logger()
+        self._init_stt_backend()
+        self._init_tts_backend()
+        self._init_reasoning_backend()
+        self._init_audio_backend()
         log_event(
             "boot_ready",
             operator=self.operator_id,
@@ -206,6 +320,170 @@ class KLoROS:
                 json.dump(data, f, indent=2)
         except Exception as e:
             print("[mem] save failed:", e)
+
+    def _load_calibration_profile(self) -> None:
+        """Load microphone calibration profile if available."""
+        if load_profile is None:
+            return  # Calibration module not available
+
+        try:
+            profile = load_profile()
+            if profile is not None:
+                self.vad_threshold_dbfs = profile.vad_threshold_dbfs
+                self.agc_gain_db = profile.agc_gain_db
+
+                log_event(
+                    "calibration_profile_loaded",
+                    vad_threshold_dbfs=profile.vad_threshold_dbfs,
+                    agc_gain_db=profile.agc_gain_db,
+                    noise_floor_dbfs=profile.noise_floor_dbfs,
+                    speech_rms_dbfs=profile.speech_rms_dbfs,
+                    spectral_tilt=profile.spectral_tilt,
+                    recommended_wake_conf_min=profile.recommended_wake_conf_min,
+                )
+                print(f"[calib] Loaded profile: VAD={profile.vad_threshold_dbfs:.1f}dBFS, AGC={profile.agc_gain_db:.1f}dB")
+        except Exception as e:
+            print(f"[calib] Failed to load profile: {e}")
+
+    def _get_vad_threshold(self) -> float:
+        """Resolve VAD threshold: calibration profile or environment fallback."""
+        if (self.vad_use_calibration and
+            self.vad_threshold_dbfs is not None):
+            return self.vad_threshold_dbfs
+        return self.vad_threshold_dbfs_fallback
+
+    def _init_stt_backend(self) -> None:
+        """Initialize STT backend if enabled."""
+        if not self.enable_stt or create_stt_backend is None:
+            return
+
+        try:
+            # Try to create the requested backend
+            self.stt_backend = create_stt_backend(self.stt_backend_name)
+            print(f"[stt] Initialized {self.stt_backend_name} backend")
+        except Exception as e:
+            print(f"[stt] Failed to initialize {self.stt_backend_name} backend: {e}")
+
+            # Fallback to mock backend if primary backend fails
+            if self.stt_backend_name != "mock":
+                try:
+                    self.stt_backend = create_stt_backend("mock")
+                    print("[stt] Falling back to mock backend")
+                except Exception as fallback_e:
+                    print(f"[stt] Fallback to mock backend also failed: {fallback_e}")
+                    self.stt_backend = None
+
+    def _init_tts_backend(self) -> None:
+        """Initialize TTS backend if enabled."""
+        if not self.enable_tts or create_tts_backend is None:
+            return
+
+        try:
+            self.tts_backend = create_tts_backend(
+                self.tts_backend_name,
+                out_dir=self.tts_out_dir
+            )
+            print(f"[tts] Initialized {self.tts_backend_name} backend")
+        except Exception as e:
+            print(f"[tts] Failed to initialize {self.tts_backend_name} backend: {e}")
+
+            # Try fallback to mock if not already using mock
+            if self.tts_backend_name != "mock":
+                try:
+                    self.tts_backend = create_tts_backend("mock", out_dir=self.tts_out_dir)
+                    print("[tts] Falling back to mock backend")
+                except Exception as fallback_e:
+                    print(f"[tts] Fallback to mock backend also failed: {fallback_e}")
+                    self.tts_backend = None
+
+    def _init_reasoning_backend(self) -> None:
+        """Initialize reasoning backend if available."""
+        if create_reasoning_backend is None:
+            print("[reasoning] Reasoning module unavailable; using fallback")
+            return
+
+        try:
+            self.reason_backend = create_reasoning_backend(self.reason_backend_name)
+            print(f"[reasoning] Initialized {self.reason_backend_name} backend")
+        except Exception as e:
+            print(f"[reasoning] Failed to initialize {self.reason_backend_name} backend: {e}")
+
+            # Try fallback to mock if not already using mock
+            if self.reason_backend_name != "mock":
+                try:
+                    self.reason_backend = create_reasoning_backend("mock")
+                    print("[reasoning] Falling back to mock backend")
+                    self._log_event("reason_backend_fallback",
+                                   requested=self.reason_backend_name,
+                                   fallback="mock",
+                                   error=str(e))
+                except Exception as fallback_e:
+                    print(f"[reasoning] Fallback to mock backend also failed: {fallback_e}")
+                    self.reason_backend = None
+
+    def _init_audio_backend(self) -> None:
+        """Initialize audio capture backend with fallback to mock."""
+        if create_audio_backend is None:
+            print("[audio] Audio capture module unavailable; using legacy audio")
+            return
+
+        try:
+            self.audio_backend = create_audio_backend(self.audio_backend_name)
+            self.audio_backend.open(
+                sample_rate=self.audio_sample_rate,
+                channels=self.audio_channels,
+                device=self.audio_device_index
+            )
+
+            # Warmup period
+            if self.audio_warmup_ms > 0:
+                print(f"[audio] Warming up for {self.audio_warmup_ms}ms...")
+                time.sleep(self.audio_warmup_ms / 1000.0)
+
+            print(f"[audio] Initialized {self.audio_backend_name} backend")
+
+        except Exception as e:
+            print(f"[audio] Failed to initialize {self.audio_backend_name} backend: {e}")
+
+            # Try fallback to mock if not already using mock
+            if self.audio_backend_name != "mock":
+                try:
+                    self.audio_backend = create_audio_backend("mock")
+                    self.audio_backend.open(
+                        sample_rate=self.audio_sample_rate,
+                        channels=self.audio_channels,
+                        device=None
+                    )
+                    print("[audio] Falling back to mock backend")
+                    self._log_event("audio_backend_fallback",
+                                   requested=self.audio_backend_name,
+                                   fallback="mock",
+                                   error=str(e))
+                except Exception as fallback_e:
+                    print(f"[audio] Fallback to mock backend also failed: {fallback_e}")
+                    self.audio_backend = None
+
+    def _init_json_logger(self) -> None:
+        """Initialize JSON file logger."""
+        if create_logger_from_env is None:
+            print("[logging] JSON logger module unavailable; using print fallback")
+            self.json_logger = None
+            return
+
+        try:
+            self.json_logger = create_logger_from_env()
+            print(f"[logging] JSON logger initialized: {self.json_logger.log_dir}")
+        except Exception as e:
+            print(f"[logging] Failed to initialize JSON logger: {e}")
+            self.json_logger = None
+
+    def _log_event(self, name: str, **payload) -> None:
+        """Log event using JSON logger if available, otherwise fallback to original."""
+        if self.json_logger:
+            self.json_logger.log_event(name, payload)
+        else:
+            # Fallback to original log_event
+            log_event(name, **payload)
 
     # ======================== LLM =======================
     def chat(self, user_message: str) -> str:
@@ -375,7 +653,7 @@ class KLoROS:
         return re.sub(r"\bkloros\b", "[[ 'klOroUs ]]", text, flags=re.IGNORECASE)
 
     def speak(self, text: str) -> None:
-        """Synthesize and play speech via Piper."""
+        """Synthesize and play speech via TTS backend."""
         # wake/unsuspend sink and run a longer primer before speaking
         self._unsuspend_sink()
         self._play_silence(0.35)
@@ -383,35 +661,47 @@ class KLoROS:
 
         text = self._normalize_tts_text(text)
 
-        # Allow explicit override for the piper executable for dev/test environments
-        # If KLR_PIPER_EXE is set explicitly, prefer it even if the path doesn't exist (tests may monkeypatch subprocess.run).
-        env_piper = os.getenv("KLR_PIPER_EXE")
-        discovered_piper = shutil.which("piper") or os.path.expanduser("~/venvs/kloros/bin/piper")
-        piper_exe = env_piper if env_piper is not None else discovered_piper
-        # If we discovered an executable, ensure it exists. If only env override is provided, trust the override (for tests/dev).
-        if not piper_exe or (env_piper is None and not os.path.exists(piper_exe)):
-            print("[TTS] Piper executable not found; skipping TTS. Set KLR_PIPER_EXE to override.")
-            return
-        if not os.path.exists(self.piper_model):
-            print("[TTS] Piper model not found:", self.piper_model)
-            return
-
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            out_path = tmp.name
+        if not self.enable_tts or self.tts_backend is None:
+            if self.fail_open_tts:
+                print(f"[TTS] Backend unavailable; printing to console: {text}")
+                return
+            else:
+                print("[TTS] Backend unavailable and fail_open disabled")
+                return
 
         try:
-            cmd = [piper_exe, "--model", self.piper_model, "--output_file", out_path]
-            if os.path.exists(self.piper_config):
-                cmd += ["--config", self.piper_config]
-            # Only attempt to invoke system audio playback on Linux hosts.
-            subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, check=False)
+            # Synthesize audio using TTS backend
+            result = self.tts_backend.synthesize(
+                text,
+                sample_rate=self.tts_sample_rate,
+                voice=os.getenv("KLR_PIPER_VOICE"),
+                out_dir=self.tts_out_dir
+            )
+
+            # Log TTS completion
+            log_event(
+                "tts_done",
+                audio_path=result.audio_path,
+                duration_s=result.duration_s,
+                sample_rate=result.sample_rate,
+                voice=result.voice
+            )
+
+            print(f"[TTS] Synthesized: {result.audio_path} ({result.duration_s:.2f}s)")
+
+            # Play audio on Linux hosts
             if platform.system() == "Linux":
-                subprocess.run(["aplay", out_path], capture_output=True, check=False)
-        finally:
-            try:
-                os.unlink(out_path)
-            except Exception:
-                pass
+                try:
+                    subprocess.run(["aplay", result.audio_path], capture_output=True, check=False)
+                except Exception as e:
+                    print(f"[TTS] Audio playback failed: {e}")
+
+        except Exception as e:
+            print(f"[TTS] Synthesis failed: {e}")
+            if self.fail_open_tts:
+                print(f"[TTS] Falling back to console: {text}")
+            else:
+                print("[TTS] Fail_open disabled; no fallback")
 
     # ================== Input / STT side =================
     def audio_callback(self, indata, frames, _time_info, status) -> None:
@@ -538,6 +828,93 @@ class KLoROS:
         )
         return any(trigger in lowered for trigger in triggers)
 
+    def _process_audio_chunks(self) -> None:
+        """Process audio using the new chunked capture system."""
+        if self.audio_backend is None:
+            print("[audio] No audio backend available, falling back to legacy method")
+            self.listen_for_wake_word()
+            return
+
+        self.listening = True
+        log_event(
+            "chunk_listen_started",
+            backend=self.audio_backend_name,
+            sample_rate=self.audio_sample_rate,
+            block_ms=self.audio_block_ms,
+        )
+        self._emit_persona("quip", {"line": "Listening with chunked audio capture."})
+
+        try:
+            # Accumulate chunks for processing
+            chunk_buffer = []
+            buffer_duration_s = 1.5  # Accumulate ~1.5 seconds of audio before processing
+            target_chunks = int(buffer_duration_s * 1000 / self.audio_block_ms)
+
+            for chunk in self.audio_backend.chunks(self.audio_block_ms):
+                if not self.listening:
+                    break
+
+                chunk_buffer.append(chunk)
+
+                # When we have enough chunks, process as a turn
+                if len(chunk_buffer) >= target_chunks:
+                    # Combine chunks into single audio buffer
+                    audio_buffer = np.concatenate(chunk_buffer)
+
+                    # Only process if we have reasonable audio energy
+                    rms = np.sqrt(np.mean(audio_buffer ** 2))
+                    if rms > 0.001:  # Basic energy gate for float32 audio
+                        try:
+                            # Use the turn orchestrator if available
+                            if run_turn is not None and self.stt_backend is not None:
+                                # Create reasoning function
+                                def reason_fn(transcript: str) -> str:
+                                    if self.reason_backend:
+                                        result = self.reason_backend.reply(transcript)
+                                        return result.reply_text
+                                    else:
+                                        return self.chat(transcript)
+
+                                # Get VAD threshold
+                                vad_threshold = self._get_vad_threshold()
+
+                                # Run the turn
+                                turn_result = run_turn(
+                                    audio=audio_buffer,
+                                    sample_rate=self.audio_sample_rate,
+                                    stt=self.stt_backend,
+                                    reason_fn=reason_fn,
+                                    tts=self.tts_backend,
+                                    vad_threshold_dbfs=vad_threshold,
+                                    max_turn_seconds=self.max_turn_seconds,
+                                    logger=self.json_logger if self.json_logger else None
+                                )
+
+                                if turn_result.ok:
+                                    print(f"[turn] Successful turn: '{turn_result.transcript}' -> '{turn_result.reply_text}'")
+                                    self._log_event("turn_completed",
+                                                   transcript=turn_result.transcript,
+                                                   reply=turn_result.reply_text,
+                                                   timings=turn_result.timings_ms)
+                                else:
+                                    print(f"[turn] Turn failed: {turn_result.reason}")
+
+                        except Exception as e:
+                            print(f"[turn] Error processing audio: {e}")
+
+                    # Reset buffer
+                    chunk_buffer = []
+
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            print(f"[audio] Chunked processing error: {e}")
+            # Fall back to legacy method
+            self.listen_for_wake_word()
+        finally:
+            if self.audio_backend:
+                self.audio_backend.close()
+
     def listen_for_wake_word(self) -> None:
         self.listening = True
         log_event(
@@ -587,15 +964,26 @@ class KLoROS:
                                 rms=rms,
                             )
 
-                        # Only wake if we actually heard 'kloros' AND confidence passes
-                        if "kloros" in text and avgc >= self.wake_conf_min:
+                        # Fuzzy wake-word matching with debounce/cooldown
+                        is_match, score, phrase = fuzzy_wake_match(
+                            text,
+                            self.wake_phrases,
+                            threshold=self.fuzzy_threshold
+                        )
+                        now_ms = time.monotonic() * 1000
+                        if (is_match and avgc >= self.wake_conf_min
+                            and (now_ms - self._last_wake_ms) > self.wake_cooldown_ms
+                            and (now_ms - self._last_emit_ms) > self.wake_debounce_ms):
                             print("[WAKE] Detected wake phrase!")
                             log_event(
                                 "wake_confirmed",
                                 transcript=text,
+                                matched_phrase=phrase,
+                                fuzzy_score=score,
                                 confidence=avgc,
                                 rms=rms,
                             )
+                            self._last_wake_ms = now_ms
                             self.handle_conversation()
                             # reset recognizers for next round (guarded creation)
                             if self.vosk_model is not None:
@@ -613,6 +1001,48 @@ class KLoROS:
             print("\n[audio] failed to open input stream:", e)
             print("Tip: set KLR_INPUT_IDX to a valid input device index.")
 
+    def _create_reason_function(self):
+        """Create a reasoning function for the turn orchestrator."""
+        def reason_fn(transcript: str) -> str:
+            """Generate response from transcript using reasoning backend or fallback."""
+            if not transcript:
+                return ""
+
+            # Apply existing safety checks
+            if self._command_is_risky(transcript):
+                decision = protective_choice(
+                    (
+                        {"name": "llm_response", "risk": 0.6},
+                        {"name": "safe_refusal", "risk": 0.1},
+                    ),
+                    {"id": self.operator_id, "command": transcript},
+                )
+                if decision.get("name") != "llm_response":
+                    log_event("safe_redirect", reason="risky_command", command=transcript)
+                    return "That request risks collateral. Choose the safer task I logged."
+
+            # Use reasoning backend if available
+            if self.reason_backend is not None:
+                try:
+                    result = self.reason_backend.reply(transcript)
+                    # Store sources for later logging (the orchestrator will log them)
+                    # We'll modify the orchestrator to handle this
+                    self._last_reasoning_sources = getattr(result, 'sources', [])
+                    return result.reply_text
+                except Exception as e:
+                    log_event("reasoning_error", error=str(e))
+                    # Fall through to legacy chat method
+
+            # Fallback to existing chat method
+            try:
+                self._last_reasoning_sources = []  # No sources for legacy method
+                return self.chat(transcript)
+            except Exception as e:
+                log_event("llm_error", error=str(e))
+                return "I encountered an error processing your request."
+
+        return reason_fn
+
     def handle_conversation(self) -> None:
         print("[DEBUG] Wake word detected, responding.")
         self._emit_persona("quip", {"line": "What fragile crisis now?"}, speak=True)
@@ -627,78 +1057,120 @@ class KLoROS:
         log_event("audio_capture", samples=sample_count)
         print(f"[DEBUG] Collected {sample_count} samples")
 
-        transcript = ""
+        # Convert audio to float32 numpy array
+        audio_array = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32767.0
+
+        # Check for test override
         test_override = os.getenv("KLR_TEST_TRANSCRIPT")
         if test_override:
+            print(f"[TEST] Using transcript override: {test_override}")
+            # For test override, create a simple response and speak it
             transcript = test_override.strip()
+            response = self.chat(transcript) if transcript else ""
+            if response:
+                print(f"KLoROS: {response}")
+                self.speak(response)
+            return
 
-        command_rec = None
-        if self.vosk_model is None:
-            print("[STT] Vosk model not available; skipping recognition")
-        else:
-            command_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+        # Use turn orchestrator if available
+        if (run_turn is not None and self.stt_backend is not None and
+            self.enable_stt and detect_voiced_segments is not None):
 
-        if self.vosk_model is not None and command_rec is not None:
-            slice_bytes = (self.sample_rate // 5) * 2
-            pos = 0
-            while pos < len(audio_bytes):
-                part = audio_bytes[pos : pos + slice_bytes]
-                pos += slice_bytes
-                if command_rec.AcceptWaveform(part):
-                    r = json.loads(command_rec.Result())
-                    piece = (r.get("text") or "").strip()
-                    if piece:
-                        transcript = piece
+            try:
+                # Generate trace ID
+                trace_id = new_trace_id() if new_trace_id else str(int(time.time() * 1000))
 
-        if not transcript and command_rec is not None:
-            rfinal = json.loads(command_rec.FinalResult())
-            transcript = (rfinal.get("text") or "").strip()
+                # Create logger adapter that enhances reason_done events with sources
+                class LoggerAdapter:
+                    def __init__(self, voice_instance):
+                        self.voice = voice_instance
 
-        if transcript:
-            log_event("transcript_final", text=transcript)
-            if self._command_is_risky(transcript):
-                decision = protective_choice(
-                    (
-                        {"name": "llm_response", "risk": 0.6},
-                        {"name": "safe_refusal", "risk": 0.1},
-                    ),
-                    {"id": self.operator_id, "command": transcript},
+                    def log_event(self, name: str, **payload):
+                        # Enhance reason_done events with sources information
+                        if name == "reason_done" and hasattr(self.voice, '_last_reasoning_sources'):
+                            sources = getattr(self.voice, '_last_reasoning_sources', [])
+                            if sources:
+                                payload["sources_count"] = len(sources)
+                        log_event(name, **payload)
+
+                # Run orchestrated turn
+                summary = run_turn(
+                    audio_array,
+                    self.sample_rate,
+                    stt=self.stt_backend,
+                    reason_fn=self._create_reason_function(),
+                    tts=self.tts_backend if self.enable_tts else None,
+                    vad_threshold_dbfs=self._get_vad_threshold(),
+                    frame_ms=self.vad_frame_ms,
+                    hop_ms=self.vad_hop_ms,
+                    attack_ms=self.vad_attack_ms,
+                    release_ms=self.vad_release_ms,
+                    min_active_ms=self.vad_min_active_ms,
+                    margin_db=self.vad_margin_db,
+                    max_turn_seconds=self.max_turn_seconds,
+                    logger=LoggerAdapter(self),
+                    trace_id=trace_id
                 )
-                if decision.get("name") != "llm_response":
-                    log_event("safe_redirect", reason="risky_command", command=transcript)
-                    self._emit_persona(
-                        "refuse",
-                        {
-                            "reason": "That request risks collateral.",
-                            "fallback": " choose the safer task I logged",
-                        },
-                        speak=True,
-                    )
-                    return
 
-            print(f"[COMMAND] {transcript}")
-            print("[DEBUG] Sending to LLM.")
-            log_event("llm_request", command=transcript)
-            response = self.chat(transcript)
-            log_event("llm_response", length=len(response), empty=not response)
-            print(f"KLoROS: {response}")
-            print("[DEBUG] Speaking response.")
-            self.speak(response)
+                print(f"[TURN] {summary.trace_id}: {summary.reason}")
+
+                if summary.ok and summary.reply_text:
+                    print(f"[TRANSCRIPT] {summary.transcript}")
+                    print(f"KLoROS: {summary.reply_text}")
+
+                    # Play audio if TTS was successful
+                    if summary.tts and summary.tts.audio_path:
+                        # Audio already synthesized by orchestrator
+                        if platform.system() == "Linux":
+                            try:
+                                subprocess.run(["aplay", summary.tts.audio_path],
+                                             capture_output=True, check=False)
+                            except Exception as e:
+                                print(f"[TTS] Audio playback failed: {e}")
+                    elif summary.reply_text:
+                        # Fallback to speak method if no TTS result
+                        self.speak(summary.reply_text)
+
+                elif not summary.ok:
+                    if summary.reason == "no_voice":
+                        print("[DEBUG] No voice activity detected")
+                        self._emit_persona("error", {"issue": "No command detected"}, speak=True)
+                    elif summary.reason == "timeout":
+                        print("[DEBUG] Turn timed out")
+                        self._emit_persona("error", {"issue": "Request took too long"}, speak=True)
+                    else:
+                        print(f"[DEBUG] Turn failed: {summary.reason}")
+                        self._emit_persona("error", {"issue": "Processing failed"}, speak=True)
+
+            except Exception as e:
+                print(f"[TURN] Orchestrator failed: {e}")
+                log_event("turn_error", error=str(e))
+                self._emit_persona("error", {"issue": "System error"}, speak=True)
+
         else:
-            print("[DEBUG] No command detected")
-            log_event("safe_fallback", reason="no_transcript")
-            self._emit_persona("error", {"issue": "No command detected"}, speak=True)
+            # Fallback to legacy logic when orchestrator unavailable
+            print("[DEBUG] Using legacy conversation handling")
+            # This maintains backward compatibility for cases where orchestrator is not available
+            self._emit_persona("error", {"issue": "Voice processing unavailable"}, speak=True)
     # ======================== Main =========================
     def run(self) -> None:
         try:
-            self.listen_for_wake_word()
+            # Use chunked audio processing if wakeword is disabled and audio backend is available
+            if not self.enable_wakeword and self.audio_backend is not None:
+                self._process_audio_chunks()
+            else:
+                self.listen_for_wake_word()
         except KeyboardInterrupt:
             pass
         finally:
             self.listening = False
             self.keep_bluetooth_alive = False
-            log_event("shutdown", reason="loop_exit")
+            if self.audio_backend:
+                self.audio_backend.close()
+            self._log_event("shutdown", reason="loop_exit")
             self._emit_persona("quip", {"line": "Shutting down. Try not to miss me."})
+            if self.json_logger:
+                self.json_logger.close()
 
 
 if __name__ == "__main__":
