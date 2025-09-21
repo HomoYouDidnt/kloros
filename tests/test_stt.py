@@ -53,19 +53,20 @@ class TestSttFactory:
             create_stt_backend("unknown")
 
     def test_factory_vosk_missing_model_graceful(self):
-        """Test that Vosk backend fails gracefully when model is missing."""
-        # Test without model directory specified - expect library unavailable error first
-        with pytest.raises(RuntimeError, match="vosk library not available"):
-            create_stt_backend("vosk")
-
-        # Test with non-existent model directory - also fails on library unavailable
-        with pytest.raises(RuntimeError, match="vosk library not available"):
-            create_stt_backend("vosk", model_dir="/nonexistent/path")
-
-        # Test with environment variable pointing to non-existent path
-        with patch.dict(os.environ, {"KLR_VOSK_MODEL_DIR": "/another/nonexistent/path"}):
+        """Test that Vosk backend fails gracefully when library is missing."""
+        # Mock vosk import to fail
+        with patch.dict('sys.modules', {'vosk': None}):
             with pytest.raises(RuntimeError, match="vosk library not available"):
                 create_stt_backend("vosk")
+
+            # Test with non-existent model directory - also fails on library unavailable
+            with pytest.raises(RuntimeError, match="vosk library not available"):
+                create_stt_backend("vosk", model_dir="/nonexistent/path")
+
+            # Test with environment variable pointing to non-existent path
+            with patch.dict(os.environ, {"KLR_VOSK_MODEL_DIR": "/another/nonexistent/path"}):
+                with pytest.raises(RuntimeError, match="vosk library not available"):
+                    create_stt_backend("vosk")
 
 
 class TestMockBackend:
@@ -228,22 +229,22 @@ class TestVoskBackendImport:
 
     def test_vosk_import_failure_handling(self):
         """Test that Vosk backend fails gracefully when vosk is not installed."""
-        # Without vosk installed, we can't mock the import easily
-        # The actual behavior is tested in the factory tests
-        # Just verify that the library not available error is raised
-        with pytest.raises(RuntimeError, match="vosk library not available"):
-            create_stt_backend("vosk")
+        # Mock vosk import to fail
+        with patch.dict('sys.modules', {'vosk': None}):
+            with pytest.raises(RuntimeError, match="vosk library not available"):
+                create_stt_backend("vosk")
 
     def test_vosk_backend_construction_with_mock_vosk(self):
         """Test Vosk backend construction behavior with mocked vosk module."""
-        # We can't easily test the actual Vosk backend without installing vosk
-        # But we can test that the error messages are clear
-        with pytest.raises(RuntimeError, match="vosk library not available"):
-            create_stt_backend("vosk")
+        # Mock vosk import to fail to test error handling
+        with patch.dict('sys.modules', {'vosk': None}):
+            with pytest.raises(RuntimeError, match="vosk library not available"):
+                create_stt_backend("vosk")
 
         # Test with invalid path - still fails on library unavailable
-        with pytest.raises(RuntimeError, match="vosk library not available"):
-            create_stt_backend("vosk", model_dir="/invalid/path/to/model")
+        with patch.dict('sys.modules', {'vosk': None}):
+            with pytest.raises(RuntimeError, match="vosk library not available"):
+                create_stt_backend("vosk", model_dir="/invalid/path/to/model")
 
 
 class TestSttResultDataclass:

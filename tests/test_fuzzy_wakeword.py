@@ -95,9 +95,9 @@ class TestFuzzyWakeMatch:
 
     def test_threshold_boundary(self):
         """Test behavior around threshold boundaries."""
-        # Test with a string that should be right at the boundary
-        is_match_high, score_high, _ = fuzzy_wake_match("klros", ["kloros"], threshold=0.7)
-        is_match_low, score_low, _ = fuzzy_wake_match("klros", ["kloros"], threshold=0.9)
+        # Test with a string that should be right at the boundary (score ~0.8)
+        is_match_high, score_high, _ = fuzzy_wake_match("klro", ["kloros"], threshold=0.7)
+        is_match_low, score_low, _ = fuzzy_wake_match("klro", ["kloros"], threshold=0.9)
 
         # Should pass lower threshold but fail higher threshold
         assert score_high == score_low  # Same score
@@ -162,7 +162,7 @@ class TestFuzzyWakeMatch:
 
     def test_high_threshold(self):
         """Test with very high threshold to ensure fewer matches."""
-        is_match, score, phrase = fuzzy_wake_match("klros", ["kloros"], threshold=0.95)
+        is_match, score, phrase = fuzzy_wake_match("klro", ["kloros"], threshold=0.95)
         assert is_match is False  # Should not match with very high threshold
         assert score < 0.95
 
