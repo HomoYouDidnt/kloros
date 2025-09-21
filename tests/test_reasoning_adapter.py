@@ -37,21 +37,18 @@ class TestReasoningFactory:
             create_reasoning_backend("unknown")
 
     def test_local_backends_missing_module_graceful(self):
-        """Test that local backends handle missing modules gracefully."""
+        """Test that local backends fail gracefully when modules are missing."""
+        # Test RAG backend without rag module
+        # Mock LocalRagBackend constructor to raise ImportError
+        from src.reasoning.local_rag_backend import LocalRagBackend
+        with patch.object(LocalRagBackend, '__init__', side_effect=RuntimeError("rag backend unavailable")):
+            with pytest.raises(RuntimeError, match="rag backend unavailable"):
+                create_reasoning_backend("rag")
+
         # Test QA backend without QA module - this one should reliably fail
         with patch.dict('sys.modules', {'kloROS_accuracy_stack.pipeline.qa': None}):
             with pytest.raises(RuntimeError, match="qa backend unavailable"):
                 create_reasoning_backend("qa")
-
-        # For RAG backend - since rag module is available in this environment,
-        # verify that it can be created successfully
-        try:
-            backend = create_reasoning_backend("rag")
-            # Should be a LocalRagBackend instance
-            assert hasattr(backend, 'reply')
-        except RuntimeError as e:
-            # If it fails, it should be with a clear error message
-            assert "unavailable" in str(e)
 
 
 class TestMockBackend:
