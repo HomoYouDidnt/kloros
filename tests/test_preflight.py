@@ -66,8 +66,8 @@ class TestIndividualChecks:
 
     def test_writable_directories_fail(self):
         """Test writable directories check fails with permission error."""
-        # Use an invalid path to simulate permission error
-        with patch('pathlib.Path.home', return_value=Path("/invalid/nonexistent/path")):
+        # Mock mkdir to raise PermissionError
+        with patch('pathlib.Path.mkdir', side_effect=PermissionError("Permission denied")):
             status, name, details, meta = check_writable_directories()
             assert status == "FAIL"
             assert name == "directories"
@@ -75,7 +75,7 @@ class TestIndividualChecks:
 
     def test_calibration_missing_warn(self):
         """Test calibration check warns when profile is missing."""
-        with patch('src.audio.calibration.get_calibration_path', return_value="/nonexistent/path"):
+        with patch('src.audio.calibration.default_profile_path', return_value="/nonexistent/path"):
             status, name, details, meta = check_calibration_profile()
             assert status == "WARN"
             assert name == "calibration"
@@ -89,8 +89,8 @@ class TestIndividualChecks:
         mock_profile = MagicMock()
         mock_profile.vad_threshold_dbfs = -40.0
 
-        with patch('src.tools.preflight.get_calibration_path', return_value=str(calib_file)), \
-             patch('src.tools.preflight.load_profile', side_effect=json.JSONDecodeError("test", "test", 0)):
+        with patch('src.audio.calibration.default_profile_path', return_value=str(calib_file)), \
+             patch('src.audio.calibration.load_profile', side_effect=json.JSONDecodeError("test", "test", 0)):
             status, name, details, meta = check_calibration_profile()
             assert status == "FAIL"
             assert name == "calibration"
@@ -114,8 +114,8 @@ class TestIndividualChecks:
         mock_profile.noise_floor_dbfs = -60.0
         mock_profile.speech_rms_dbfs = -20.0
 
-        with patch('src.tools.preflight.get_calibration_path', return_value=str(calib_file)), \
-             patch('src.tools.preflight.load_profile', return_value=mock_profile):
+        with patch('src.audio.calibration.default_profile_path', return_value=str(calib_file)), \
+             patch('src.audio.calibration.load_profile', return_value=mock_profile):
             status, name, details, meta = check_calibration_profile()
             assert status == "PASS"
             assert name == "calibration"
@@ -136,8 +136,8 @@ class TestIndividualChecks:
         mock_profile.noise_floor_dbfs = -60.0
         mock_profile.speech_rms_dbfs = -20.0
 
-        with patch('src.tools.preflight.get_calibration_path', return_value=str(calib_file)), \
-             patch('src.tools.preflight.load_profile', return_value=mock_profile):
+        with patch('src.audio.calibration.default_profile_path', return_value=str(calib_file)), \
+             patch('src.audio.calibration.load_profile', return_value=mock_profile):
             status, name, details, meta = check_calibration_profile()
             assert status == "WARN"
             assert name == "calibration"
@@ -202,7 +202,7 @@ class TestIndividualChecks:
 
     def test_audio_backend_unavailable_warn(self):
         """Test audio backend check warns when sounddevice unavailable."""
-        with patch('builtins.__import__', side_effect=lambda name, *args: ImportError() if name == 'sounddevice' else __import__(name, *args)):
+        with patch.dict('sys.modules', {'sounddevice': None}):
             status, name, details, meta = check_audio_backend()
             assert status == "WARN"
             assert name == "audio"
@@ -227,11 +227,10 @@ class TestIndividualChecks:
         """Test STT backend check warns when vosk unavailable."""
         with patch.dict(os.environ, {"KLR_STT_BACKEND": "vosk"}):
             with patch.dict('sys.modules', {'vosk': None}):
-                with patch('src.tools.preflight.import vosk', side_effect=ImportError):
-                    status, name, details, meta = check_stt_backend()
-                    assert status == "WARN"
-                    assert name == "stt"
-                    assert meta["vosk_available"] is False
+                status, name, details, meta = check_stt_backend()
+                assert status == "WARN"
+                assert name == "stt"
+                assert meta["vosk_available"] is False
 
     def test_stt_backend_vosk_model_missing_warn(self, tmp_path):
         """Test STT backend check warns when vosk model missing."""
@@ -410,12 +409,12 @@ class TestOverallChecks:
         mock_result.timings_ms = {}
         mock_result.tts_path = "/tmp/test.wav"
 
-        with patch('src.tools.preflight.run_smoke', return_value=mock_result):
+        with patch('src.tools.system_smoke.run_smoke', return_value=mock_result):
             status, name, details, meta = check_system_smoke()
             assert status == "PASS"
 
         # Test failure
-        with patch('src.tools.preflight.run_smoke', side_effect=Exception("Test failure")):
+        with patch('src.tools.system_smoke.run_smoke', side_effect=Exception("Test failure")):
             status, name, details, meta = check_system_smoke()
             assert status == "FAIL"
 

@@ -1,0 +1,30 @@
+{
+  "question": "What does CoVe do?",
+  "graph": {
+    "nodes": [
+      {
+        "id": "CoVe",
+        "weight": 1.0
+      },
+      {
+        "id": "KLoROS",
+        "weight": 1.0
+      },
+      {
+        "id": "RAG",
+        "weight": 1.0
+      },
+      {
+        "id": "SLED",
+        "weight": 1.0
+      }
+    ],
+    "edges": [
+      {
+        "source": "KLoROS",
+        "target": "RAG",
+        "weight": 1.0
+      }
+    ]
+  }
+}
