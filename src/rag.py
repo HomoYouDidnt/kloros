@@ -213,6 +213,32 @@ class RAG:
             validated.append(item)
         return validated
 
+    @staticmethod
+    def _validate_embedding_array(payload: Any, source: str) -> np.ndarray:
+        """Validate and convert embeddings to numpy array."""
+        if not isinstance(payload, np.ndarray):
+            try:
+                arr = np.asarray(payload, dtype=np.float32)
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Could not convert embeddings in {source} to numpy array: {e}")
+        else:
+            arr = payload.astype(np.float32)
+
+        if arr.ndim not in (1, 2):
+            raise ValueError(f"Embeddings in {source} must be 1D or 2D array, got {arr.ndim}D")
+
+        if arr.ndim == 1:
+            # Single embedding vector, reshape to (1, D)
+            arr = arr.reshape(1, -1)
+
+        if arr.shape[0] == 0:
+            raise ValueError(f"Embeddings in {source} cannot be empty")
+
+        if arr.shape[1] == 0:
+            raise ValueError(f"Embedding dimension in {source} cannot be zero")
+
+        return arr
+
     # ----------------- math -----------------
     @staticmethod
     def _cosine_similarity(query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
