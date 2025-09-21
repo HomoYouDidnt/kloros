@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Protocol, Literal, Dict
+from typing import Dict, Literal, Optional, Protocol
 
 import numpy as np
 

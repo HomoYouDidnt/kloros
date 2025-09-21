@@ -8,7 +8,7 @@ from typing import Dict, List
 import numpy as np
 import pytest
 
-from src.core.turn import run_turn, new_trace_id, TurnSummary, JsonLogger
+from src.core.turn import new_trace_id, run_turn
 from src.stt.mock_backend import MockSttBackend
 from src.tts.mock_backend import MockTtsBackend
 
@@ -215,7 +215,6 @@ class TestTurnOrchestrator:
         """Test that turn times out appropriately."""
         # Create a reason function that takes time
         def slow_reason_fn(transcript: str) -> str:
-            import time
             time.sleep(0.05)  # Sleep for 50ms
             return "slow response"
 
@@ -373,7 +372,7 @@ class TestTurnOrchestrator:
         assert "total_ms" in summary.timings_ms
 
         # All timings should be positive
-        for stage, timing in summary.timings_ms.items():
+        for _stage, timing in summary.timings_ms.items():
             assert timing >= 0
 
         # Total should be greater than sum of parts (includes overhead)

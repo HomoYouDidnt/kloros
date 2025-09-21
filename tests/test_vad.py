@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.audio.vad import detect_voiced_segments, rms_dbfs, select_primary_segment, VADMetrics
+from src.audio.vad import detect_voiced_segments, rms_dbfs, select_primary_segment
 
 
 class TestVADHelpers:

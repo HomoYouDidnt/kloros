@@ -2,26 +2,22 @@
 
 import json
 import os
-import sys
-import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock, mock_open
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from src.tools.preflight import (
-    check_python_version,
-    check_writable_directories,
+    check_audio_backend,
     check_calibration_profile,
     check_env_sanity,
-    check_audio_backend,
+    check_python_version,
     check_stt_backend,
-    check_tts_backend,
     check_system_smoke,
-    run_all_checks,
+    check_tts_backend,
+    check_writable_directories,
     compute_overall_status,
-    write_json_summary
+    run_all_checks,
+    write_json_summary,
 )
 
 

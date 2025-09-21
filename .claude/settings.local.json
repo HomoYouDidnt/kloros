@@ -8,7 +8,10 @@
       "Read(//c/Users/morga/.kloros/**)",
       "Bash(set KLR_STT_BACKEND=mock)",
       "Bash(set KLR_AUDIO_SAMPLE_RATE=-1)",
-      "Bash(set KLR_LOG_STDOUT=0)"
+      "Bash(set KLR_LOG_STDOUT=0)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(ruff check:*)"
     ],
     "deny": [],
     "ask": []

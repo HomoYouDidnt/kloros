@@ -5,11 +5,11 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Dict, Protocol
+from typing import Callable, Dict, Optional, Protocol
 
 import numpy as np
 
-from src.audio.vad import detect_voiced_segments, select_primary_segment, VADMetrics
+from src.audio.vad import VADMetrics, detect_voiced_segments, select_primary_segment
 from src.stt.base import SttBackend, SttResult
 from src.tts.base import TtsBackend, TtsResult
 

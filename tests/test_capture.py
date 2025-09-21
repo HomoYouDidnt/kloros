@@ -1,17 +1,11 @@
 """Unit tests for audio capture backends."""
 
-import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-from src.audio.capture import (
-    create_audio_backend,
-    MockBackend,
-    RingBuffer,
-    AudioInputBackend
-)
+from src.audio.capture import MockBackend, RingBuffer, create_audio_backend
 
 
 class TestRingBuffer:
@@ -184,7 +178,7 @@ class TestMockBackend:
         assert len(chunks1) == len(chunks2)
 
         # Chunks should be identical
-        for c1, c2 in zip(chunks1, chunks2):
+        for c1, c2 in zip(chunks1, chunks2, strict=False):
             np.testing.assert_array_equal(c1, c2)
 
     def test_mock_loops_audio(self):

@@ -16,10 +16,8 @@ import os
 import platform
 import queue
 import re
-import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from datetime import datetime
@@ -43,9 +41,9 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 from src.compat import webrtcvad  # noqa: E402
-from src.persona.kloros import PERSONA_PROMPT, get_line  # noqa: E402
-from src.logic.kloros import log_event, protective_choice, should_prioritize  # noqa: E402
 from src.fuzzy_wakeword import fuzzy_wake_match  # noqa: E402
+from src.logic.kloros import log_event, protective_choice, should_prioritize  # noqa: E402
+from src.persona.kloros import PERSONA_PROMPT, get_line  # noqa: E402
 
 try:
     from src.audio.calibration import load_profile  # noqa: E402
@@ -53,7 +51,7 @@ except ImportError:
     load_profile = None
 
 try:
-    from src.stt.base import create_stt_backend, SttBackend  # noqa: E402
+    from src.stt.base import SttBackend, create_stt_backend  # noqa: E402
 except ImportError:
     create_stt_backend = None
     SttBackend = None
@@ -65,13 +63,13 @@ except ImportError:
     select_primary_segment = None
 
 try:
-    from src.tts.base import create_tts_backend, TtsBackend  # noqa: E402
+    from src.tts.base import TtsBackend, create_tts_backend  # noqa: E402
 except ImportError:
     create_tts_backend = None
     TtsBackend = None
 
 try:
-    from src.core.turn import run_turn, new_trace_id  # noqa: E402
+    from src.core.turn import new_trace_id, run_turn  # noqa: E402
 except ImportError:
     run_turn = None
     new_trace_id = None
@@ -89,13 +87,13 @@ except Exception:
     _RAGClass = None
 
 try:
-    from src.audio.capture import create_audio_backend, AudioInputBackend  # noqa: E402
+    from src.audio.capture import AudioInputBackend, create_audio_backend  # noqa: E402
 except ImportError:
     create_audio_backend = None
     AudioInputBackend = None
 
 try:
-    from src.logging.json_logger import create_logger_from_env, JsonFileLogger  # noqa: E402
+    from src.logging.json_logger import JsonFileLogger, create_logger_from_env  # noqa: E402
 except ImportError:
     create_logger_from_env = None
     JsonFileLogger = None

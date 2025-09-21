@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Protocol, Optional, Iterator, Literal
+from typing import Iterator, Literal, Optional, Protocol
 
 import numpy as np
 

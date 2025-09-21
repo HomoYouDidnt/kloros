@@ -220,7 +220,7 @@ class RAG:
             try:
                 arr = np.asarray(payload, dtype=np.float32)
             except (ValueError, TypeError) as e:
-                raise ValueError(f"Could not convert embeddings in {source} to numpy array: {e}")
+                raise ValueError(f"Could not convert embeddings in {source} to numpy array: {e}") from e
         else:
             arr = payload.astype(np.float32)
 

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import List, Tuple
+
 import numpy as np
 
 
@@ -79,9 +80,6 @@ def detect_voiced_segments(
         metrics = VADMetrics(dbfs, dbfs, 1, 0)
         return [], metrics
 
-    # Calculate number of frames
-    num_frames = (len(audio) - frame_samples) // hop_samples + 1
-
     # Create frames using stride tricks
     from numpy.lib.stride_tricks import sliding_window_view
     frames = sliding_window_view(audio, frame_samples)[::hop_samples]
@@ -136,7 +134,7 @@ def detect_voiced_segments(
         ends = np.where(diff == -1)[0]
 
         # Convert frame indices to sample indices
-        for start_frame, end_frame in zip(starts, ends):
+        for start_frame, end_frame in zip(starts, ends, strict=False):
             start_sample = start_frame * hop_samples
             end_sample = min(len(audio), end_frame * hop_samples + frame_samples)
 

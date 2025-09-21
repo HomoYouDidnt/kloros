@@ -1,9 +1,13 @@
 """Unit tests for fuzzy wake-word detection."""
 
 import os
-import pytest
 
-from src.fuzzy_wakeword import fuzzy_wake_match, levenshtein_similarity, token_similarity, phonetic_similarity
+from src.fuzzy_wakeword import (
+    fuzzy_wake_match,
+    levenshtein_similarity,
+    phonetic_similarity,
+    token_similarity,
+)
 
 
 class TestLevenshteinSimilarity:
@@ -227,9 +231,6 @@ class TestPhoneticIntegration:
 
         for transcript, phrases in test_cases:
             is_match, score, phrase = fuzzy_wake_match(transcript, phrases, threshold=0.8)
-            # Store the baseline score
-            baseline_score = score
-
             # Should be deterministic - same call should give same result
             is_match2, score2, phrase2 = fuzzy_wake_match(transcript, phrases, threshold=0.8)
             assert abs(score - score2) < 1e-6, f"Baseline scores inconsistent for {transcript}"

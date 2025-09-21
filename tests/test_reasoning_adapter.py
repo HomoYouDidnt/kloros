@@ -1,9 +1,10 @@
 """Unit tests for reasoning adapter functionality."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import pytest
 
-from src.reasoning.base import create_reasoning_backend, ReasoningResult
+from src.reasoning.base import ReasoningResult, create_reasoning_backend
 from src.reasoning.mock_backend import MockReasoningBackend
 
 

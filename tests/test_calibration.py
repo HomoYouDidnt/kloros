@@ -5,16 +5,14 @@ import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-import pytest
 
 import numpy as np
 
 from src.audio.calibration import (
-    AudioBackend,
     CalibrationProfile,
     _compute_rms,
-    _compute_spectral_tilt,
     _compute_snr_to_wake_conf,
+    _compute_spectral_tilt,
     _rms_to_dbfs,
     default_profile_path,
     load_profile,

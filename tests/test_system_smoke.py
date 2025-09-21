@@ -3,12 +3,11 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import numpy as np
-import pytest
 
-from src.tools.system_smoke import run_smoke, synth_sample, SmokeResult
+from src.tools.system_smoke import SmokeResult, run_smoke, synth_sample
 
 
 class TestSyntheticAudio:
@@ -70,7 +69,7 @@ class TestSmokeRunner:
         # Mock the output directory creation
         with patch('src.tools.system_smoke._get_output_dir') as mock_get_dir, \
              patch('src.tools.system_smoke.load_profile') as mock_load_profile, \
-             patch('shutil.copy2') as mock_copy:
+             patch('shutil.copy2'):
 
             # Setup mocks
             mock_get_dir.return_value = "/tmp/test_out"
@@ -156,7 +155,7 @@ class TestSmokeRunner:
 
             with patch('src.tools.system_smoke._get_output_dir') as mock_get_dir, \
                  patch('src.tools.system_smoke.load_profile') as mock_load_profile, \
-                 patch('shutil.copy2') as mock_copy:
+                 patch('shutil.copy2'):
 
                 # Setup mocks
                 mock_get_dir.return_value = "/tmp/test_out"
@@ -183,7 +182,7 @@ class TestSmokeRunner:
         with patch('src.tools.system_smoke.load_profile', side_effect=Exception("No calibration")), \
              patch.dict(os.environ, {"KLR_VAD_THRESHOLD_DBFS": "-35.0"}), \
              patch('src.tools.system_smoke._get_output_dir') as mock_get_dir, \
-             patch('shutil.copy2') as mock_copy:
+             patch('shutil.copy2'):
 
             mock_get_dir.return_value = "/tmp/test_out"
 
@@ -204,7 +203,7 @@ class TestSmokeRunner:
 
             with patch('src.tools.system_smoke._get_output_dir', return_value=str(test_out_dir)), \
                  patch('src.tools.system_smoke.load_profile') as mock_load_profile, \
-                 patch('shutil.copy2') as mock_copy:
+                 patch('shutil.copy2'):
 
                 mock_load_profile.return_value = {"vad_threshold_dbfs": -40.0}
 

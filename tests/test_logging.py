@@ -2,22 +2,18 @@
 
 import json
 import os
-import tempfile
 import time
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
-import pytest
-
-from src.logging.json_logger import JsonFileLogger, create_logger_from_env
 from scripts.trace_view import (
-    parse_time_window,
-    find_log_files,
-    read_log_entries,
     filter_entries,
-    format_entry
+    find_log_files,
+    format_entry,
+    parse_time_window,
+    read_log_entries,
 )
+from src.logging.json_logger import JsonFileLogger, create_logger_from_env
 
 
 class TestJsonFileLogger:

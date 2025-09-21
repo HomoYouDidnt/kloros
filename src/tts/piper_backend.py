@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tempfile
 import time
 import wave
 from pathlib import Path
@@ -52,8 +51,9 @@ class PiperTtsBackend:
         """
         # Try Python import first
         try:
-            import piper
-            return "python"
+            import importlib.util
+            if importlib.util.find_spec("piper") is not None:
+                return "python"
         except ImportError:
             pass
 
@@ -150,7 +150,7 @@ class PiperTtsBackend:
             return len(audio_data) / sample_rate
 
         except Exception as e:
-            raise RuntimeError(f"piper synthesis failed: {e}")
+            raise RuntimeError(f"piper synthesis failed: {e}") from e
 
     def _synthesize_cli(
         self,
@@ -194,10 +194,10 @@ class PiperTtsBackend:
             duration_s = self._get_wav_duration(output_path)
             return duration_s
 
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("piper CLI timeout")
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError("piper CLI timeout") from e
         except Exception as e:
-            raise RuntimeError(f"piper CLI error: {e}")
+            raise RuntimeError(f"piper CLI error: {e}") from e
 
     def _get_wav_duration(self, wav_path: str) -> float:
         """Get duration of WAV file in seconds."""

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.tts.base import create_tts_backend, TtsResult
+from src.tts.base import TtsResult, create_tts_backend
 from src.tts.mock_backend import MockTtsBackend
 
 
