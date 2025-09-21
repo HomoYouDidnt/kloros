@@ -123,7 +123,6 @@ class RAG:
         return metadata_list, embeddings
 
     def _verify_bundle_hash(self, bundle_path: Path) -> None:
-(self, bundle_path: Path) -> None:
         hash_path = bundle_path.with_suffix(".sha256")
         if not hash_path.exists():
             raise FileNotFoundError(f"Missing hash file for bundle: {hash_path}")

@@ -1,1 +1,8 @@
-
+audio
+compat
+core
+logic
+persona
+reasoning
+stt
+tts
