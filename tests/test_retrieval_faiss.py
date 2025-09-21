@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 pytest.importorskip('faiss')
 pytest.importorskip('sentence_transformers')
 
-from kloROS_accuracy_stack.retrieval import embedder
-from scripts.index_build import build_index
+from kloROS_accuracy_stack.retrieval import embedder  # noqa: E402
+from scripts.index_build import build_index  # noqa: E402
 
 
 class DummyModel:

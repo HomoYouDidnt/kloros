@@ -248,7 +248,7 @@ class TestVADIntegration:
         sample_rate = 16000
 
         # Create audio with clear voiced and unvoiced sections
-        rng = np.random.default_rng(42)
+        _rng = np.random.default_rng(42)
 
         # 0.5s silence
         silence = np.zeros(int(0.5 * sample_rate), dtype=np.float32)
