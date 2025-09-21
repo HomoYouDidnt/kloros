@@ -51,7 +51,13 @@ class TestReasoningFactory:
             pass
 
         # Test QA backend without QA module - this one should reliably fail
-        with patch.dict('sys.modules', {'kloROS_accuracy_stack.pipeline.qa': None}):
+        # Mock multiple module levels to ensure the import fails
+        qa_modules_to_mock = {
+            'kloROS_accuracy_stack': None,
+            'kloROS_accuracy_stack.pipeline': None,
+            'kloROS_accuracy_stack.pipeline.qa': None
+        }
+        with patch.dict('sys.modules', qa_modules_to_mock):
             with pytest.raises(RuntimeError, match="qa backend unavailable"):
                 create_reasoning_backend("qa")
 
