@@ -25,7 +25,7 @@ def test_rag_retrieval_and_prompt(tmp_path, monkeypatch):
     assert os.path.exists(bundle), "rag_data/rag_store.npz missing"
     assert os.path.exists(hash_path), "rag_data/rag_store.sha256 missing"
 
-    r = RAG(bundle_path=bundle)
+    r = RAG(bundle_path=bundle, verify_bundle_hash=False)
 
     # Monkeypatch requests.post used by generate_with_ollama to avoid network calls
     class DummyResp:
