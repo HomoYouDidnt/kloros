@@ -390,7 +390,7 @@ class TestVoiceLoopIntegration:
             with (
                 patch("sys.modules", {"sounddevice": MagicMock()}),
                 patch("src.kloros_voice.vosk"),
-                patch("src.kloros_voice.log_event") as mock_log,
+                patch("src.kloros_voice.log_event"),
             ):
                 # Import and create minimal KLoROS instance
                 from src.kloros_voice import KLoROS
