@@ -24,7 +24,7 @@ class MockSpeakerBackend:
         test_users = ["alice", "bob", "charlie"]
         for user in test_users:
             # Create fake embeddings based on username hash
-            user_hash = hashlib.md5(user.encode()).hexdigest()
+            user_hash = hashlib.md5(user.encode(), usedforsecurity=False).hexdigest()
             fake_embeddings = [
                 [float(int(user_hash[i : i + 2], 16)) / 255.0 for i in range(0, 20, 2)]
                 for _ in range(5)  # 5 fake embeddings per user
@@ -43,7 +43,7 @@ class MockSpeakerBackend:
     def _generate_fake_embedding(self, audio_sample: bytes) -> List[float]:
         """Generate a fake embedding based on audio sample hash."""
         # Create a deterministic "embedding" based on audio content
-        audio_hash = hashlib.md5(audio_sample).hexdigest()
+        audio_hash = hashlib.md5(audio_sample, usedforsecurity=False).hexdigest()
         # Convert hex to normalized float values
         embedding = [float(int(audio_hash[i : i + 2], 16)) / 255.0 for i in range(0, 20, 2)]
         return embedding
