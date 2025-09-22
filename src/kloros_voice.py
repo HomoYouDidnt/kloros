@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 import numpy as np
 import requests  # type: ignore
-import sounddevice as sd
 import vosk
 
 if TYPE_CHECKING:
@@ -122,6 +121,7 @@ class KLoROS:
                 self.input_device_index = None
         if self.input_device_index is None:
             try:
+                import sounddevice as sd
                 for i, d in enumerate(sd.query_devices()):
                     # d may be a mapping-like object or a string in some environments — handle both
                     if isinstance(d, dict):
@@ -139,6 +139,7 @@ class KLoROS:
 
             # Detect device default sample rate (fallback 48000)
             try:
+                import sounddevice as sd
                 idev = sd.query_devices(
                     self.input_device_index
                     if self.input_device_index is not None
@@ -941,6 +942,7 @@ class KLoROS:
         self._emit_persona("quip", {"line": "Listening for your next whim."})
 
         try:
+            import sounddevice as sd
             with sd.RawInputStream(
                 samplerate=self.sample_rate,
                 blocksize=self.blocksize,
