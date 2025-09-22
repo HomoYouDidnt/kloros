@@ -18,10 +18,17 @@ jobs:
           sudo apt-get install -y shellcheck
       - name: Run shellcheck
         run: |
-          bash -lc 'shopt -s globstar nullglob; shellcheck **/*.sh'
+          shopt -s globstar nullglob
+          files=(**/*.sh)
+          if (( ${#files[@]} )); then
+            shellcheck "${files[@]}"
+          else
+            echo "No shell scripts found"
+          fi
 
   node_audit:
     name: npm Audit
+    if: ${{ hashFiles('package.json') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +47,7 @@ jobs:
 
   madge_jscpd:
     name: Madge / jscpd / ts-prune
+    if: ${{ hashFiles('package.json') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
