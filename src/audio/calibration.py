@@ -235,7 +235,8 @@ def default_profile_path() -> str:
     else:
         base_dir = Path.home()
 
-    return str(base_dir / ".kloros" / "calibration.json")
+    path = base_dir / ".kloros" / "calibration.json"
+    return str(path)
 
 
 def save_profile(profile: CalibrationProfile, path: Optional[str] = None) -> str:

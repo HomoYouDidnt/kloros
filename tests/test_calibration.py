@@ -342,9 +342,10 @@ class TestCalibrationPersistence:
         with patch("platform.system", return_value="Windows"):
             with patch.dict(os.environ, {"USERPROFILE": "C:\\Users\\TestUser"}):
                 path = default_profile_path()
-                expected = Path("C:\\Users\\TestUser\\.kloros\\calibration.json")
-                # Normalize both paths for cross-platform comparison
-                assert Path(path).as_posix() == expected.as_posix()
+                # Compare path parts instead of string representation to handle Windows/Unix differences
+                actual_parts = Path(path).parts
+                expected_parts = ("C:", "Users", "TestUser", ".kloros", "calibration.json")
+                assert actual_parts == expected_parts
 
     def test_default_profile_path_unix(self):
         """Test default profile path generation on Unix."""
