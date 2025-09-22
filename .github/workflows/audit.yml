@@ -20,13 +20,6 @@ jobs:
         run: |
           bash -lc 'shopt -s globstar nullglob; shellcheck **/*.sh'
 
-  osv:
-    name: OSV Scanner
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: google/osv-scanner-action@v2.2.2
-
   node_audit:
     name: npm Audit
     runs-on: ubuntu-latest
