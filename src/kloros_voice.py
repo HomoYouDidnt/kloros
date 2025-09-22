@@ -22,7 +22,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 import numpy as np
 import requests  # type: ignore
@@ -217,7 +217,7 @@ class KLoROS:
         self.wake_cooldown_ms = int(
             os.getenv("KLR_WAKE_COOLDOWN_MS", "2000")
         )  # cooldown between wakes
-        self._last_wake_ms = 0
+        self._last_wake_ms: float = 0
         self._last_emit_ms = 0
 
         # Calibration-derived thresholds (will be set by _load_calibration_profile)
