@@ -39,12 +39,13 @@ namespace_packages = true
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["sounddevice", "vosk", "_webrtcvad", "jellyfish", "piper", "yaml", "rzero.evaluator", "rzero.gatekeeper", "rzero.proposer", "faiss", "sentence_transformers"]
+module = ["sounddevice", "vosk", "_webrtcvad", "jellyfish", "piper", "yaml", "rzero.evaluator", "rzero.gatekeeper", "rzero.proposer", "faiss", "sentence_transformers", "pytest"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+pythonpath = ["."]
 
 
 
