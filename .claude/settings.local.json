@@ -13,7 +13,8 @@
       "Bash(gh run view:*)",
       "Bash(ruff check:*)",
       "Bash(npm view:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:google.github.io)"
     ],
     "deny": [],
     "ask": []

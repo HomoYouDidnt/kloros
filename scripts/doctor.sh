@@ -19,7 +19,7 @@ log "== KLoROS Doctor =="
 
 log "-- OS & kernel --"
 if [ -r /etc/os-release ]; then
-  # shellcheck source=/etc/os-release
+  # shellcheck disable=SC1091
   . /etc/os-release
   log "OS: ${NAME:-unknown} ${VERSION_ID:-}" || true
 else

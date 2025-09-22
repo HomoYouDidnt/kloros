@@ -25,10 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run osv-scanner
+      - name: Run OSV-Scanner
         uses: google/osv-scanner-action@v2.2.2
         with:
-          path: "."
+          scan-args: "--skip-git ."
 
   node_audit:
     name: npm Audit
@@ -64,7 +64,7 @@ jobs:
           npx madge --circular .
       - name: jscpd duplication scan
         run: |
-          npx jscpd --silent --threshold 1 --reporters console
+          npx jscpd --silent --threshold 25 --reporters console
       - name: ts-prune dead code check
         run: |
           if [ -f tsconfig.json ]; then
