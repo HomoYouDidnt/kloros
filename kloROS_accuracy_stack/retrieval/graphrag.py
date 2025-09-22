@@ -19,7 +19,7 @@ def _extract_terms(text: str) -> List[str]:
     return [tok.title() for tok in tokens[:5]]
 
 
-def _build_graph(reranked: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_graph(reranked: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], str]:
     term_counter: Counter[str] = Counter()
     edges: Counter[Tuple[str, str]] = Counter()
     for doc in reranked[:5]:

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from .base import ReasoningResult
 
 
 class MockReasoningBackend:
     """Mock reasoning backend that returns deterministic responses."""
 
-    def __init__(self, reply_text: str = "ok", sources: list = None):
+    def __init__(self, reply_text: str = "ok", sources: Optional[list] = None):
         """Initialize mock reasoning backend.
 
         Args:

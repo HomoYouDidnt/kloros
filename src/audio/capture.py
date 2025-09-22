@@ -214,8 +214,8 @@ class MockBackend:
             max_blocks: Maximum number of blocks to yield (None for infinite)
         """
         self.max_blocks = max_blocks
-        self.sample_rate = None
-        self.synth_audio = None
+        self.sample_rate: Optional[int] = None
+        self.synth_audio: Optional[np.ndarray] = None
         self.synth_position = 0
         self.blocks_yielded = 0
 

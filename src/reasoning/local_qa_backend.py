@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Optional, Dict, Any
+
 from .base import ReasoningResult
 
 
 class LocalQaBackend:
     """Local QA backend that wraps kloROS_accuracy_stack.pipeline.qa module if available."""
 
-    def __init__(self, config_path: str = None, **kwargs):
+    def __init__(self, config_path: Optional[str] = None, **kwargs):
         """Initialize local QA backend.
 
         Args:
@@ -70,7 +72,7 @@ class LocalQaBackend:
 
             result = None
             sources = []
-            trace = {}
+            trace: Dict[str, Any] = {}
 
             # Try primary entrypoint: answer(question, config)
             if hasattr(self.qa_mod, "answer"):

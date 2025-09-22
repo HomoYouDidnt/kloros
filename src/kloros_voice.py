@@ -22,7 +22,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Union
 
 import numpy as np
 import requests  # type: ignore
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 else:
     RAGType = Any  # pragma: no cover
 
-_RAGClass: type["RAGType"] | None
+_RAGClass: Optional[type["RAGType"]]
 
 _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
@@ -48,36 +48,36 @@ from src.persona.kloros import PERSONA_PROMPT, get_line  # noqa: E402
 try:
     from src.audio.calibration import load_profile  # noqa: E402
 except ImportError:
-    load_profile = None
+    load_profile = None  # type: ignore
 
 try:
     from src.stt.base import SttBackend, create_stt_backend  # noqa: E402
 except ImportError:
-    create_stt_backend = None
-    SttBackend = None
+    create_stt_backend = None  # type: ignore
+    SttBackend = None  # type: ignore
 
 try:
     from src.audio.vad import detect_voiced_segments, select_primary_segment  # noqa: E402
 except ImportError:
-    detect_voiced_segments = None
-    select_primary_segment = None
+    detect_voiced_segments = None  # type: ignore
+    select_primary_segment = None  # type: ignore
 
 try:
     from src.tts.base import TtsBackend, create_tts_backend  # noqa: E402
 except ImportError:
-    create_tts_backend = None
-    TtsBackend = None
+    create_tts_backend = None  # type: ignore
+    TtsBackend = None  # type: ignore
 
 try:
     from src.core.turn import new_trace_id, run_turn  # noqa: E402
 except ImportError:
-    run_turn = None
-    new_trace_id = None
+    run_turn = None  # type: ignore
+    new_trace_id = None  # type: ignore
 
 try:
     from src.reasoning.base import create_reasoning_backend  # noqa: E402
 except ImportError:
-    create_reasoning_backend = None
+    create_reasoning_backend = None  # type: ignore
 
 try:
     from src.rag import RAG as _ImportedRAG  # noqa: E402
@@ -89,14 +89,14 @@ except Exception:
 try:
     from src.audio.capture import AudioInputBackend, create_audio_backend  # noqa: E402
 except ImportError:
-    create_audio_backend = None
-    AudioInputBackend = None
+    create_audio_backend = None  # type: ignore
+    AudioInputBackend = None  # type: ignore
 
 try:
     from src.logging.json_logger import JsonFileLogger, create_logger_from_env  # noqa: E402
 except ImportError:
-    create_logger_from_env = None
-    JsonFileLogger = None
+    create_logger_from_env = None  # type: ignore
+    JsonFileLogger = None  # type: ignore
 
 
 class KLoROS:
@@ -221,15 +221,15 @@ class KLoROS:
         self._last_emit_ms = 0
 
         # Calibration-derived thresholds (will be set by _load_calibration_profile)
-        self.vad_threshold_dbfs = None  # VAD threshold in dBFS, if calibrated
-        self.agc_gain_db = 0.0  # AGC gain in dB, if calibrated
+        self.vad_threshold_dbfs: Optional[float] = None  # VAD threshold in dBFS, if calibrated
+        self.agc_gain_db: float = 0.0  # AGC gain in dB, if calibrated
 
         # STT configuration
         self.enable_stt = int(os.getenv("KLR_ENABLE_STT", "0"))
         self.stt_backend_name = os.getenv("KLR_STT_BACKEND", "mock")
         self.stt_lang = os.getenv("KLR_STT_LANG", "en-US")
         self.max_turn_seconds = float(os.getenv("KLR_MAX_TURN_SECONDS", "30.0"))
-        self.stt_backend = None  # Will be initialized later if needed
+        self.stt_backend: Optional[Any] = None  # Will be initialized later if needed
 
         # VAD configuration
         self.vad_use_calibration = int(os.getenv("KLR_VAD_USE_CALIBRATION", "1"))
@@ -248,11 +248,11 @@ class KLoROS:
         self.tts_sample_rate = int(os.getenv("KLR_TTS_SAMPLE_RATE", "22050"))
         self.tts_out_dir = os.getenv("KLR_TTS_OUT_DIR")
         self.fail_open_tts = int(os.getenv("KLR_FAIL_OPEN_TTS", "1"))
-        self.tts_backend = None  # Will be initialized later if needed
+        self.tts_backend: Optional[Any] = None  # Will be initialized later if needed
 
         # Reasoning configuration
         self.reason_backend_name = os.getenv("KLR_REASON_BACKEND", "mock")
-        self.reason_backend = None  # Will be initialized later if needed
+        self.reason_backend: Optional[Any] = None  # Will be initialized later if needed
 
         self.wake_grammar = json.dumps(self.wake_phrases + ["[unk]"])
         # Create recognizers only if the model loaded successfully
@@ -279,6 +279,7 @@ class KLoROS:
         self.listening = False
         self._heartbeat = 0
         self.conversation_history: List[str] = []
+        self.json_logger: Optional[Any] = None
 
         # Keep BT sink awake to avoid first-sample drop
         self.keep_bluetooth_alive = True
@@ -364,7 +365,7 @@ class KLoROS:
 
         try:
             # Try to create the requested backend
-            self.stt_backend = create_stt_backend(self.stt_backend_name)
+            self.stt_backend = create_stt_backend(self.stt_backend_name)  # type: ignore
             print(f"[stt] Initialized {self.stt_backend_name} backend")
         except Exception as e:
             print(f"[stt] Failed to initialize {self.stt_backend_name} backend: {e}")
@@ -372,7 +373,7 @@ class KLoROS:
             # Fallback to mock backend if primary backend fails
             if self.stt_backend_name != "mock":
                 try:
-                    self.stt_backend = create_stt_backend("mock")
+                    self.stt_backend = create_stt_backend("mock")  # type: ignore
                     print("[stt] Falling back to mock backend")
                 except Exception as fallback_e:
                     print(f"[stt] Fallback to mock backend also failed: {fallback_e}")
@@ -384,7 +385,7 @@ class KLoROS:
             return
 
         try:
-            self.tts_backend = create_tts_backend(self.tts_backend_name, out_dir=self.tts_out_dir)
+            self.tts_backend = create_tts_backend(self.tts_backend_name, out_dir=self.tts_out_dir)  # type: ignore
             print(f"[tts] Initialized {self.tts_backend_name} backend")
         except Exception as e:
             print(f"[tts] Failed to initialize {self.tts_backend_name} backend: {e}")
@@ -392,7 +393,7 @@ class KLoROS:
             # Try fallback to mock if not already using mock
             if self.tts_backend_name != "mock":
                 try:
-                    self.tts_backend = create_tts_backend("mock", out_dir=self.tts_out_dir)
+                    self.tts_backend = create_tts_backend("mock", out_dir=self.tts_out_dir)  # type: ignore
                     print("[tts] Falling back to mock backend")
                 except Exception as fallback_e:
                     print(f"[tts] Fallback to mock backend also failed: {fallback_e}")
@@ -405,7 +406,7 @@ class KLoROS:
             return
 
         try:
-            self.reason_backend = create_reasoning_backend(self.reason_backend_name)
+            self.reason_backend = create_reasoning_backend(self.reason_backend_name)  # type: ignore
             print(f"[reasoning] Initialized {self.reason_backend_name} backend")
         except Exception as e:
             print(f"[reasoning] Failed to initialize {self.reason_backend_name} backend: {e}")
@@ -413,7 +414,7 @@ class KLoROS:
             # Try fallback to mock if not already using mock
             if self.reason_backend_name != "mock":
                 try:
-                    self.reason_backend = create_reasoning_backend("mock")
+                    self.reason_backend = create_reasoning_backend("mock")  # type: ignore
                     print("[reasoning] Falling back to mock backend")
                     self._log_event(
                         "reason_backend_fallback",
@@ -432,7 +433,7 @@ class KLoROS:
             return
 
         try:
-            self.audio_backend = create_audio_backend(self.audio_backend_name)
+            self.audio_backend = create_audio_backend(self.audio_backend_name)  # type: ignore
             self.audio_backend.open(
                 sample_rate=self.audio_sample_rate,
                 channels=self.audio_channels,

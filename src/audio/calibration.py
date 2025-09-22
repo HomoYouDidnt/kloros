@@ -132,12 +132,12 @@ def _compute_snr_to_wake_conf(snr_db: float) -> float:
 
 def run_calibration(
     backend: AudioBackend,
-    sample_rate: int = None,
-    silence_secs: float = None,
-    speech_secs: float = None,
-    target_rms_dbfs: float = None,
-    noise_margin_db: float = None,
-    agc_max_gain_db: float = None,
+    sample_rate: Optional[int] = None,
+    silence_secs: Optional[float] = None,
+    speech_secs: Optional[float] = None,
+    target_rms_dbfs: Optional[float] = None,
+    noise_margin_db: Optional[float] = None,
+    agc_max_gain_db: Optional[float] = None,
 ) -> CalibrationProfile:
     """Run complete microphone calibration process.
 

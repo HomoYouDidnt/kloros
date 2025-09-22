@@ -109,7 +109,7 @@ class JsonFileLogger:
         except OSError:
             return False
 
-    def _open_log_file(self) -> TextIO:
+    def _open_log_file(self) -> Optional[TextIO]:
         """Open the appropriate log file for writing."""
         if self.rotate_mode == "day":
             current_date = self._get_current_date()
@@ -132,7 +132,7 @@ class JsonFileLogger:
 
         return self._current_file
 
-    def log_event(self, name: str, payload: Dict[str, Any] = None) -> None:
+    def log_event(self, name: str, payload: Optional[Dict[str, Any]] = None) -> None:
         """Log an event as JSON.
 
         Args:
