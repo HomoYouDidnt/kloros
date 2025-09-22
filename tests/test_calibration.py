@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -385,7 +385,7 @@ class TestVoiceLoopIntegration:
 
             # Mock other dependencies that might not be available in test
             with (
-                patch("sounddevice"),
+                patch("sys.modules", {"sounddevice": MagicMock()}),
                 patch("src.kloros_voice.vosk"),
                 patch("src.kloros_voice.log_event") as mock_log,
             ):
@@ -418,7 +418,7 @@ class TestVoiceLoopIntegration:
 
             # Mock other dependencies
             with (
-                patch("sounddevice"),
+                patch("sys.modules", {"sounddevice": MagicMock()}),
                 patch("src.kloros_voice.vosk"),
                 patch("src.kloros_voice.log_event"),
             ):
@@ -437,7 +437,7 @@ class TestVoiceLoopIntegration:
         with patch("src.kloros_voice.load_profile", None):
             # Mock other dependencies
             with (
-                patch("sounddevice"),
+                patch("sys.modules", {"sounddevice": MagicMock()}),
                 patch("src.kloros_voice.vosk"),
                 patch("src.kloros_voice.log_event"),
             ):
