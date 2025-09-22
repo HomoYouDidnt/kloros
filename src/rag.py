@@ -102,7 +102,7 @@ class RAG:
         bundle_path = Path(os.path.expanduser(path))
         if verify_hash:
             self._verify_bundle_hash(bundle_path)
-        with np.load(bundle_path, allow_pickle=False) as data:
+        with np.load(bundle_path, allow_pickle=True) as data:
             if "embeddings" not in data.files or "metadata_json" not in data.files:
                 raise ValueError(
                     f"Bundle {bundle_path} must contain 'embeddings' and 'metadata_json' entries"
