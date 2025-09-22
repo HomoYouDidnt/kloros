@@ -122,6 +122,7 @@ class KLoROS:
         if self.input_device_index is None:
             try:
                 import sounddevice as sd
+
                 for i, d in enumerate(sd.query_devices()):
                     # d may be a mapping-like object or a string in some environments — handle both
                     if isinstance(d, dict):
@@ -140,6 +141,7 @@ class KLoROS:
             # Detect device default sample rate (fallback 48000)
             try:
                 import sounddevice as sd
+
                 idev = sd.query_devices(
                     self.input_device_index
                     if self.input_device_index is not None
@@ -943,6 +945,7 @@ class KLoROS:
 
         try:
             import sounddevice as sd
+
             with sd.RawInputStream(
                 samplerate=self.sample_rate,
                 blocksize=self.blocksize,
