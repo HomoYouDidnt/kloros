@@ -16,7 +16,6 @@ def dummy_embedder(text: str) -> np.ndarray:
     return v
 
 
-@pytest.mark.skip(reason="NPZ file appears corrupted, causing UnpicklingError")
 def test_rag_retrieval_and_prompt(tmp_path, monkeypatch):
     # Use rag_data in repo root
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -26,7 +25,7 @@ def test_rag_retrieval_and_prompt(tmp_path, monkeypatch):
     assert os.path.exists(bundle), "rag_data/rag_store.npz missing"
     assert os.path.exists(hash_path), "rag_data/rag_store.sha256 missing"
 
-    r = RAG(bundle_path=bundle, verify_bundle_hash=False)
+    r = RAG(bundle_path=bundle)
 
     # Monkeypatch requests.post used by generate_with_ollama to avoid network calls
     class DummyResp:
