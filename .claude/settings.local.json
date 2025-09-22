@@ -11,7 +11,8 @@
       "Bash(set KLR_LOG_STDOUT=0)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(ruff check:*)"
+      "Bash(ruff check:*)",
+      "Bash(npm view:*)"
     ],
     "deny": [],
     "ask": []

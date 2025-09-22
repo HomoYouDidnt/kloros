@@ -4,6 +4,6 @@
   "devDependencies": {
     "madge": "6.0.0",
     "jscpd": "4.0.0",
-    "ts-prune": "0.10.6"
+    "ts-prune": "0.10.3"
   }
 }

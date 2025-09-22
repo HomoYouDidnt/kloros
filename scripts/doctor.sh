@@ -19,6 +19,7 @@ log "== KLoROS Doctor =="
 
 log "-- OS & kernel --"
 if [ -r /etc/os-release ]; then
+  # shellcheck source=/etc/os-release
   . /etc/os-release
   log "OS: ${NAME:-unknown} ${VERSION_ID:-}" || true
 else
@@ -27,7 +28,11 @@ fi
 uname -a || log "WARN: uname failed"
 
 log "-- CPU --"
-command -v lscpu >/dev/null 2>&1 && lscpu | head -20 || log "INFO: lscpu unavailable"
+if command -v lscpu >/dev/null 2>&1; then
+  lscpu | head -20
+else
+  log "INFO: lscpu unavailable"
+fi
 
 log "-- GPU --"
 if command -v nvidia-smi >/dev/null 2>&1; then
