@@ -97,6 +97,16 @@ except ImportError:
     create_logger_from_env = None  # type: ignore
     JsonFileLogger = None  # type: ignore
 
+try:
+    from src.speaker.base import SpeakerBackend, create_speaker_backend  # noqa: E402
+    from src.speaker.enrollment import ENROLLMENT_SENTENCES, parse_spelled_name, verify_name_spelling  # noqa: E402
+except ImportError:
+    create_speaker_backend = None  # type: ignore
+    SpeakerBackend = None  # type: ignore
+    ENROLLMENT_SENTENCES = None  # type: ignore
+    parse_spelled_name = None  # type: ignore
+    verify_name_spelling = None  # type: ignore
+
 
 class KLoROS:
     def __init__(self) -> None:
@@ -257,6 +267,14 @@ class KLoROS:
         self.reason_backend_name = os.getenv("KLR_REASON_BACKEND", "mock")
         self.reason_backend: Optional[Any] = None  # Will be initialized later if needed
 
+        # Speaker recognition configuration
+        self.enable_speaker_id = int(os.getenv("KLR_ENABLE_SPEAKER_ID", "0"))  # Default disabled
+        self.speaker_backend_name = os.getenv("KLR_SPEAKER_BACKEND", "mock")
+        self.speaker_threshold = float(os.getenv("KLR_SPEAKER_THRESHOLD", "0.8"))
+        self.speaker_backend: Optional[Any] = None  # Will be initialized later if needed
+        self.enrollment_mode = False  # Track if currently enrolling a user
+        self.enrollment_state: Optional[dict] = None  # Enrollment session state
+
         self.wake_grammar = json.dumps(self.wake_phrases + ["[unk]"])
         # Create recognizers only if the model loaded successfully
         if self.vosk_model is not None:
@@ -294,6 +312,7 @@ class KLoROS:
         self._init_stt_backend()
         self._init_tts_backend()
         self._init_reasoning_backend()
+        self._init_speaker_backend()
         self._init_audio_backend()
         log_event(
             "boot_ready",
@@ -429,6 +448,37 @@ class KLoROS:
                     print(f"[reasoning] Fallback to mock backend also failed: {fallback_e}")
                     self.reason_backend = None
 
+    def _init_speaker_backend(self) -> None:
+        """Initialize speaker recognition backend if enabled."""
+        if not self.enable_speaker_id:
+            print("[speaker] Speaker identification disabled")
+            return
+
+        if create_speaker_backend is None:
+            print("[speaker] Speaker module unavailable; disabling speaker ID")
+            return
+
+        try:
+            self.speaker_backend = create_speaker_backend(self.speaker_backend_name)  # type: ignore
+            print(f"[speaker] Initialized {self.speaker_backend_name} backend")
+        except Exception as e:
+            print(f"[speaker] Failed to initialize {self.speaker_backend_name} backend: {e}")
+
+            # Try fallback to mock if not already using mock
+            if self.speaker_backend_name != "mock":
+                try:
+                    self.speaker_backend = create_speaker_backend("mock")  # type: ignore
+                    print("[speaker] Falling back to mock backend")
+                    log_event(
+                        "speaker_backend_fallback",
+                        requested=self.speaker_backend_name,
+                        fallback="mock",
+                        error=str(e),
+                    )
+                except Exception as fallback_e:
+                    print(f"[speaker] Fallback to mock backend also failed: {fallback_e}")
+                    self.speaker_backend = None
+
     def _init_audio_backend(self) -> None:
         """Initialize audio capture backend with fallback to mock."""
         if create_audio_backend is None:
@@ -497,6 +547,11 @@ class KLoROS:
 
     # ======================== LLM =======================
     def chat(self, user_message: str) -> str:
+        # Check for enrollment commands first
+        enrollment_response = self._handle_enrollment_commands(user_message)
+        if enrollment_response:
+            return enrollment_response
+
         self.conversation_history.append(f"User: {user_message}")
         context = (
             f"System: {self.system_prompt}\n\n"
@@ -519,6 +574,166 @@ class KLoROS:
         self.conversation_history.append(f"Assistant: {resp}")
         self._save_memory()
         return resp
+
+    # =============== Speaker enrollment helpers ===============
+    def _handle_enrollment_commands(self, user_message: str) -> Optional[str]:
+        """Handle speaker enrollment commands and return response, or None if not an enrollment command."""
+        if not self.enable_speaker_id or self.speaker_backend is None:
+            return None
+
+        message_lower = user_message.lower().strip()
+
+        # Start enrollment command
+        if any(phrase in message_lower for phrase in ["enroll me", "add my voice", "remember my voice", "learn my voice"]):
+            if self.enrollment_mode:
+                return "I'm already in enrollment mode. Please say 'cancel enrollment' to start over."
+            return self._start_enrollment()
+
+        # Cancel enrollment
+        if self.enrollment_mode and any(phrase in message_lower for phrase in ["cancel", "stop", "quit"]):
+            return self._cancel_enrollment()
+
+        # Speaker management commands (these work even during enrollment)
+        if "list users" in message_lower or "who do you know" in message_lower:
+            return self._list_enrolled_users()
+
+        # Handle enrollment flow
+        if self.enrollment_mode and self.enrollment_state:
+            return self._process_enrollment_step(user_message)
+
+        if "delete user" in message_lower or "remove user" in message_lower:
+            # Extract user name from command
+            words = user_message.split()
+            for i, word in enumerate(words):
+                if word.lower() in ["user", "voice"] and i + 1 < len(words):
+                    user_to_delete = words[i + 1].lower()
+                    return self._delete_user(user_to_delete)
+            return "Please specify which user to delete, like 'delete user alice'."
+
+        return None
+
+    def _start_enrollment(self) -> str:
+        """Start the voice enrollment process."""
+        if ENROLLMENT_SENTENCES is None:
+            return "Sorry, voice enrollment is not available right now."
+
+        self.enrollment_mode = True
+        self.enrollment_state = {
+            "step": "get_name",
+            "user_name": None,
+            "verified_name": None,
+            "samples": [],
+            "current_sentence": 0
+        }
+        log_event("enrollment_started")
+        return "Let's set up your voice profile! First, please tell me your name."
+
+    def _cancel_enrollment(self) -> str:
+        """Cancel the current enrollment process."""
+        self.enrollment_mode = False
+        self.enrollment_state = None
+        log_event("enrollment_cancelled")
+        return "Voice enrollment cancelled. You can start again anytime by saying 'enroll me'."
+
+    def _process_enrollment_step(self, user_message: str) -> str:
+        """Process the current step in the enrollment flow."""
+        state = self.enrollment_state
+        if not state:
+            return self._cancel_enrollment()
+
+        if state["step"] == "get_name":
+            # Extract name from user message
+            name = user_message.strip()
+            state["user_name"] = name
+            state["step"] = "verify_name"
+            log_event("enrollment_name_provided", name=name)
+            return f"Nice to meet you, {name}! To make sure I heard correctly, please spell out your name letter by letter."
+
+        elif state["step"] == "verify_name":
+            # Parse spelled name and verify
+            if verify_name_spelling is not None and parse_spelled_name is not None:
+                verified_name = verify_name_spelling(state["user_name"], user_message)
+                state["verified_name"] = verified_name
+                state["step"] = "record_samples"
+                log_event("enrollment_name_verified", original=state["user_name"], verified=verified_name)
+
+                if ENROLLMENT_SENTENCES is not None:
+                    from src.speaker.enrollment import format_enrollment_sentences
+                    state["sentences"] = format_enrollment_sentences(verified_name)
+                    sentence = state["sentences"][0]
+                    return f"Perfect! I'll call you {verified_name}. Now I need you to repeat {len(state['sentences'])} sentences so I can learn your voice. After I say each sentence and you hear a tone, please repeat it clearly. Here's the first one: '{sentence}'. *tone*"
+                else:
+                    return "Sorry, enrollment sentences are not available."
+            else:
+                return "Sorry, name verification is not available right now."
+
+        elif state["step"] == "record_samples":
+            # This step is called after each sentence is spoken
+            # In the current flow, we're processing the text but we need the audio
+            # The actual audio recording happens in handle_conversation() before this method is called
+            # So we can access it via the last recorded audio_bytes
+
+            # For mock/testing purposes, simulate audio recording
+            if hasattr(self, '_last_audio_bytes') and self._last_audio_bytes:
+                state["samples"].append(self._last_audio_bytes)
+            else:
+                # Fallback for testing - generate mock audio data
+                state["samples"].append(b'mock_audio_data_' + str(state["current_sentence"]).encode())
+
+            state["current_sentence"] += 1
+
+            if state["current_sentence"] < len(state.get("sentences", [])):
+                sentence = state["sentences"][state["current_sentence"]]
+                return f"Good! Sentence {state['current_sentence'] + 1} of {len(state['sentences'])}: '{sentence}'. *tone*"
+            else:
+                # Enrollment complete - save audio samples to backend
+                if self.speaker_backend and hasattr(self.speaker_backend, 'enroll_user'):
+                    success = self.speaker_backend.enroll_user(
+                        state["verified_name"].lower(),
+                        state["samples"],
+                        self.sample_rate
+                    )
+                    if success:
+                        log_event("enrollment_completed", user_name=state["verified_name"])
+                        self.enrollment_mode = False
+                        self.enrollment_state = None
+                        return f"Excellent! I've learned your voice, {state['verified_name']}. I'll recognize you next time you speak to me."
+                    else:
+                        return "Sorry, there was an error saving your voice profile. Please try again."
+                else:
+                    return "Sorry, voice enrollment is not available right now."
+
+        return "I'm not sure what to do next. Say 'cancel' to start over."
+
+    def _list_enrolled_users(self) -> str:
+        """List all enrolled users."""
+        if not self.speaker_backend or not hasattr(self.speaker_backend, 'list_users'):
+            return "Speaker recognition is not available."
+
+        try:
+            users = self.speaker_backend.list_users()
+            if not users:
+                return "No users are enrolled yet. Say 'enroll me' to add your voice."
+            else:
+                user_list = ", ".join(users)
+                return f"I know these voices: {user_list}"
+        except Exception as e:
+            return f"Error listing users: {e}"
+
+    def _delete_user(self, user_id: str) -> str:
+        """Delete a user's voice profile."""
+        if not self.speaker_backend or not hasattr(self.speaker_backend, 'delete_user'):
+            return "Speaker recognition is not available."
+
+        try:
+            success = self.speaker_backend.delete_user(user_id)
+            if success:
+                log_event("user_deleted", user_id=user_id)
+                return f"I've forgotten {user_id}'s voice."
+            else:
+                return f"I don't know anyone named {user_id}."
+        except Exception as e:
+            return f"Error deleting user: {e}"
 
     # =============== RAG integration helpers ===============
     def load_rag(
@@ -1080,8 +1295,29 @@ class KLoROS:
         log_event("audio_capture", samples=sample_count)
         print(f"[DEBUG] Collected {sample_count} samples")
 
+        # Store audio for potential enrollment use
+        self._last_audio_bytes = audio_bytes
+
         # Convert audio to float32 numpy array
         audio_array = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32767.0
+
+        # Speaker identification (if enabled)
+        if self.enable_speaker_id and self.speaker_backend is not None:
+            try:
+                speaker_result = self.speaker_backend.identify_speaker(audio_bytes, self.sample_rate)
+                if speaker_result.is_known_speaker:
+                    print(f"[speaker] Identified: {speaker_result.user_id} (confidence: {speaker_result.confidence:.2f})")
+                    # Update operator_id for this interaction
+                    self.operator_id = speaker_result.user_id
+                    log_event("speaker_identified",
+                             user_id=speaker_result.user_id,
+                             confidence=speaker_result.confidence)
+                else:
+                    print(f"[speaker] Unknown speaker (confidence: {speaker_result.confidence:.2f})")
+                    log_event("speaker_unknown", confidence=speaker_result.confidence)
+            except Exception as e:
+                print(f"[speaker] Identification failed: {e}")
+                log_event("speaker_error", error=str(e))
 
         # Check for test override
         test_override = os.getenv("KLR_TEST_TRANSCRIPT")
