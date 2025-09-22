@@ -31,7 +31,7 @@ class TestJsonFileLogger:
         assert len(log_files) == 1
 
         # Read and verify content
-        with open(log_files[0], 'r') as f:
+        with open(log_files[0], "r") as f:
             line = f.readline().strip()
             entry = json.loads(line)
 
@@ -43,7 +43,7 @@ class TestJsonFileLogger:
         assert "level" in entry
 
         # Verify timestamp format
-        ts = datetime.fromisoformat(entry["ts"].replace('Z', '+00:00'))
+        ts = datetime.fromisoformat(entry["ts"].replace("Z", "+00:00"))
         assert isinstance(ts, datetime)
 
     def test_daily_rotation(self, tmp_path):
@@ -53,13 +53,13 @@ class TestJsonFileLogger:
         logger = JsonFileLogger(str(log_dir), rotate_mode="day", mirror_stdout=False)
 
         # Mock first date
-        with patch('src.logging.json_logger.datetime') as mock_dt:
+        with patch("src.logging.json_logger.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 9, 21, 12, 0, 0, tzinfo=timezone.utc)
             mock_dt.fromisoformat = datetime.fromisoformat
             logger.log_event("day1_event", {"day": 1})
 
         # Mock second date
-        with patch('src.logging.json_logger.datetime') as mock_dt:
+        with patch("src.logging.json_logger.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
             mock_dt.fromisoformat = datetime.fromisoformat
             logger.log_event("day2_event", {"day": 2})
@@ -76,9 +76,9 @@ class TestJsonFileLogger:
         assert actual_files == expected_files
 
         # Verify content
-        with open(log_files[0], 'r') as f:
+        with open(log_files[0], "r") as f:
             entry1 = json.loads(f.readline().strip())
-        with open(log_files[1], 'r') as f:
+        with open(log_files[1], "r") as f:
             entry2 = json.loads(f.readline().strip())
 
         assert entry1["name"] == "day1_event"
@@ -94,15 +94,18 @@ class TestJsonFileLogger:
             rotate_mode="size",
             max_bytes=100,  # Very small
             backups=3,
-            mirror_stdout=False
+            mirror_stdout=False,
         )
 
         # Write several events to trigger rotation
         for i in range(10):
-            logger.log_event("big_event", {
-                "iteration": i,
-                "data": "x" * 50  # Make entries large enough to trigger rotation
-            })
+            logger.log_event(
+                "big_event",
+                {
+                    "iteration": i,
+                    "data": "x" * 50,  # Make entries large enough to trigger rotation
+                },
+            )
 
         logger.close()
 
@@ -111,7 +114,11 @@ class TestJsonFileLogger:
         assert len(log_files) >= 2  # current + at least one backup
 
         # Verify backup naming
-        backup_files = [f for f in log_files if f.name.startswith("kloros-") and f.name != "kloros-current.jsonl"]
+        backup_files = [
+            f
+            for f in log_files
+            if f.name.startswith("kloros-") and f.name != "kloros-current.jsonl"
+        ]
         assert len(backup_files) >= 1
 
     def test_log_levels(self, tmp_path):
@@ -135,7 +142,7 @@ class TestJsonFileLogger:
         assert len(log_files) == 1
 
         entries = []
-        with open(log_files[0], 'r') as f:
+        with open(log_files[0], "r") as f:
             for line in f:
                 entries.append(json.loads(line.strip()))
 
@@ -151,16 +158,13 @@ class TestJsonFileLogger:
         logger = JsonFileLogger(str(log_dir), mirror_stdout=False)
         trace_id = "abc123def456"
 
-        logger.log_event("traced_event", {
-            "trace_id": trace_id,
-            "data": "test"
-        })
+        logger.log_event("traced_event", {"trace_id": trace_id, "data": "test"})
 
         logger.close()
 
         # Verify trace_id is preserved
         log_files = list(log_dir.glob("*.jsonl"))
-        with open(log_files[0], 'r') as f:
+        with open(log_files[0], "r") as f:
             entry = json.loads(f.readline().strip())
 
         assert entry["trace_id"] == trace_id
@@ -193,7 +197,7 @@ class TestJsonFileLogger:
             "KLR_LOG_STDOUT": "0",
             "KLR_LOG_ROTATE_MODE": "size",
             "KLR_LOG_MAX_BYTES": "2048",
-            "KLR_LOG_BACKUPS": "5"
+            "KLR_LOG_BACKUPS": "5",
         }
 
         with patch.dict(os.environ, test_env):
@@ -264,12 +268,12 @@ class TestTraceViewer:
         entries = [
             {"ts": "2025-09-21T10:00:00Z", "name": "old_event", "data": "old"},
             {"ts": "2025-09-21T12:00:00Z", "name": "recent_event", "data": "recent"},
-            {"ts": "2025-09-21T14:00:00Z", "name": "new_event", "data": "new"}
+            {"ts": "2025-09-21T14:00:00Z", "name": "new_event", "data": "new"},
         ]
 
-        with open(log_file, 'w') as f:
+        with open(log_file, "w") as f:
             for entry in entries:
-                f.write(json.dumps(entry) + '\n')
+                f.write(json.dumps(entry) + "\n")
 
         # Read with time filter
         since = datetime(2025, 9, 21, 11, 0, 0, tzinfo=timezone.utc)
@@ -286,7 +290,7 @@ class TestTraceViewer:
             {"trace_id": "abc123", "name": "event1", "data": "test1"},
             {"trace_id": "def456", "name": "event2", "data": "test2"},
             {"trace_id": "abc789", "name": "event1", "data": "test3"},
-            {"trace_id": "ghi012", "name": "event3", "data": "test4"}
+            {"trace_id": "ghi012", "name": "event3", "data": "test4"},
         ]
 
         # Filter by trace_id prefix
@@ -313,7 +317,7 @@ class TestTraceViewer:
             "level": "INFO",
             "confidence": 0.95,
             "lang": "en-US",
-            "duration_ms": 85
+            "duration_ms": 85,
         }
 
         result = format_entry(entry)
@@ -338,33 +342,33 @@ class TestTraceViewer:
                 "ts": "2025-09-21T13:37:00Z",
                 "trace_id": "abc123",
                 "name": "turn_start",
-                "level": "INFO"
+                "level": "INFO",
             },
             {
                 "ts": "2025-09-21T13:37:01Z",
                 "trace_id": "abc123",
                 "name": "vad_gate",
                 "open": True,
-                "thr": -48.0
+                "thr": -48.0,
             },
             {
                 "ts": "2025-09-21T13:37:02Z",
                 "trace_id": "abc123",
                 "name": "stt_done",
                 "confidence": 0.95,
-                "lang": "en-US"
+                "lang": "en-US",
             },
             {
                 "ts": "2025-09-21T13:37:03Z",
                 "trace_id": "def456",
                 "name": "turn_start",
-                "level": "INFO"
-            }
+                "level": "INFO",
+            },
         ]
 
-        with open(log_file, 'w') as f:
+        with open(log_file, "w") as f:
             for entry in entries:
-                f.write(json.dumps(entry) + '\n')
+                f.write(json.dumps(entry) + "\n")
 
         # Test reading all entries
         all_entries = read_log_entries([log_file], datetime.min.replace(tzinfo=timezone.utc))
@@ -383,4 +387,6 @@ class TestTraceViewer:
         # Test combined filtering
         filtered = filter_entries(all_entries, trace_id="abc123", names=["vad_gate", "stt_done"])
         assert len(filtered) == 2
-        assert all(e["trace_id"] == "abc123" and e["name"] in ["vad_gate", "stt_done"] for e in filtered)
+        assert all(
+            e["trace_id"] == "abc123" and e["name"] in ["vad_gate", "stt_done"] for e in filtered
+        )

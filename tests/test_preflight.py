@@ -26,7 +26,7 @@ class TestIndividualChecks:
 
     def test_python_version_pass(self):
         """Test Python version check passes for current version."""
-        with patch('src.tools.preflight.sys.version_info', (3, 11, 6)):
+        with patch("src.tools.preflight.sys.version_info", (3, 11, 6)):
             status, name, details, meta = check_python_version()
             assert status == "PASS"
             assert name == "python"
@@ -36,7 +36,7 @@ class TestIndividualChecks:
 
     def test_python_version_warn(self):
         """Test Python version check warns for old version."""
-        with patch('src.tools.preflight.sys.version_info', (3, 9, 0)):
+        with patch("src.tools.preflight.sys.version_info", (3, 9, 0)):
             status, name, details, meta = check_python_version()
             assert status == "WARN"
             assert name == "python"
@@ -48,7 +48,7 @@ class TestIndividualChecks:
         fake_home = tmp_path / "home"
         fake_home.mkdir()
 
-        with patch('pathlib.Path.home', return_value=fake_home):
+        with patch("pathlib.Path.home", return_value=fake_home):
             status, name, details, meta = check_writable_directories()
             assert status == "PASS"
             assert name == "directories"
@@ -63,7 +63,7 @@ class TestIndividualChecks:
     def test_writable_directories_fail(self):
         """Test writable directories check fails with permission error."""
         # Mock mkdir to raise PermissionError
-        with patch('pathlib.Path.mkdir', side_effect=PermissionError("Permission denied")):
+        with patch("pathlib.Path.mkdir", side_effect=PermissionError("Permission denied")):
             status, name, details, meta = check_writable_directories()
             assert status == "FAIL"
             assert name == "directories"
@@ -71,7 +71,7 @@ class TestIndividualChecks:
 
     def test_calibration_missing_warn(self):
         """Test calibration check warns when profile is missing."""
-        with patch('src.audio.calibration.default_profile_path', return_value="/nonexistent/path"):
+        with patch("src.audio.calibration.default_profile_path", return_value="/nonexistent/path"):
             status, name, details, meta = check_calibration_profile()
             assert status == "WARN"
             assert name == "calibration"
@@ -85,8 +85,13 @@ class TestIndividualChecks:
         mock_profile = MagicMock()
         mock_profile.vad_threshold_dbfs = -40.0
 
-        with patch('src.audio.calibration.default_profile_path', return_value=str(calib_file)), \
-             patch('src.audio.calibration.load_profile', side_effect=json.JSONDecodeError("test", "test", 0)):
+        with (
+            patch("src.audio.calibration.default_profile_path", return_value=str(calib_file)),
+            patch(
+                "src.audio.calibration.load_profile",
+                side_effect=json.JSONDecodeError("test", "test", 0),
+            ),
+        ):
             status, name, details, meta = check_calibration_profile()
             assert status == "FAIL"
             assert name == "calibration"
@@ -99,7 +104,7 @@ class TestIndividualChecks:
             "vad_threshold_dbfs": -40.0,
             "agc_gain_db": 5.0,
             "noise_floor_dbfs": -60.0,
-            "speech_rms_dbfs": -20.0
+            "speech_rms_dbfs": -20.0,
         }
         calib_file.write_text(json.dumps(calib_data))
 
@@ -110,8 +115,10 @@ class TestIndividualChecks:
         mock_profile.noise_floor_dbfs = -60.0
         mock_profile.speech_rms_dbfs = -20.0
 
-        with patch('src.audio.calibration.default_profile_path', return_value=str(calib_file)), \
-             patch('src.audio.calibration.load_profile', return_value=mock_profile):
+        with (
+            patch("src.audio.calibration.default_profile_path", return_value=str(calib_file)),
+            patch("src.audio.calibration.load_profile", return_value=mock_profile),
+        ):
             status, name, details, meta = check_calibration_profile()
             assert status == "PASS"
             assert name == "calibration"
@@ -132,8 +139,10 @@ class TestIndividualChecks:
         mock_profile.noise_floor_dbfs = -60.0
         mock_profile.speech_rms_dbfs = -20.0
 
-        with patch('src.audio.calibration.default_profile_path', return_value=str(calib_file)), \
-             patch('src.audio.calibration.load_profile', return_value=mock_profile):
+        with (
+            patch("src.audio.calibration.default_profile_path", return_value=str(calib_file)),
+            patch("src.audio.calibration.load_profile", return_value=mock_profile),
+        ):
             status, name, details, meta = check_calibration_profile()
             assert status == "WARN"
             assert name == "calibration"
@@ -145,7 +154,7 @@ class TestIndividualChecks:
         test_env = {
             "KLR_ENABLE_STT": "1",
             "KLR_FUZZY_THRESHOLD": "0.8",
-            "KLR_AUDIO_SAMPLE_RATE": "16000"
+            "KLR_AUDIO_SAMPLE_RATE": "16000",
         }
 
         with patch.dict(os.environ, test_env, clear=False):
@@ -159,7 +168,7 @@ class TestIndividualChecks:
         """Test env sanity check fails with invalid values."""
         test_env = {
             "KLR_AUDIO_SAMPLE_RATE": "-1",  # Invalid: negative
-            "KLR_FUZZY_THRESHOLD": "1.5"    # Invalid: > 1.0
+            "KLR_FUZZY_THRESHOLD": "1.5",  # Invalid: > 1.0
         }
 
         with patch.dict(os.environ, test_env, clear=False):
@@ -170,10 +179,7 @@ class TestIndividualChecks:
 
     def test_env_unparsable_warn(self):
         """Test env sanity check warns for unparsable values."""
-        test_env = {
-            "KLR_FUZZY_THRESHOLD": "not_a_number",
-            "KLR_AUDIO_SAMPLE_RATE": "invalid"
-        }
+        test_env = {"KLR_FUZZY_THRESHOLD": "not_a_number", "KLR_AUDIO_SAMPLE_RATE": "invalid"}
 
         with patch.dict(os.environ, test_env, clear=False):
             status, name, details, meta = check_env_sanity()
@@ -185,11 +191,9 @@ class TestIndividualChecks:
         """Test audio backend check passes when sounddevice is available."""
         mock_sd = MagicMock()
         mock_sd.default.device = [0, 1]  # [input, output]
-        mock_sd.query_devices.return_value = [
-            {"name": "Test Microphone", "max_input_channels": 1}
-        ]
+        mock_sd.query_devices.return_value = [{"name": "Test Microphone", "max_input_channels": 1}]
 
-        with patch.dict('sys.modules', {'sounddevice': mock_sd}):
+        with patch.dict("sys.modules", {"sounddevice": mock_sd}):
             status, name, details, meta = check_audio_backend()
             assert status == "PASS"
             assert name == "audio"
@@ -198,7 +202,7 @@ class TestIndividualChecks:
 
     def test_audio_backend_unavailable_warn(self):
         """Test audio backend check warns when sounddevice unavailable."""
-        with patch.dict('sys.modules', {'sounddevice': None}):
+        with patch.dict("sys.modules", {"sounddevice": None}):
             status, name, details, meta = check_audio_backend()
             assert status == "WARN"
             assert name == "audio"
@@ -222,7 +226,7 @@ class TestIndividualChecks:
     def test_stt_backend_vosk_missing_warn(self):
         """Test STT backend check warns when vosk unavailable."""
         with patch.dict(os.environ, {"KLR_STT_BACKEND": "vosk"}):
-            with patch.dict('sys.modules', {'vosk': None}):
+            with patch.dict("sys.modules", {"vosk": None}):
                 status, name, details, meta = check_stt_backend()
                 assert status == "WARN"
                 assert name == "stt"
@@ -233,8 +237,10 @@ class TestIndividualChecks:
         mock_vosk = MagicMock()
         nonexistent_model = tmp_path / "nonexistent_model"
 
-        with patch.dict(os.environ, {"KLR_STT_BACKEND": "vosk", "KLR_VOSK_MODEL_DIR": str(nonexistent_model)}):
-            with patch.dict('sys.modules', {'vosk': mock_vosk}):
+        with patch.dict(
+            os.environ, {"KLR_STT_BACKEND": "vosk", "KLR_VOSK_MODEL_DIR": str(nonexistent_model)}
+        ):
+            with patch.dict("sys.modules", {"vosk": mock_vosk}):
                 status, name, details, meta = check_stt_backend()
                 assert status == "WARN"
                 assert name == "stt"
@@ -251,8 +257,8 @@ class TestIndividualChecks:
     def test_tts_backend_piper_missing_warn(self):
         """Test TTS backend check warns when piper unavailable."""
         with patch.dict(os.environ, {"KLR_TTS_BACKEND": "piper"}):
-            with patch.dict('sys.modules', {'piper': None}):
-                with patch('shutil.which', return_value=None):
+            with patch.dict("sys.modules", {"piper": None}):
+                with patch("shutil.which", return_value=None):
                     status, name, details, meta = check_tts_backend()
                     assert status == "WARN"
                     assert name == "tts"
@@ -261,8 +267,8 @@ class TestIndividualChecks:
     def test_tts_backend_piper_binary_pass(self):
         """Test TTS backend check passes when piper binary available."""
         with patch.dict(os.environ, {"KLR_TTS_BACKEND": "piper"}):
-            with patch.dict('sys.modules', {'piper': None}):
-                with patch('shutil.which', return_value="/usr/bin/piper"):
+            with patch.dict("sys.modules", {"piper": None}):
+                with patch("shutil.which", return_value="/usr/bin/piper"):
                     status, name, details, meta = check_tts_backend()
                     assert status == "PASS"
                     assert name == "tts"
@@ -277,7 +283,7 @@ class TestIndividualChecks:
         mock_result.timings_ms = {"total_ms": 100}
         mock_result.tts_path = "/tmp/test.wav"
 
-        with patch('src.tools.system_smoke.run_smoke', return_value=mock_result):
+        with patch("src.tools.system_smoke.run_smoke", return_value=mock_result):
             status, name, details, meta = check_system_smoke()
             assert status == "PASS"
             assert name == "smoke"
@@ -294,7 +300,7 @@ class TestIndividualChecks:
         mock_result.timings_ms = {}
         mock_result.tts_path = None
 
-        with patch('src.tools.system_smoke.run_smoke', return_value=mock_result):
+        with patch("src.tools.system_smoke.run_smoke", return_value=mock_result):
             status, name, details, meta = check_system_smoke()
             assert status == "WARN"
             assert name == "smoke"
@@ -302,7 +308,7 @@ class TestIndividualChecks:
 
     def test_system_smoke_fail_on_exception(self):
         """Test system smoke check fails on exception."""
-        with patch('src.tools.system_smoke.run_smoke', side_effect=Exception("Test error")):
+        with patch("src.tools.system_smoke.run_smoke", side_effect=Exception("Test error")):
             status, name, details, meta = check_system_smoke()
             assert status == "FAIL"
             assert name == "smoke"
@@ -318,7 +324,7 @@ class TestOverallChecks:
             "KLR_STT_BACKEND": "mock",
             "KLR_TTS_BACKEND": "mock",
             "KLR_AUDIO_BACKEND": "mock",
-            "KLR_FUZZY_THRESHOLD": "0.8"
+            "KLR_FUZZY_THRESHOLD": "0.8",
         }
 
         # Mock all checks to return PASS
@@ -330,19 +336,22 @@ class TestOverallChecks:
             ("WARN", "audio", "SoundDevice unavailable (will use mock)", {}),  # Mock is OK
             ("PASS", "stt", "Mock backend", {}),
             ("PASS", "tts", "Mock backend", {}),
-            ("PASS", "smoke", "Pipeline OK", {})
+            ("PASS", "smoke", "Pipeline OK", {}),
         ]
 
         with patch.dict(os.environ, test_env):
-            with patch('src.tools.preflight.check_python_version', return_value=mock_checks[0]), \
-                 patch('src.tools.preflight.check_writable_directories', return_value=mock_checks[1]), \
-                 patch('src.tools.preflight.check_calibration_profile', return_value=mock_checks[2]), \
-                 patch('src.tools.preflight.check_env_sanity', return_value=mock_checks[3]), \
-                 patch('src.tools.preflight.check_audio_backend', return_value=mock_checks[4]), \
-                 patch('src.tools.preflight.check_stt_backend', return_value=mock_checks[5]), \
-                 patch('src.tools.preflight.check_tts_backend', return_value=mock_checks[6]), \
-                 patch('src.tools.preflight.check_system_smoke', return_value=mock_checks[7]):
-
+            with (
+                patch("src.tools.preflight.check_python_version", return_value=mock_checks[0]),
+                patch(
+                    "src.tools.preflight.check_writable_directories", return_value=mock_checks[1]
+                ),
+                patch("src.tools.preflight.check_calibration_profile", return_value=mock_checks[2]),
+                patch("src.tools.preflight.check_env_sanity", return_value=mock_checks[3]),
+                patch("src.tools.preflight.check_audio_backend", return_value=mock_checks[4]),
+                patch("src.tools.preflight.check_stt_backend", return_value=mock_checks[5]),
+                patch("src.tools.preflight.check_tts_backend", return_value=mock_checks[6]),
+                patch("src.tools.preflight.check_system_smoke", return_value=mock_checks[7]),
+            ):
                 results = run_all_checks()
                 overall = compute_overall_status(results)
 
@@ -354,7 +363,7 @@ class TestOverallChecks:
         mock_checks = [
             ("PASS", "python", "3.11.6", {}),
             ("WARN", "calibration", "Profile missing", {}),
-            ("PASS", "other", "OK", {})
+            ("PASS", "other", "OK", {}),
         ]
 
         overall = compute_overall_status(mock_checks)
@@ -365,7 +374,7 @@ class TestOverallChecks:
         mock_checks = [
             ("PASS", "python", "3.11.6", {}),
             ("FAIL", "calibration", "Malformed JSON", {}),
-            ("PASS", "other", "OK", {})
+            ("PASS", "other", "OK", {}),
         ]
 
         overall = compute_overall_status(mock_checks)
@@ -376,7 +385,7 @@ class TestOverallChecks:
         mock_checks = [
             ("PASS", "python", "3.11.6", {}),
             ("FAIL", "env", "Invalid values", {}),
-            ("PASS", "other", "OK", {})
+            ("PASS", "other", "OK", {}),
         ]
 
         overall = compute_overall_status(mock_checks)
@@ -389,7 +398,7 @@ class TestOverallChecks:
             ("WARN", "audio", "SoundDevice unavailable", {}),
             ("WARN", "stt", "Vosk unavailable", {}),
             ("WARN", "tts", "Piper unavailable", {}),
-            ("PASS", "smoke", "Mock pipeline OK", {})
+            ("PASS", "smoke", "Mock pipeline OK", {}),
         ]
 
         overall = compute_overall_status(mock_checks)
@@ -405,12 +414,12 @@ class TestOverallChecks:
         mock_result.timings_ms = {}
         mock_result.tts_path = "/tmp/test.wav"
 
-        with patch('src.tools.system_smoke.run_smoke', return_value=mock_result):
+        with patch("src.tools.system_smoke.run_smoke", return_value=mock_result):
             status, name, details, meta = check_system_smoke()
             assert status == "PASS"
 
         # Test failure
-        with patch('src.tools.system_smoke.run_smoke', side_effect=Exception("Test failure")):
+        with patch("src.tools.system_smoke.run_smoke", side_effect=Exception("Test failure")):
             status, name, details, meta = check_system_smoke()
             assert status == "FAIL"
 
@@ -422,7 +431,7 @@ class TestJSONSummary:
         """Test JSON summary is created correctly."""
         check_results = [
             ("PASS", "python", "3.11.6", {"major": 3, "minor": 11}),
-            ("WARN", "calibration", "Missing", {"path": "/test/path"})
+            ("WARN", "calibration", "Missing", {"path": "/test/path"}),
         ]
         overall_status = "WARN"
 
@@ -469,14 +478,26 @@ class TestCLIIntegration:
 
     def test_skip_smoke_option(self):
         """Test that --no-smoke skips the smoke test."""
-        with patch('src.tools.preflight.check_python_version', return_value=("PASS", "python", "OK", {})), \
-             patch('src.tools.preflight.check_writable_directories', return_value=("PASS", "dirs", "OK", {})), \
-             patch('src.tools.preflight.check_calibration_profile', return_value=("PASS", "calib", "OK", {})), \
-             patch('src.tools.preflight.check_env_sanity', return_value=("PASS", "env", "OK", {})), \
-             patch('src.tools.preflight.check_audio_backend', return_value=("PASS", "audio", "OK", {})), \
-             patch('src.tools.preflight.check_stt_backend', return_value=("PASS", "stt", "OK", {})), \
-             patch('src.tools.preflight.check_tts_backend', return_value=("PASS", "tts", "OK", {})):
-
+        with (
+            patch(
+                "src.tools.preflight.check_python_version",
+                return_value=("PASS", "python", "OK", {}),
+            ),
+            patch(
+                "src.tools.preflight.check_writable_directories",
+                return_value=("PASS", "dirs", "OK", {}),
+            ),
+            patch(
+                "src.tools.preflight.check_calibration_profile",
+                return_value=("PASS", "calib", "OK", {}),
+            ),
+            patch("src.tools.preflight.check_env_sanity", return_value=("PASS", "env", "OK", {})),
+            patch(
+                "src.tools.preflight.check_audio_backend", return_value=("PASS", "audio", "OK", {})
+            ),
+            patch("src.tools.preflight.check_stt_backend", return_value=("PASS", "stt", "OK", {})),
+            patch("src.tools.preflight.check_tts_backend", return_value=("PASS", "tts", "OK", {})),
+        ):
             results = run_all_checks(skip_smoke=True)
 
             # Should have 7 checks (all except smoke)
@@ -485,7 +506,9 @@ class TestCLIIntegration:
             assert "smoke" not in check_names
 
             # With smoke test
-            with patch('src.tools.preflight.check_system_smoke', return_value=("PASS", "smoke", "OK", {})):
+            with patch(
+                "src.tools.preflight.check_system_smoke", return_value=("PASS", "smoke", "OK", {})
+            ):
                 results_with_smoke = run_all_checks(skip_smoke=False)
                 assert len(results_with_smoke) == 8
                 smoke_names = [result[1] for result in results_with_smoke]

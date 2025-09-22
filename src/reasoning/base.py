@@ -9,6 +9,7 @@ from typing import Dict, List, Literal, Optional, Protocol
 @dataclass
 class ReasoningResult:
     """Result from reasoning/QA processing."""
+
     reply_text: str
     sources: List[str] = field(default_factory=list)
     meta: Optional[Dict] = None
@@ -32,10 +33,7 @@ class ReasoningBackend(Protocol):
 BackendName = Literal["mock", "rag", "qa"]
 
 
-def create_reasoning_backend(
-    name: BackendName,
-    **kwargs
-) -> ReasoningBackend:
+def create_reasoning_backend(name: BackendName, **kwargs) -> ReasoningBackend:
     """Create a reasoning backend by name.
 
     Args:
@@ -51,12 +49,15 @@ def create_reasoning_backend(
     """
     if name == "mock":
         from .mock_backend import MockReasoningBackend
+
         return MockReasoningBackend(**kwargs)
     elif name == "rag":
         from .local_rag_backend import LocalRagBackend
+
         return LocalRagBackend(**kwargs)
     elif name == "qa":
         from .local_qa_backend import LocalQaBackend
+
         return LocalQaBackend(**kwargs)
     else:
         raise ValueError(f"Unknown reasoning backend: {name}")

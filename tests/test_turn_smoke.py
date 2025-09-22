@@ -64,10 +64,12 @@ class TestTurnOrchestrator:
     @pytest.fixture
     def reason_fn(self):
         """Simple reason function fixture."""
+
         def simple_reason(transcript: str) -> str:
             if not transcript:
                 return ""
             return "ok"
+
         return simple_reason
 
     def _create_test_audio(self, sample_rate: int) -> np.ndarray:
@@ -83,7 +85,7 @@ class TestTurnOrchestrator:
         t = np.linspace(0, tone_duration, tone_samples, endpoint=False)
         tone = np.sin(2 * np.pi * 440 * t).astype(np.float32)
         # Scale to -20 dBFS (RMS = amplitude/sqrt(2), so amplitude = RMS * sqrt(2))
-        target_rms = 10**(-20.0 / 20)  # -20 dBFS RMS
+        target_rms = 10 ** (-20.0 / 20)  # -20 dBFS RMS
         target_amplitude = target_rms * np.sqrt(2)
         tone = tone * target_amplitude
 
@@ -100,7 +102,9 @@ class TestTurnOrchestrator:
         rng = np.random.default_rng(123)
         return rng.normal(0, 0.001, samples).astype(np.float32)  # ~-60 dBFS
 
-    def test_turn_ok_end_to_end_mock(self, sample_rate, event_capture, stt_backend, tts_backend, reason_fn):
+    def test_turn_ok_end_to_end_mock(
+        self, sample_rate, event_capture, stt_backend, tts_backend, reason_fn
+    ):
         """Test successful end-to-end turn with mock backends."""
         # Create test audio with voice activity
         audio = self._create_test_audio(sample_rate)
@@ -120,7 +124,7 @@ class TestTurnOrchestrator:
             min_active_ms=200,
             margin_db=2.0,
             max_turn_seconds=30.0,
-            logger=event_capture
+            logger=event_capture,
         )
 
         # Verify summary
@@ -159,7 +163,9 @@ class TestTurnOrchestrator:
             assert "trace_id" in event
             assert event["trace_id"] == summary.trace_id
 
-    def test_turn_no_voice_skips_stt(self, sample_rate, event_capture, stt_backend, tts_backend, reason_fn):
+    def test_turn_no_voice_skips_stt(
+        self, sample_rate, event_capture, stt_backend, tts_backend, reason_fn
+    ):
         """Test that no voice activity skips STT and TTS."""
         # Create noise-only audio
         audio = self._create_noise_only_audio(sample_rate)
@@ -179,7 +185,7 @@ class TestTurnOrchestrator:
             min_active_ms=200,
             margin_db=2.0,
             max_turn_seconds=30.0,
-            logger=event_capture
+            logger=event_capture,
         )
 
         # Verify summary
@@ -213,6 +219,7 @@ class TestTurnOrchestrator:
 
     def test_timeout_abort(self, sample_rate, event_capture, stt_backend, tts_backend):
         """Test that turn times out appropriately."""
+
         # Create a reason function that takes time
         def slow_reason_fn(transcript: str) -> str:
             time.sleep(0.05)  # Sleep for 50ms
@@ -236,7 +243,7 @@ class TestTurnOrchestrator:
             min_active_ms=200,
             margin_db=2.0,
             max_turn_seconds=0.01,  # 10ms timeout, less than 50ms sleep
-            logger=event_capture
+            logger=event_capture,
         )
 
         # Verify summary indicates timeout
@@ -266,7 +273,7 @@ class TestTurnOrchestrator:
             reason_fn=reason_fn,
             vad_threshold_dbfs=-50.0,
             logger=event_capture,
-            trace_id=custom_trace
+            trace_id=custom_trace,
         )
 
         assert summary1.trace_id == custom_trace
@@ -279,7 +286,7 @@ class TestTurnOrchestrator:
             stt=stt_backend,
             reason_fn=reason_fn,
             vad_threshold_dbfs=-50.0,
-            logger=event_capture
+            logger=event_capture,
         )
 
         # Should generate a trace ID
@@ -302,7 +309,7 @@ class TestTurnOrchestrator:
             reason_fn=reason_fn,
             tts=None,  # No TTS backend
             vad_threshold_dbfs=-50.0,
-            logger=event_capture
+            logger=event_capture,
         )
 
         # Turn should succeed but without TTS
@@ -321,6 +328,7 @@ class TestTurnOrchestrator:
 
     def test_empty_reason_response(self, sample_rate, event_capture, stt_backend, tts_backend):
         """Test turn with reason function that returns empty response."""
+
         def empty_reason_fn(transcript: str) -> str:
             return ""
 
@@ -333,7 +341,7 @@ class TestTurnOrchestrator:
             reason_fn=empty_reason_fn,
             tts=tts_backend,
             vad_threshold_dbfs=-50.0,
-            logger=event_capture
+            logger=event_capture,
         )
 
         # Turn should succeed but with empty reply
@@ -360,7 +368,7 @@ class TestTurnOrchestrator:
             reason_fn=reason_fn,
             tts=tts_backend,
             vad_threshold_dbfs=-50.0,
-            logger=event_capture
+            logger=event_capture,
         )
 
         # Verify timing metrics exist
@@ -376,10 +384,12 @@ class TestTurnOrchestrator:
             assert timing >= 0
 
         # Total should be greater than sum of parts (includes overhead)
-        stage_total = (summary.timings_ms["vad_ms"] +
-                      summary.timings_ms["stt_ms"] +
-                      summary.timings_ms["reason_ms"] +
-                      summary.timings_ms["tts_ms"])
+        stage_total = (
+            summary.timings_ms["vad_ms"]
+            + summary.timings_ms["stt_ms"]
+            + summary.timings_ms["reason_ms"]
+            + summary.timings_ms["tts_ms"]
+        )
         assert summary.timings_ms["total_ms"] >= stage_total
 
 

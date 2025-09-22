@@ -98,5 +98,5 @@ def get_line(kind: str, context: Mapping[str, Any] | None = None) -> str:
         line = f"{line}."
     return line
 
-__all__ = ['PERSONA_PROMPT', 'get_line']
 
+__all__ = ["PERSONA_PROMPT", "get_line"]

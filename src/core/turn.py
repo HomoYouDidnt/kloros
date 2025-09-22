@@ -17,6 +17,7 @@ from src.tts.base import TtsBackend, TtsResult
 @dataclass
 class TurnSummary:
     """Summary of a complete turn interaction."""
+
     trace_id: str
     ok: bool
     reason: str
@@ -98,22 +99,32 @@ def run_turn(
     # VAD Stage
     v0 = time.perf_counter()
     segments, metrics = detect_voiced_segments(
-        audio, sample_rate, vad_threshold_dbfs,
-        frame_ms=frame_ms, hop_ms=hop_ms,
-        attack_ms=attack_ms, release_ms=release_ms,
-        min_active_ms=min_active_ms, margin_db=margin_db
+        audio,
+        sample_rate,
+        vad_threshold_dbfs,
+        frame_ms=frame_ms,
+        hop_ms=hop_ms,
+        attack_ms=attack_ms,
+        release_ms=release_ms,
+        min_active_ms=min_active_ms,
+        margin_db=margin_db,
     )
     timings["vad_ms"] = (time.perf_counter() - v0) * 1000.0
 
     if not segments:
-        emit("vad_gate", open=False, thr=vad_threshold_dbfs,
-             frames_active=metrics.frames_active, frames_total=metrics.frames_total,
-             dbfs_mean=metrics.dbfs_mean, dbfs_peak=metrics.dbfs_peak)
+        emit(
+            "vad_gate",
+            open=False,
+            thr=vad_threshold_dbfs,
+            frames_active=metrics.frames_active,
+            frames_total=metrics.frames_total,
+            dbfs_mean=metrics.dbfs_mean,
+            dbfs_peak=metrics.dbfs_peak,
+        )
         timings["total_ms"] = (time.perf_counter() - t0) * 1000.0
         emit("turn_done", ok=False, reason="no_voice", total_ms=timings["total_ms"])
         return TurnSummary(
-            trace_id=tid, ok=False, reason="no_voice",
-            vad=metrics, timings_ms=timings
+            trace_id=tid, ok=False, reason="no_voice", vad=metrics, timings_ms=timings
         )
 
     # Select primary voiced segment
@@ -121,18 +132,25 @@ def run_turn(
     start, end = primary_segment if primary_segment else segments[0]
     voiced = audio[start:end]
 
-    emit("vad_gate", open=True, thr=vad_threshold_dbfs,
-         start=start, end=end, len_samples=len(voiced),
-         frames_active=metrics.frames_active, frames_total=metrics.frames_total,
-         dbfs_mean=metrics.dbfs_mean, dbfs_peak=metrics.dbfs_peak)
+    emit(
+        "vad_gate",
+        open=True,
+        thr=vad_threshold_dbfs,
+        start=start,
+        end=end,
+        len_samples=len(voiced),
+        frames_active=metrics.frames_active,
+        frames_total=metrics.frames_total,
+        dbfs_mean=metrics.dbfs_mean,
+        dbfs_peak=metrics.dbfs_peak,
+    )
 
     # Timeout check after VAD
     if (time.perf_counter() - t0) > max_turn_seconds:
         timings["total_ms"] = (time.perf_counter() - t0) * 1000.0
         emit("turn_done", ok=False, reason="timeout_after_vad", total_ms=timings["total_ms"])
         return TurnSummary(
-            trace_id=tid, ok=False, reason="timeout",
-            vad=metrics, timings_ms=timings
+            trace_id=tid, ok=False, reason="timeout", vad=metrics, timings_ms=timings
         )
 
     # STT Stage
@@ -140,17 +158,26 @@ def run_turn(
     stt_res: SttResult = stt.transcribe(voiced, sample_rate)
     timings["stt_ms"] = (time.perf_counter() - s0) * 1000.0
 
-    emit("stt_done", len_samples=len(voiced), sample_rate=sample_rate,
-         confidence=stt_res.confidence, lang=stt_res.lang,
-         transcript=stt_res.transcript)
+    emit(
+        "stt_done",
+        len_samples=len(voiced),
+        sample_rate=sample_rate,
+        confidence=stt_res.confidence,
+        lang=stt_res.lang,
+        transcript=stt_res.transcript,
+    )
 
     # Timeout check after STT
     if (time.perf_counter() - t0) > max_turn_seconds:
         timings["total_ms"] = (time.perf_counter() - t0) * 1000.0
         emit("turn_done", ok=False, reason="timeout_after_stt", total_ms=timings["total_ms"])
         return TurnSummary(
-            trace_id=tid, ok=False, reason="timeout",
-            transcript=stt_res.transcript, vad=metrics, timings_ms=timings
+            trace_id=tid,
+            ok=False,
+            reason="timeout",
+            transcript=stt_res.transcript,
+            vad=metrics,
+            timings_ms=timings,
         )
 
     # Reasoning Stage
@@ -158,17 +185,25 @@ def run_turn(
     reply_text = reason_fn(stt_res.transcript or "")
     timings["reason_ms"] = (time.perf_counter() - r0) * 1000.0
 
-    emit("reason_done", tokens_in=len(stt_res.transcript or ""),
-         tokens_out=len(reply_text), reply_text=reply_text)
+    emit(
+        "reason_done",
+        tokens_in=len(stt_res.transcript or ""),
+        tokens_out=len(reply_text),
+        reply_text=reply_text,
+    )
 
     # Timeout check after reasoning
     if (time.perf_counter() - t0) > max_turn_seconds:
         timings["total_ms"] = (time.perf_counter() - t0) * 1000.0
         emit("turn_done", ok=False, reason="timeout_after_reason", total_ms=timings["total_ms"])
         return TurnSummary(
-            trace_id=tid, ok=False, reason="timeout",
-            transcript=stt_res.transcript, reply_text=reply_text,
-            vad=metrics, timings_ms=timings
+            trace_id=tid,
+            ok=False,
+            reason="timeout",
+            transcript=stt_res.transcript,
+            reply_text=reply_text,
+            vad=metrics,
+            timings_ms=timings,
         )
 
     # TTS Stage (optional)
@@ -178,9 +213,13 @@ def run_turn(
         try:
             tts_result = tts.synthesize(reply_text)
             timings["tts_ms"] = (time.perf_counter() - tts0) * 1000.0
-            emit("tts_done", audio_path=tts_result.audio_path,
-                 duration_s=tts_result.duration_s, sample_rate=tts_result.sample_rate,
-                 voice=tts_result.voice)
+            emit(
+                "tts_done",
+                audio_path=tts_result.audio_path,
+                duration_s=tts_result.duration_s,
+                sample_rate=tts_result.sample_rate,
+                voice=tts_result.voice,
+            )
         except Exception as e:
             timings["tts_ms"] = (time.perf_counter() - tts0) * 1000.0
             emit("tts_error", error=str(e))
@@ -190,7 +229,12 @@ def run_turn(
     emit("turn_done", ok=True, reason="ok", total_ms=timings["total_ms"])
 
     return TurnSummary(
-        trace_id=tid, ok=True, reason="ok",
-        transcript=stt_res.transcript, reply_text=reply_text,
-        tts=tts_result, vad=metrics, timings_ms=timings
+        trace_id=tid,
+        ok=True,
+        reason="ok",
+        transcript=stt_res.transcript,
+        reply_text=reply_text,
+        tts=tts_result,
+        vad=metrics,
+        timings_ms=timings,
     )

@@ -87,9 +87,7 @@ class RAG:
                 docs=doc_count,
                 embeddings=embed_rows,
             )
-            print(
-                f"[RAG] warning: metadata ({doc_count}) != embeddings ({embed_rows})"
-            )
+            print(f"[RAG] warning: metadata ({doc_count}) != embeddings ({embed_rows})")
 
     @staticmethod
     def _detect_bundle(
@@ -220,7 +218,9 @@ class RAG:
             try:
                 arr = np.asarray(payload, dtype=np.float32)
             except (ValueError, TypeError) as e:
-                raise ValueError(f"Could not convert embeddings in {source} to numpy array: {e}") from e
+                raise ValueError(
+                    f"Could not convert embeddings in {source} to numpy array: {e}"
+                ) from e
         else:
             arr = payload.astype(np.float32)
 
@@ -324,7 +324,9 @@ class RAG:
                 log_event("rag_generate_response", model=model, status="ok", length=len(response))
                 return response
             msg = f"Ollama error: HTTP {r.status_code}"
-            log_event("rag_generate_response", model=model, status="http_error", code=int(r.status_code))
+            log_event(
+                "rag_generate_response", model=model, status="http_error", code=int(r.status_code)
+            )
             return msg
         except requests.RequestException as e:
             log_event("rag_generate_response", model=model, status="exception", error=str(e))
@@ -368,5 +370,3 @@ class RAG:
 
 
 # end
-
-

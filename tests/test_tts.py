@@ -26,10 +26,7 @@ class TestTtsFactory:
         # Test basic synthesis
         with tempfile.TemporaryDirectory() as tmp_dir:
             result = backend.synthesize(
-                "hello world",
-                sample_rate=22050,
-                out_dir=tmp_dir,
-                basename="test"
+                "hello world", sample_rate=22050, out_dir=tmp_dir, basename="test"
             )
 
             # Verify result structure
@@ -51,8 +48,8 @@ class TestTtsFactory:
     def test_factory_piper_unavailable_graceful(self):
         """Test that Piper backend fails gracefully when unavailable."""
         # Test when Piper module and CLI are both unavailable
-        with patch.dict('sys.modules', {'piper': None}):
-            with patch('subprocess.run', side_effect=FileNotFoundError("piper not found")):
+        with patch.dict("sys.modules", {"piper": None}):
+            with patch("subprocess.run", side_effect=FileNotFoundError("piper not found")):
                 with pytest.raises(RuntimeError, match="piper unavailable"):
                     create_tts_backend("piper")
 
@@ -66,10 +63,7 @@ class TestMockBackend:
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             result = backend.synthesize(
-                "test text",
-                sample_rate=22050,
-                out_dir=tmp_dir,
-                basename="test_output"
+                "test text", sample_rate=22050, out_dir=tmp_dir, basename="test_output"
             )
 
             # File should exist
@@ -77,7 +71,7 @@ class TestMockBackend:
             assert result.audio_path.endswith("test_output.wav")
 
             # Should be a valid WAV file
-            with wave.open(result.audio_path, 'rb') as wav_file:
+            with wave.open(result.audio_path, "rb") as wav_file:
                 assert wav_file.getnchannels() == 1  # mono
                 assert wav_file.getsampwidth() == 2  # 16-bit
                 assert wav_file.getframerate() == 22050
@@ -97,17 +91,14 @@ class TestMockBackend:
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             result = backend.synthesize(
-                "test",
-                sample_rate=24000,
-                out_dir=tmp_dir,
-                basename="sample_rate_test"
+                "test", sample_rate=24000, out_dir=tmp_dir, basename="sample_rate_test"
             )
 
             # Result should reflect requested sample rate
             assert result.sample_rate == 24000
 
             # WAV file should have correct sample rate
-            with wave.open(result.audio_path, 'rb') as wav_file:
+            with wave.open(result.audio_path, "rb") as wav_file:
                 assert wav_file.getframerate() == 24000
 
     def test_voice_passthrough(self):
@@ -117,20 +108,13 @@ class TestMockBackend:
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Test with voice specified
             result = backend.synthesize(
-                "test",
-                voice="test-voice",
-                out_dir=tmp_dir,
-                basename="voice_test"
+                "test", voice="test-voice", out_dir=tmp_dir, basename="voice_test"
             )
 
             assert result.voice == "test-voice"
 
             # Test with no voice specified
-            result_no_voice = backend.synthesize(
-                "test",
-                out_dir=tmp_dir,
-                basename="no_voice_test"
-            )
+            result_no_voice = backend.synthesize("test", out_dir=tmp_dir, basename="no_voice_test")
 
             assert result_no_voice.voice is None
 
@@ -153,6 +137,7 @@ class TestMockBackend:
             result1 = backend.synthesize("test1", out_dir=tmp_dir)
             # Small delay to ensure different timestamps
             import time
+
             time.sleep(0.001)
             result2 = backend.synthesize("test2", out_dir=tmp_dir)
 
@@ -171,7 +156,9 @@ class TestMockBackend:
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Different texts should produce identical audio
             result1 = backend.synthesize("hello", out_dir=tmp_dir, basename="text1")
-            result2 = backend.synthesize("completely different text", out_dir=tmp_dir, basename="text2")
+            result2 = backend.synthesize(
+                "completely different text", out_dir=tmp_dir, basename="text2"
+            )
 
             # Duration and sample rate should be identical
             assert result1.duration_s == result2.duration_s
@@ -206,11 +193,7 @@ class TestTtsIntegration:
                 backend = MockTtsBackend(out_dir=tmp_dir1)
 
                 # Synthesize with override to tmp_dir2
-                result = backend.synthesize(
-                    "test",
-                    out_dir=tmp_dir2,
-                    basename="override_test"
-                )
+                result = backend.synthesize("test", out_dir=tmp_dir2, basename="override_test")
 
                 # File should be in override directory, not backend default
                 assert result.audio_path.startswith(tmp_dir2)
@@ -225,9 +208,7 @@ class TestTtsIntegration:
             results = []
             for i in range(3):
                 result = backend.synthesize(
-                    f"test message {i}",
-                    out_dir=tmp_dir,
-                    basename=f"multi_test_{i}"
+                    f"test message {i}", out_dir=tmp_dir, basename=f"multi_test_{i}"
                 )
                 results.append(result)
 
@@ -237,7 +218,7 @@ class TestTtsIntegration:
                 assert f"multi_test_{i}.wav" in result.audio_path
 
                 # Each should be a valid WAV
-                with wave.open(result.audio_path, 'rb') as wav_file:
+                with wave.open(result.audio_path, "rb") as wav_file:
                     assert wav_file.getnchannels() == 1
                     assert wav_file.getsampwidth() == 2
 
@@ -252,7 +233,7 @@ class TestTtsIntegration:
             assert os.path.exists(result.audio_path)
             assert result.duration_s == 0.1  # Mock always creates 0.1s silence
 
-            with wave.open(result.audio_path, 'rb') as wav_file:
+            with wave.open(result.audio_path, "rb") as wav_file:
                 assert wav_file.getnframes() > 0
 
     def test_special_characters_in_text(self):

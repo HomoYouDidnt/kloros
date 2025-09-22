@@ -65,7 +65,7 @@ class RingBuffer:
 
             if data_len > self.capacity:
                 # If data is larger than buffer, take only the last part
-                data = data[-self.capacity:]
+                data = data[-self.capacity :]
                 data_len = len(data)
 
             # Calculate wrap-around
@@ -73,12 +73,12 @@ class RingBuffer:
 
             if end_idx <= self.capacity:
                 # No wrap needed
-                self.buffer[self.write_idx:end_idx] = data
+                self.buffer[self.write_idx : end_idx] = data
             else:
                 # Wrap around
                 first_part = self.capacity - self.write_idx
-                self.buffer[self.write_idx:] = data[:first_part]
-                self.buffer[:end_idx - self.capacity] = data[first_part:]
+                self.buffer[self.write_idx :] = data[:first_part]
+                self.buffer[: end_idx - self.capacity] = data[first_part:]
 
             self.write_idx = end_idx % self.capacity
             self._available_samples = min(self._available_samples + data_len, self.capacity)
@@ -107,12 +107,12 @@ class RingBuffer:
 
             if end_idx <= self.capacity:
                 # No wrap needed
-                result[:] = self.buffer[self.read_idx:end_idx]
+                result[:] = self.buffer[self.read_idx : end_idx]
             else:
                 # Wrap around
                 first_part = self.capacity - self.read_idx
-                result[:first_part] = self.buffer[self.read_idx:]
-                result[first_part:] = self.buffer[:end_idx - self.capacity]
+                result[:first_part] = self.buffer[self.read_idx :]
+                result[first_part:] = self.buffer[: end_idx - self.capacity]
 
             self.read_idx = end_idx % self.capacity
             self._available_samples -= num_samples
@@ -136,6 +136,7 @@ class SoundDeviceBackend:
         """
         try:
             import sounddevice as sd
+
             self.sd = sd
         except ImportError as e:
             raise RuntimeError("sounddevice unavailable") from e
@@ -174,7 +175,7 @@ class SoundDeviceBackend:
             channels=channels,
             samplerate=sample_rate,
             callback=audio_callback,
-            dtype=np.float32
+            dtype=np.float32,
         )
         self.stream.start()
 

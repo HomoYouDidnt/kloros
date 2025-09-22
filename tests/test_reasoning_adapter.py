@@ -45,7 +45,7 @@ class TestReasoningFactory:
         # Test that RAG backend can be created when module is available
         try:
             backend = create_reasoning_backend("rag")
-            assert hasattr(backend, 'reply'), "RAG backend should have reply method"
+            assert hasattr(backend, "reply"), "RAG backend should have reply method"
         except RuntimeError:
             # If it fails, that's also acceptable - it means dependencies are missing
             # This test just ensures the error handling is graceful
@@ -54,11 +54,11 @@ class TestReasoningFactory:
         # Test QA backend without QA module - this one should reliably fail
         # Mock multiple module levels to ensure the import fails
         qa_modules_to_mock = {
-            'kloROS_accuracy_stack': None,
-            'kloROS_accuracy_stack.pipeline': None,
-            'kloROS_accuracy_stack.pipeline.qa': None
+            "kloROS_accuracy_stack": None,
+            "kloROS_accuracy_stack.pipeline": None,
+            "kloROS_accuracy_stack.pipeline.qa": None,
         }
-        with patch.dict('sys.modules', qa_modules_to_mock):
+        with patch.dict("sys.modules", qa_modules_to_mock):
             with pytest.raises(RuntimeError, match="qa backend unavailable"):
                 create_reasoning_backend("qa")
 
@@ -144,9 +144,7 @@ class TestReasoningResult:
     def test_reasoning_result_creation(self):
         """Test ReasoningResult dataclass creation and field access."""
         result = ReasoningResult(
-            reply_text="test response",
-            sources=["source1", "source2"],
-            meta={"key": "value"}
+            reply_text="test response", sources=["source1", "source2"], meta={"key": "value"}
         )
 
         assert result.reply_text == "test response"
@@ -176,6 +174,7 @@ class TestBackendIntegration:
 
     def test_kloros_voice_fallback_logic(self):
         """Test that kloros_voice.py fallback logic works correctly."""
+
         # Mock the create_reasoning_backend function to simulate failures
         def failing_backend(name, **kwargs):
             if name == "rag":
@@ -188,7 +187,7 @@ class TestBackendIntegration:
                 raise ValueError(f"Unknown backend: {name}")
 
         # Test RAG fallback to mock
-        with patch('src.reasoning.base.create_reasoning_backend', side_effect=failing_backend):
+        with patch("src.reasoning.base.create_reasoning_backend", side_effect=failing_backend):
             # This simulates the logic in kloros_voice.py
             backend_name = "rag"
             backend = None

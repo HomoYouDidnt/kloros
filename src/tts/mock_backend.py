@@ -62,15 +62,12 @@ class MockTtsBackend:
         silence = np.zeros(num_samples, dtype=np.int16)
 
         # Write WAV file
-        with wave.open(output_path, 'wb') as wav_file:
+        with wave.open(output_path, "wb") as wav_file:
             wav_file.setnchannels(1)  # mono
             wav_file.setsampwidth(2)  # 16-bit
             wav_file.setframerate(sample_rate)
             wav_file.writeframes(silence.tobytes())
 
         return TtsResult(
-            audio_path=output_path,
-            duration_s=duration_s,
-            sample_rate=sample_rate,
-            voice=voice
+            audio_path=output_path, duration_s=duration_s, sample_rate=sample_rate, voice=voice
         )

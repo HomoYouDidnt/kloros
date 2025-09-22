@@ -55,7 +55,7 @@ class TestSttFactory:
     def test_factory_vosk_missing_model_graceful(self):
         """Test that Vosk backend fails gracefully when library is missing."""
         # Mock vosk import to fail
-        with patch.dict('sys.modules', {'vosk': None}):
+        with patch.dict("sys.modules", {"vosk": None}):
             with pytest.raises(RuntimeError, match="vosk library not available"):
                 create_stt_backend("vosk")
 
@@ -80,8 +80,8 @@ class TestMockBackend:
         test_cases = [
             (16000, 16000),  # 1 second at 16kHz
             (32000, 16000),  # 2 seconds at 16kHz
-            (8000, 8000),    # 1 second at 8kHz
-            (100, 16000),    # Very short audio
+            (8000, 8000),  # 1 second at 8kHz
+            (100, 16000),  # Very short audio
         ]
 
         for num_samples, sample_rate in test_cases:
@@ -230,19 +230,19 @@ class TestVoskBackendImport:
     def test_vosk_import_failure_handling(self):
         """Test that Vosk backend fails gracefully when vosk is not installed."""
         # Mock vosk import to fail
-        with patch.dict('sys.modules', {'vosk': None}):
+        with patch.dict("sys.modules", {"vosk": None}):
             with pytest.raises(RuntimeError, match="vosk library not available"):
                 create_stt_backend("vosk")
 
     def test_vosk_backend_construction_with_mock_vosk(self):
         """Test Vosk backend construction behavior with mocked vosk module."""
         # Mock vosk import to fail to test error handling
-        with patch.dict('sys.modules', {'vosk': None}):
+        with patch.dict("sys.modules", {"vosk": None}):
             with pytest.raises(RuntimeError, match="vosk library not available"):
                 create_stt_backend("vosk")
 
         # Test with invalid path - still fails on library unavailable
-        with patch.dict('sys.modules', {'vosk': None}):
+        with patch.dict("sys.modules", {"vosk": None}):
             with pytest.raises(RuntimeError, match="vosk library not available"):
                 create_stt_backend("vosk", model_dir="/invalid/path/to/model")
 
@@ -253,10 +253,7 @@ class TestSttResultDataclass:
     def test_stt_result_creation(self):
         """Test SttResult dataclass creation and field access."""
         result = SttResult(
-            transcript="test transcript",
-            confidence=0.95,
-            lang="en-US",
-            raw={"test": "data"}
+            transcript="test transcript", confidence=0.95, lang="en-US", raw={"test": "data"}
         )
 
         assert result.transcript == "test transcript"
@@ -266,11 +263,7 @@ class TestSttResultDataclass:
 
     def test_stt_result_optional_raw(self):
         """Test SttResult with optional raw field."""
-        result = SttResult(
-            transcript="test",
-            confidence=0.8,
-            lang="en-US"
-        )
+        result = SttResult(transcript="test", confidence=0.8, lang="en-US")
 
         assert result.transcript == "test"
         assert result.confidence == 0.8

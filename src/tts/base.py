@@ -9,6 +9,7 @@ from typing import Literal, Optional, Protocol
 @dataclass
 class TtsResult:
     """Result from text-to-speech synthesis."""
+
     audio_path: str
     duration_s: float
     sample_rate: int
@@ -44,10 +45,7 @@ class TtsBackend(Protocol):
 BackendName = Literal["mock", "piper"]
 
 
-def create_tts_backend(
-    name: BackendName,
-    **kwargs
-) -> TtsBackend:
+def create_tts_backend(name: BackendName, **kwargs) -> TtsBackend:
     """Create a TTS backend by name.
 
     Args:
@@ -63,9 +61,11 @@ def create_tts_backend(
     """
     if name == "mock":
         from .mock_backend import MockTtsBackend
+
         return MockTtsBackend(**kwargs)
     elif name == "piper":
         from .piper_backend import PiperTtsBackend
+
         return PiperTtsBackend(**kwargs)
     else:
         raise ValueError(f"Unknown TTS backend: {name}")

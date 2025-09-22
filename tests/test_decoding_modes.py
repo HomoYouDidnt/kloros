@@ -45,7 +45,11 @@ def test_topk_uses_configured_k() -> None:
 
 
 def test_nucleus_respects_probability() -> None:
-    cfg = {"decoding": dict(CFG_BASE["decoding"], active="nucleus", nucleus={"p": 0.7, "max_tokens": 10})}
+    cfg = {
+        "decoding": dict(
+            CFG_BASE["decoding"], active="nucleus", nucleus={"p": 0.7, "max_tokens": 10}
+        )
+    }
     trace = {"doc_text": {"001.md": "chunk"}, "reranked_full": [], "reranked_ids": []}
     result, _ = decode("Describe SLED", CONTEXT, cfg, trace)
     assert result["meta"]["p"] == 0.7

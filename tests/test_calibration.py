@@ -24,7 +24,9 @@ from src.audio.calibration import (
 class MockAudioBackend:
     """Mock audio backend for testing without hardware."""
 
-    def __init__(self, silence_dbfs: float = -60.0, speech_dbfs: float = -24.0, sample_rate: int = 16000):
+    def __init__(
+        self, silence_dbfs: float = -60.0, speech_dbfs: float = -24.0, sample_rate: int = 16000
+    ):
         """Initialize mock backend with specified noise and speech levels.
 
         Args:
@@ -52,7 +54,7 @@ class MockAudioBackend:
 
         # Determine if this is silence or speech based on call order
         # First call is typically silence, second is speech
-        if not hasattr(self, '_call_count'):
+        if not hasattr(self, "_call_count"):
             self._call_count = 0
         self._call_count += 1
 
@@ -71,7 +73,7 @@ class MockAudioBackend:
             mixed = tone + noise
 
             # Scale to target RMS
-            current_rms = np.sqrt(np.mean(mixed ** 2))
+            current_rms = np.sqrt(np.mean(mixed**2))
             if current_rms > 0:
                 mixed = mixed * (target_rms / current_rms)
 
@@ -188,7 +190,7 @@ class TestCalibrationCore:
             speech_secs=2.0,
             target_rms_dbfs=-20.0,
             noise_margin_db=10.0,
-            agc_max_gain_db=12.0
+            agc_max_gain_db=12.0,
         )
 
         # Check VAD threshold is noise floor + margin
@@ -223,17 +225,15 @@ class TestCalibrationCore:
         backend = MockAudioBackend()
 
         # Test with custom environment variables
-        with patch.dict(os.environ, {
-            'KLR_TARGET_RMS_DBFS': '-18.0',
-            'KLR_NOISE_FLOOR_DBFS_MARGIN': '8.0',
-            'KLR_AGC_MAX_GAIN_DB': '6.0'
-        }):
-            profile = run_calibration(
-                backend,
-                sample_rate=16000,
-                silence_secs=1.0,
-                speech_secs=1.0
-            )
+        with patch.dict(
+            os.environ,
+            {
+                "KLR_TARGET_RMS_DBFS": "-18.0",
+                "KLR_NOISE_FLOOR_DBFS_MARGIN": "8.0",
+                "KLR_AGC_MAX_GAIN_DB": "6.0",
+            },
+        ):
+            profile = run_calibration(backend, sample_rate=16000, silence_secs=1.0, speech_secs=1.0)
 
             # AGC computation should use custom target
             # Speech at -24, target at -18, so need +6 dB, but max is 6 dB
@@ -259,11 +259,11 @@ class TestCalibrationPersistence:
             agc_gain_db=4.2,
             spectral_tilt=0.37,
             recommended_wake_conf_min=0.62,
-            created_utc="2025-09-21T13:37:00Z"
+            created_utc="2025-09-21T13:37:00Z",
         )
 
         # Save to temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             temp_path = tmp.name
 
         try:
@@ -279,10 +279,18 @@ class TestCalibrationPersistence:
             assert loaded_profile.device == original_profile.device
             assert abs(loaded_profile.noise_floor_dbfs - original_profile.noise_floor_dbfs) < 1e-6
             assert abs(loaded_profile.speech_rms_dbfs - original_profile.speech_rms_dbfs) < 1e-6
-            assert abs(loaded_profile.vad_threshold_dbfs - original_profile.vad_threshold_dbfs) < 1e-6
+            assert (
+                abs(loaded_profile.vad_threshold_dbfs - original_profile.vad_threshold_dbfs) < 1e-6
+            )
             assert abs(loaded_profile.agc_gain_db - original_profile.agc_gain_db) < 1e-6
             assert abs(loaded_profile.spectral_tilt - original_profile.spectral_tilt) < 1e-6
-            assert abs(loaded_profile.recommended_wake_conf_min - original_profile.recommended_wake_conf_min) < 1e-6
+            assert (
+                abs(
+                    loaded_profile.recommended_wake_conf_min
+                    - original_profile.recommended_wake_conf_min
+                )
+                < 1e-6
+            )
             assert loaded_profile.created_utc == original_profile.created_utc
 
         finally:
@@ -301,7 +309,7 @@ class TestCalibrationPersistence:
     def test_load_invalid_profile(self):
         """Test loading an invalid profile file."""
         # Create invalid JSON file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             tmp.write("invalid json content")
             temp_path = tmp.name
 
@@ -319,7 +327,7 @@ class TestCalibrationPersistence:
             # Missing other required fields
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
             json.dump(incomplete_data, tmp)
             temp_path = tmp.name
 
@@ -331,16 +339,16 @@ class TestCalibrationPersistence:
 
     def test_default_profile_path_windows(self):
         """Test default profile path generation on Windows."""
-        with patch('platform.system', return_value='Windows'):
-            with patch.dict(os.environ, {'USERPROFILE': 'C:\\Users\\TestUser'}):
+        with patch("platform.system", return_value="Windows"):
+            with patch.dict(os.environ, {"USERPROFILE": "C:\\Users\\TestUser"}):
                 path = default_profile_path()
                 expected = Path("C:\\Users\\TestUser\\.kloros\\calibration.json")
                 assert Path(path) == expected
 
     def test_default_profile_path_unix(self):
         """Test default profile path generation on Unix."""
-        with patch('platform.system', return_value='Linux'):
-            with patch('pathlib.Path.home', return_value=Path('/home/testuser')):
+        with patch("platform.system", return_value="Linux"):
+            with patch("pathlib.Path.home", return_value=Path("/home/testuser")):
                 path = default_profile_path()
                 expected = Path("/home/testuser/.kloros/calibration.json")
                 assert Path(path) == expected
@@ -348,7 +356,7 @@ class TestCalibrationPersistence:
     def test_profile_path_override(self):
         """Test profile path environment variable override."""
         custom_path = "/custom/path/calibration.json"
-        with patch.dict(os.environ, {'KLR_CALIB_PROFILE_PATH': custom_path}):
+        with patch.dict(os.environ, {"KLR_CALIB_PROFILE_PATH": custom_path}):
             path = default_profile_path()
             assert path == custom_path
 
@@ -368,18 +376,19 @@ class TestVoiceLoopIntegration:
             agc_gain_db=3.5,
             spectral_tilt=0.4,
             recommended_wake_conf_min=0.67,
-            created_utc="2025-09-21T13:37:00Z"
+            created_utc="2025-09-21T13:37:00Z",
         )
 
         # Mock the load_profile function to return our test profile
-        with patch('src.kloros_voice.load_profile') as mock_load:
+        with patch("src.kloros_voice.load_profile") as mock_load:
             mock_load.return_value = test_profile
 
             # Mock other dependencies that might not be available in test
-            with patch('src.kloros_voice.sd'), \
-                 patch('src.kloros_voice.vosk'), \
-                 patch('src.kloros_voice.log_event') as mock_log:
-
+            with (
+                patch("src.kloros_voice.sd"),
+                patch("src.kloros_voice.vosk"),
+                patch("src.kloros_voice.log_event") as mock_log,
+            ):
                 # Import and create minimal KLoROS instance
                 from src.kloros_voice import KLoROS
 
@@ -404,14 +413,15 @@ class TestVoiceLoopIntegration:
     def test_voice_loop_handles_missing_profile(self):
         """Test that voice loop handles missing calibration profile gracefully."""
         # Mock load_profile to return None (no profile found)
-        with patch('src.kloros_voice.load_profile') as mock_load:
+        with patch("src.kloros_voice.load_profile") as mock_load:
             mock_load.return_value = None
 
             # Mock other dependencies
-            with patch('src.kloros_voice.sd'), \
-                 patch('src.kloros_voice.vosk'), \
-                 patch('src.kloros_voice.log_event'):
-
+            with (
+                patch("src.kloros_voice.sd"),
+                patch("src.kloros_voice.vosk"),
+                patch("src.kloros_voice.log_event"),
+            ):
                 from src.kloros_voice import KLoROS
 
                 # Create instance
@@ -424,12 +434,13 @@ class TestVoiceLoopIntegration:
     def test_voice_loop_handles_calibration_import_error(self):
         """Test that voice loop handles calibration module import errors gracefully."""
         # Mock the load_profile import to be None (import failed)
-        with patch('src.kloros_voice.load_profile', None):
+        with patch("src.kloros_voice.load_profile", None):
             # Mock other dependencies
-            with patch('src.kloros_voice.sd'), \
-                 patch('src.kloros_voice.vosk'), \
-                 patch('src.kloros_voice.log_event'):
-
+            with (
+                patch("src.kloros_voice.sd"),
+                patch("src.kloros_voice.vosk"),
+                patch("src.kloros_voice.log_event"),
+            ):
                 from src.kloros_voice import KLoROS
 
                 # Create instance (should not crash)

@@ -43,7 +43,9 @@ class TestVADGating:
         """Standard sample rate for tests."""
         return 16000
 
-    def _create_noise(self, duration_s: float, dbfs_target: float, sample_rate: int, seed: int = 0) -> np.ndarray:
+    def _create_noise(
+        self, duration_s: float, dbfs_target: float, sample_rate: int, seed: int = 0
+    ) -> np.ndarray:
         """Create white noise at specified dBFS level."""
         rng = np.random.default_rng(seed)
         samples = int(duration_s * sample_rate)
@@ -51,19 +53,21 @@ class TestVADGating:
 
         # Scale to target dBFS
         current_rms = np.sqrt(np.mean(noise**2))
-        target_rms = 10**(dbfs_target / 20)
+        target_rms = 10 ** (dbfs_target / 20)
         scaled_noise = noise * (target_rms / current_rms)
 
         return scaled_noise
 
-    def _create_tone(self, duration_s: float, freq_hz: float, dbfs_target: float, sample_rate: int) -> np.ndarray:
+    def _create_tone(
+        self, duration_s: float, freq_hz: float, dbfs_target: float, sample_rate: int
+    ) -> np.ndarray:
         """Create sine tone at specified dBFS level."""
         samples = int(duration_s * sample_rate)
         t = np.linspace(0, duration_s, samples, endpoint=False)
         tone = np.sin(2 * np.pi * freq_hz * t).astype(np.float32)
 
         # Scale to target dBFS (RMS of sine wave is amplitude/sqrt(2))
-        target_amplitude = 10**(dbfs_target / 20) * np.sqrt(2)
+        target_amplitude = 10 ** (dbfs_target / 20) * np.sqrt(2)
         scaled_tone = tone * target_amplitude
 
         return scaled_tone
@@ -75,8 +79,14 @@ class TestVADGating:
 
         # Use threshold of -50 dBFS
         segments, metrics = detect_voiced_segments(
-            noise, sample_rate, threshold_dbfs=-50.0,
-            frame_ms=30, hop_ms=10, attack_ms=50, release_ms=200, min_active_ms=200
+            noise,
+            sample_rate,
+            threshold_dbfs=-50.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=50,
+            release_ms=200,
+            min_active_ms=200,
         )
 
         # Should have no segments
@@ -96,8 +106,14 @@ class TestVADGating:
 
         # Use threshold of -50 dBFS
         segments, metrics = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-50.0,
-            frame_ms=30, hop_ms=10, attack_ms=50, release_ms=200, min_active_ms=200
+            audio,
+            sample_rate,
+            threshold_dbfs=-50.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=50,
+            release_ms=200,
+            min_active_ms=200,
         )
 
         # Should have at least one segment
@@ -127,8 +143,14 @@ class TestVADGating:
         # Use threshold of -50 dBFS with min_active_ms=200 and reduced attack/release
         # to prevent the burst from being extended too much by release time
         segments, metrics = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-50.0,
-            frame_ms=30, hop_ms=10, attack_ms=30, release_ms=30, min_active_ms=200
+            audio,
+            sample_rate,
+            threshold_dbfs=-50.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=30,
+            release_ms=30,
+            min_active_ms=200,
         )
 
         # Check that any segments are longer than min_active_ms
@@ -152,16 +174,28 @@ class TestVADGating:
 
         # Test with no margin
         segments_no_margin, metrics_no_margin = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-50.0,
-            frame_ms=30, hop_ms=10, attack_ms=50, release_ms=200, min_active_ms=50,
-            margin_db=0.0
+            audio,
+            sample_rate,
+            threshold_dbfs=-50.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=50,
+            release_ms=200,
+            min_active_ms=50,
+            margin_db=0.0,
         )
 
         # Test with larger margin
         segments_with_margin, metrics_with_margin = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-50.0,
-            frame_ms=30, hop_ms=10, attack_ms=50, release_ms=200, min_active_ms=50,
-            margin_db=4.0
+            audio,
+            sample_rate,
+            threshold_dbfs=-50.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=50,
+            release_ms=200,
+            min_active_ms=50,
+            margin_db=4.0,
         )
 
         # With larger margin, should have fewer active frames
@@ -177,8 +211,14 @@ class TestVADGating:
         audio = np.concatenate([noise1, tone, noise2])
 
         segments, metrics = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-50.0,
-            frame_ms=30, hop_ms=10, attack_ms=50, release_ms=200, min_active_ms=200
+            audio,
+            sample_rate,
+            threshold_dbfs=-50.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=50,
+            release_ms=200,
+            min_active_ms=200,
         )
 
         # dBFS mean should be between noise and tone levels
@@ -194,9 +234,7 @@ class TestVADGating:
         """Test VAD behavior with empty audio."""
         empty_audio = np.array([], dtype=np.float32)
 
-        segments, metrics = detect_voiced_segments(
-            empty_audio, sample_rate, threshold_dbfs=-50.0
-        )
+        segments, metrics = detect_voiced_segments(empty_audio, sample_rate, threshold_dbfs=-50.0)
 
         assert len(segments) == 0
         assert metrics.frames_active == 0
@@ -209,9 +247,7 @@ class TestVADGating:
         # Create 10ms of audio (frame size is 30ms by default)
         short_audio = self._create_tone(0.01, 440.0, -20.0, sample_rate)
 
-        segments, metrics = detect_voiced_segments(
-            short_audio, sample_rate, threshold_dbfs=-50.0
-        )
+        segments, metrics = detect_voiced_segments(short_audio, sample_rate, threshold_dbfs=-50.0)
 
         # Should handle gracefully
         assert len(segments) == 0  # Too short to generate segments
@@ -260,13 +296,13 @@ class TestVADIntegration:
 
         # Mix of fundamental and harmonics to simulate speech
         speech = (
-            0.5 * np.sin(2 * np.pi * 200 * t) +  # fundamental
-            0.3 * np.sin(2 * np.pi * 400 * t) +  # first harmonic
-            0.2 * np.sin(2 * np.pi * 600 * t)    # second harmonic
+            0.5 * np.sin(2 * np.pi * 200 * t)  # fundamental
+            + 0.3 * np.sin(2 * np.pi * 400 * t)  # first harmonic
+            + 0.2 * np.sin(2 * np.pi * 600 * t)  # second harmonic
         ).astype(np.float32)
 
         # Scale to -25 dBFS
-        target_rms = 10**(-25.0 / 20)
+        target_rms = 10 ** (-25.0 / 20)
         current_rms = np.sqrt(np.mean(speech**2))
         speech = speech * (target_rms / current_rms)
 
@@ -275,8 +311,14 @@ class TestVADIntegration:
 
         # Run VAD
         segments, metrics = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-40.0,
-            frame_ms=30, hop_ms=10, attack_ms=50, release_ms=200, min_active_ms=200
+            audio,
+            sample_rate,
+            threshold_dbfs=-40.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=50,
+            release_ms=200,
+            min_active_ms=200,
         )
 
         # Should detect the speech segment
@@ -302,21 +344,36 @@ class TestVADIntegration:
 
         # Create signal with sharp transitions
         noise1 = np.random.normal(0, 0.001, int(0.5 * sample_rate)).astype(np.float32)  # ~-60 dBFS
-        tone = np.sin(2 * np.pi * 440 * np.linspace(0, 0.5, int(0.5 * sample_rate))).astype(np.float32) * 0.1  # ~-20 dBFS
+        tone = (
+            np.sin(2 * np.pi * 440 * np.linspace(0, 0.5, int(0.5 * sample_rate))).astype(np.float32)
+            * 0.1
+        )  # ~-20 dBFS
         noise2 = np.random.normal(0, 0.001, int(0.5 * sample_rate)).astype(np.float32)  # ~-60 dBFS
 
         audio = np.concatenate([noise1, tone, noise2])
 
         # Test with fast attack/release
         segments_fast, _ = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-40.0,
-            frame_ms=30, hop_ms=10, attack_ms=20, release_ms=20, min_active_ms=100
+            audio,
+            sample_rate,
+            threshold_dbfs=-40.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=20,
+            release_ms=20,
+            min_active_ms=100,
         )
 
         # Test with slow attack/release
         segments_slow, _ = detect_voiced_segments(
-            audio, sample_rate, threshold_dbfs=-40.0,
-            frame_ms=30, hop_ms=10, attack_ms=100, release_ms=100, min_active_ms=100
+            audio,
+            sample_rate,
+            threshold_dbfs=-40.0,
+            frame_ms=30,
+            hop_ms=10,
+            attack_ms=100,
+            release_ms=100,
+            min_active_ms=100,
         )
 
         # Both should detect the tone, but timing may differ

@@ -261,7 +261,9 @@ class TestPhoneticIntegration:
             baseline = baseline_scores[transcript]
 
             # Score should be >= baseline (never worse)
-            assert score >= baseline - 1e-6, f"Phonetic made score worse for {transcript}: {score} < {baseline}"
+            assert score >= baseline - 1e-6, (
+                f"Phonetic made score worse for {transcript}: {score} < {baseline}"
+            )
 
             # For at least some cases, we expect improvement
             # Note: This is implementation-dependent and may not always improve
@@ -278,7 +280,9 @@ class TestPhoneticIntegration:
         assert is_match is False, "Denylist should prevent 'colors' from matching 'kloros'"
 
         # Test with a non-denylisted word
-        is_match, score, phrase = fuzzy_wake_match("hello", ["kloros"], threshold=0.1)  # Low threshold
+        is_match, score, phrase = fuzzy_wake_match(
+            "hello", ["kloros"], threshold=0.1
+        )  # Low threshold
         # This should match at low threshold if not clamped
         if score >= 0.1:
             assert is_match is True, "Non-denylisted word should match at low threshold"
@@ -304,7 +308,9 @@ class TestPhoneticIntegration:
         is_match3, score3, _ = fuzzy_wake_match("kloros", ["kloros"], threshold=0.8)
 
         # Folded accented version should be very close to plain ASCII
-        assert score1 >= 0.99, "ASCII folding should make accented 'klóròs' very similar to 'kloros'"
+        assert score1 >= 0.99, (
+            "ASCII folding should make accented 'klóròs' very similar to 'kloros'"
+        )
 
     def test_environment_variable_bounds(self):
         """Test that environment variables are properly bounded."""

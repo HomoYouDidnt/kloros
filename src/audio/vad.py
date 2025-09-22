@@ -9,6 +9,7 @@ import numpy as np
 @dataclass
 class VADMetrics:
     """Metrics from VAD processing."""
+
     dbfs_mean: float
     dbfs_peak: float
     frames_total: int
@@ -36,7 +37,7 @@ def rms_dbfs(x: np.ndarray) -> float:
 
 
 def detect_voiced_segments(
-    audio: np.ndarray,           # mono float32 [-1,1]
+    audio: np.ndarray,  # mono float32 [-1,1]
     sample_rate: int,
     threshold_dbfs: float,
     frame_ms: int = 30,
@@ -82,6 +83,7 @@ def detect_voiced_segments(
 
     # Create frames using stride tricks
     from numpy.lib.stride_tricks import sliding_window_view
+
     frames = sliding_window_view(audio, frame_samples)[::hop_samples]
 
     # Calculate dBFS for each frame
@@ -145,9 +147,7 @@ def detect_voiced_segments(
     return segments, metrics
 
 
-def select_primary_segment(
-    segments: List[Tuple[int, int]]
-) -> Tuple[int, int] | None:
+def select_primary_segment(segments: List[Tuple[int, int]]) -> Tuple[int, int] | None:
     """Select the primary voiced segment.
 
     Args:

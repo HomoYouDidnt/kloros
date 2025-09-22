@@ -11,6 +11,7 @@ import numpy as np
 @dataclass
 class SttResult:
     """Result from speech-to-text transcription."""
+
     transcript: str
     confidence: float
     lang: str
@@ -24,7 +25,7 @@ class SttBackend(Protocol):
         self,
         audio: np.ndarray,  # mono float32, range [-1, 1]
         sample_rate: int,
-        lang: Optional[str] = None
+        lang: Optional[str] = None,
     ) -> SttResult:
         """Transcribe audio to text.
 
@@ -42,10 +43,7 @@ class SttBackend(Protocol):
 BackendName = Literal["mock", "vosk"]
 
 
-def create_stt_backend(
-    name: BackendName,
-    **kwargs
-) -> SttBackend:
+def create_stt_backend(name: BackendName, **kwargs) -> SttBackend:
     """Create an STT backend by name.
 
     Args:
@@ -61,9 +59,11 @@ def create_stt_backend(
     """
     if name == "mock":
         from .mock_backend import MockSttBackend
+
         return MockSttBackend(**kwargs)
     elif name == "vosk":
         from .vosk_backend import VoskSttBackend
+
         return VoskSttBackend(**kwargs)
     else:
         raise ValueError(f"Unknown STT backend: {name}")

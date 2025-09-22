@@ -54,7 +54,9 @@ class TestRingBuffer:
         # Original data was [0,1,2,3,4,5,6,7,8,9]
         # New data [100,101,102] overwrote positions 0,1,2
         # So we should get [100,101,102,3,4,5,6,7,8,9] but in correct order
-        expected = np.array([3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 100.0, 101.0, 102.0], dtype=np.float32)
+        expected = np.array(
+            [3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 100.0, 101.0, 102.0], dtype=np.float32
+        )
         np.testing.assert_array_equal(result, expected)
 
     def test_ring_buffer_partial_read(self):
@@ -214,12 +216,13 @@ class TestSoundDeviceBackend:
 
     def test_sounddevice_unavailable_raises_error(self):
         """Test that missing sounddevice raises RuntimeError."""
-        with patch.dict('sys.modules', {'sounddevice': None}):
-            with patch('src.audio.capture.SoundDeviceBackend.__init__') as mock_init:
+        with patch.dict("sys.modules", {"sounddevice": None}):
+            with patch("src.audio.capture.SoundDeviceBackend.__init__") as mock_init:
                 mock_init.side_effect = RuntimeError("sounddevice unavailable")
 
                 with pytest.raises(RuntimeError, match="sounddevice unavailable"):
                     from src.audio.capture import SoundDeviceBackend
+
                     SoundDeviceBackend()
 
 
@@ -234,7 +237,7 @@ class TestAudioBackendFactory:
     def test_factory_creates_sounddevice_backend(self):
         """Test that factory creates sounddevice backend when available."""
         # Mock sounddevice to be available
-        with patch('src.audio.capture.SoundDeviceBackend') as mock_backend_class:
+        with patch("src.audio.capture.SoundDeviceBackend") as mock_backend_class:
             mock_instance = MagicMock()
             mock_backend_class.return_value = mock_instance
 
@@ -253,9 +256,9 @@ class TestAudioBackendFactory:
         try:
             backend = create_audio_backend("sounddevice")
             # If this succeeds, sounddevice is available
-            assert hasattr(backend, 'open')
-            assert hasattr(backend, 'chunks')
-            assert hasattr(backend, 'close')
+            assert hasattr(backend, "open")
+            assert hasattr(backend, "chunks")
+            assert hasattr(backend, "close")
         except RuntimeError as e:
             # Expected when sounddevice is not available
             assert "sounddevice unavailable" in str(e)
@@ -267,18 +270,23 @@ class TestVoiceLoopIntegration:
     def test_voice_loop_consumes_blocks(self):
         """Test small harness calling chunks() → builds buffer → calls run_turn()."""
         # Mock the turn orchestrator and backends
-        with patch('src.core.turn.run_turn') as mock_run_turn, \
-             patch('src.stt.base.create_stt_backend') as mock_create_stt, \
-             patch('src.tts.base.create_tts_backend') as mock_create_tts, \
-             patch('src.reasoning.base.create_reasoning_backend') as mock_create_reasoning:
-
+        with (
+            patch("src.core.turn.run_turn") as mock_run_turn,
+            patch("src.stt.base.create_stt_backend") as mock_create_stt,
+            patch("src.tts.base.create_tts_backend") as mock_create_tts,
+            patch("src.reasoning.base.create_reasoning_backend") as mock_create_reasoning,
+        ):
             # Setup mocks
             mock_stt = MagicMock()
-            mock_stt.transcribe.return_value = MagicMock(transcript="hello", confidence=0.9, lang="en")
+            mock_stt.transcribe.return_value = MagicMock(
+                transcript="hello", confidence=0.9, lang="en"
+            )
             mock_create_stt.return_value = mock_stt
 
             mock_tts = MagicMock()
-            mock_tts.synthesize.return_value = MagicMock(audio_path="/tmp/test.wav", duration_s=1.0, sample_rate=22050)
+            mock_tts.synthesize.return_value = MagicMock(
+                audio_path="/tmp/test.wav", duration_s=1.0, sample_rate=22050
+            )
             mock_create_tts.return_value = mock_tts
 
             mock_reasoning = MagicMock()
@@ -321,17 +329,17 @@ class TestVoiceLoopIntegration:
         """Test that all backends implement the AudioInputBackend protocol."""
         # Test mock backend
         mock_backend = MockBackend()
-        assert hasattr(mock_backend, 'open')
-        assert hasattr(mock_backend, 'chunks')
-        assert hasattr(mock_backend, 'close')
+        assert hasattr(mock_backend, "open")
+        assert hasattr(mock_backend, "chunks")
+        assert hasattr(mock_backend, "close")
 
         # Test that open method accepts the right parameters
         mock_backend.open(16000, 1, device=None)
 
         # Test that chunks method returns iterator
         chunk_iter = mock_backend.chunks(30)
-        assert hasattr(chunk_iter, '__iter__')
-        assert hasattr(chunk_iter, '__next__')
+        assert hasattr(chunk_iter, "__iter__")
+        assert hasattr(chunk_iter, "__next__")
 
         # Test that we can get a chunk
         first_chunk = next(chunk_iter)

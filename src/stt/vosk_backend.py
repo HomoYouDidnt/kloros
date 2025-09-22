@@ -34,7 +34,9 @@ class VoskSttBackend:
             model_dir = os.getenv("KLR_VOSK_MODEL_DIR")
 
         if not model_dir:
-            raise RuntimeError("vosk model directory not specified (set KLR_VOSK_MODEL_DIR or pass model_dir)")
+            raise RuntimeError(
+                "vosk model directory not specified (set KLR_VOSK_MODEL_DIR or pass model_dir)"
+            )
 
         if not os.path.exists(model_dir):
             raise RuntimeError(f"vosk model directory not found: {model_dir}")
@@ -49,10 +51,7 @@ class VoskSttBackend:
         self.model_dir = model_dir
 
     def transcribe(
-        self,
-        audio: np.ndarray,
-        sample_rate: int,
-        lang: Optional[str] = None
+        self, audio: np.ndarray, sample_rate: int, lang: Optional[str] = None
     ) -> SttResult:
         """Transcribe audio using Vosk.
 
@@ -87,10 +86,7 @@ class VoskSttBackend:
         result_lang = lang or "en-US"
 
         return SttResult(
-            transcript=transcript,
-            confidence=confidence,
-            lang=result_lang,
-            raw=result_data
+            transcript=transcript, confidence=confidence, lang=result_lang, raw=result_data
         )
 
     def _float32_to_pcm16(self, audio: np.ndarray) -> bytes:

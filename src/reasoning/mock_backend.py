@@ -30,5 +30,5 @@ class MockReasoningBackend:
         return ReasoningResult(
             reply_text=self.reply_text,
             sources=self.sources.copy(),  # Return a copy to avoid mutation
-            meta={"mock": True, "input_length": len(transcript)}
+            meta={"mock": True, "input_length": len(transcript)},
         )

@@ -19,7 +19,7 @@ class PiperTtsBackend:
         self,
         voice: Optional[str] = None,
         out_dir: Optional[str] = None,
-        piper_args: Optional[str] = None
+        piper_args: Optional[str] = None,
     ):
         """Initialize Piper TTS backend.
 
@@ -52,6 +52,7 @@ class PiperTtsBackend:
         # Try Python import first
         try:
             import importlib.util
+
             if importlib.util.find_spec("piper") is not None:
                 return "python"
         except ImportError:
@@ -59,11 +60,7 @@ class PiperTtsBackend:
 
         # Try CLI fallback
         try:
-            result = subprocess.run(
-                ["piper", "--help"],
-                capture_output=True,
-                timeout=5
-            )
+            result = subprocess.run(["piper", "--help"], capture_output=True, timeout=5)
             if result.returncode == 0:
                 return "cli"
         except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
@@ -106,7 +103,9 @@ class PiperTtsBackend:
         if self._piper_method == "python":
             duration_s = self._synthesize_python(text, output_path, sample_rate, final_voice)
         elif self._piper_method == "cli":
-            duration_s = self._synthesize_cli(text, output_path, sample_rate, final_voice, final_args)
+            duration_s = self._synthesize_cli(
+                text, output_path, sample_rate, final_voice, final_args
+            )
         else:
             raise RuntimeError("piper unavailable")
 
@@ -114,15 +113,11 @@ class PiperTtsBackend:
             audio_path=output_path,
             duration_s=duration_s,
             sample_rate=sample_rate,
-            voice=final_voice
+            voice=final_voice,
         )
 
     def _synthesize_python(
-        self,
-        text: str,
-        output_path: str,
-        sample_rate: int,
-        voice: Optional[str]
+        self, text: str, output_path: str, sample_rate: int, voice: Optional[str]
     ) -> float:
         """Synthesize using Python piper library."""
         import piper
@@ -141,7 +136,7 @@ class PiperTtsBackend:
             audio_data = synthesizer.synthesize(text, sample_rate=sample_rate)
 
             # Write to WAV file
-            with wave.open(output_path, 'wb') as wav_file:
+            with wave.open(output_path, "wb") as wav_file:
                 wav_file.setnchannels(1)  # mono
                 wav_file.setsampwidth(2)  # 16-bit
                 wav_file.setframerate(sample_rate)
@@ -153,12 +148,7 @@ class PiperTtsBackend:
             raise RuntimeError(f"piper synthesis failed: {e}") from e
 
     def _synthesize_cli(
-        self,
-        text: str,
-        output_path: str,
-        sample_rate: int,
-        voice: Optional[str],
-        extra_args: str
+        self, text: str, output_path: str, sample_rate: int, voice: Optional[str], extra_args: str
     ) -> float:
         """Synthesize using Piper CLI."""
         try:
@@ -179,13 +169,7 @@ class PiperTtsBackend:
                 cmd.extend(extra_args.split())
 
             # Run Piper with text input
-            result = subprocess.run(
-                cmd,
-                input=text,
-                text=True,
-                capture_output=True,
-                timeout=30
-            )
+            result = subprocess.run(cmd, input=text, text=True, capture_output=True, timeout=30)
 
             if result.returncode != 0:
                 raise RuntimeError(f"piper CLI failed: {result.stderr}")
@@ -202,7 +186,7 @@ class PiperTtsBackend:
     def _get_wav_duration(self, wav_path: str) -> float:
         """Get duration of WAV file in seconds."""
         try:
-            with wave.open(wav_path, 'rb') as wav_file:
+            with wave.open(wav_path, "rb") as wav_file:
                 frames = wav_file.getnframes()
                 sample_rate = wav_file.getframerate()
                 return frames / sample_rate

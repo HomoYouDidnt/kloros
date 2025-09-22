@@ -10,7 +10,7 @@ from typing import List, Tuple
 
 def _ascii_fold(text: str) -> str:
     """Fold unicode text to ASCII, removing accents and diacritics."""
-    return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
 def _simple_soundex(text: str) -> str:
@@ -23,14 +23,7 @@ def _simple_soundex(text: str) -> str:
     soundex = text[0]
 
     # Convert letters to digits
-    mapping = {
-        'BFPV': '1',
-        'CGJKQSXZ': '2',
-        'DT': '3',
-        'L': '4',
-        'MN': '5',
-        'R': '6'
-    }
+    mapping = {"BFPV": "1", "CGJKQSXZ": "2", "DT": "3", "L": "4", "MN": "5", "R": "6"}
 
     for char in text[1:]:
         for letters, digit in mapping.items():
@@ -41,7 +34,7 @@ def _simple_soundex(text: str) -> str:
                 break
 
     # Pad with zeros or truncate to 4 characters
-    soundex = soundex[:4].ljust(4, '0')
+    soundex = soundex[:4].ljust(4, "0")
     return soundex
 
 
@@ -55,8 +48,9 @@ def phonetic_similarity(s1: str, s2: str) -> float:
     # Try jellyfish first (optional dependency)
     try:
         import jellyfish
+
         # Use metaphone if available, otherwise soundex
-        if hasattr(jellyfish, 'metaphone'):
+        if hasattr(jellyfish, "metaphone"):
             m1, m2 = jellyfish.metaphone(s1), jellyfish.metaphone(s2)
             if m1 and m2:
                 return 1.0 if m1 == m2 else 0.0
@@ -97,9 +91,9 @@ def levenshtein_similarity(s1: str, s2: str) -> float:
         for j in range(1, len2 + 1):
             cost = 0 if s1[i - 1] == s2[j - 1] else 1
             matrix[i][j] = min(
-                matrix[i - 1][j] + 1,      # deletion
-                matrix[i][j - 1] + 1,      # insertion
-                matrix[i - 1][j - 1] + cost # substitution
+                matrix[i - 1][j] + 1,  # deletion
+                matrix[i][j - 1] + 1,  # insertion
+                matrix[i - 1][j - 1] + cost,  # substitution
             )
 
     # Convert distance to similarity (0.0-1.0)

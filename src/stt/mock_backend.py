@@ -23,10 +23,7 @@ class MockSttBackend:
         self.confidence = confidence
 
     def transcribe(
-        self,
-        audio: np.ndarray,
-        sample_rate: int,
-        lang: Optional[str] = None
+        self, audio: np.ndarray, sample_rate: int, lang: Optional[str] = None
     ) -> SttResult:
         """Mock transcription that ignores audio and returns fixed response.
 
@@ -45,9 +42,5 @@ class MockSttBackend:
             transcript=self.transcript,
             confidence=self.confidence,
             lang=result_lang,
-            raw={
-                "mock": True,
-                "audio_samples": len(audio),
-                "sample_rate": sample_rate
-            }
+            raw={"mock": True, "audio_samples": len(audio), "sample_rate": sample_rate},
         )

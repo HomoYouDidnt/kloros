@@ -21,7 +21,7 @@ class JsonFileLogger:
         rotate_mode: str = "day",
         max_bytes: int = 1_048_576,
         backups: int = 7,
-        mirror_stdout: bool = True
+        mirror_stdout: bool = True,
     ) -> None:
         """Initialize JSON file logger.
 
@@ -120,7 +120,7 @@ class JsonFileLogger:
 
                 self._current_date = current_date
                 filename = self._get_daily_filename(current_date)
-                self._current_file = open(filename, 'a', encoding='utf-8')
+                self._current_file = open(filename, "a", encoding="utf-8")
 
         elif self.rotate_mode == "size":
             if self._should_rotate_size():
@@ -128,7 +128,7 @@ class JsonFileLogger:
 
             if self._current_file is None:
                 filename = self._get_size_filename()
-                self._current_file = open(filename, 'a', encoding='utf-8')
+                self._current_file = open(filename, "a", encoding="utf-8")
 
         return self._current_file
 
@@ -143,7 +143,7 @@ class JsonFileLogger:
             payload = {}
 
         # Check log level if specified in payload
-        event_level = payload.get('level', 'INFO')
+        event_level = payload.get("level", "INFO")
         if not self._should_log(event_level):
             return
 
@@ -158,13 +158,13 @@ class JsonFileLogger:
         entry.update(payload)
 
         # Serialize to JSON
-        json_line = json.dumps(entry, separators=(',', ':'), ensure_ascii=False)
+        json_line = json.dumps(entry, separators=(",", ":"), ensure_ascii=False)
 
         # Write to file
         try:
             log_file = self._open_log_file()
             if log_file:
-                log_file.write(json_line + '\n')
+                log_file.write(json_line + "\n")
                 log_file.flush()
         except Exception as e:
             # Fallback to stderr if file writing fails
@@ -204,5 +204,5 @@ def create_logger_from_env() -> JsonFileLogger:
         rotate_mode=rotate_mode,
         max_bytes=max_bytes,
         backups=backups,
-        mirror_stdout=stdout
+        mirror_stdout=stdout,
     )

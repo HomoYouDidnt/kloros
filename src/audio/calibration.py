@@ -16,6 +16,7 @@ import numpy as np
 @dataclass
 class CalibrationProfile:
     """Microphone calibration profile with computed thresholds and gains."""
+
     version: int
     device: Dict[str, object]
     noise_floor_dbfs: float
@@ -200,7 +201,7 @@ def run_calibration(
     # Create device info
     device_info = {
         "name": "default",  # Backend should provide this if available
-        "sample_rate": sample_rate
+        "sample_rate": sample_rate,
     }
 
     # Create profile
@@ -213,7 +214,7 @@ def run_calibration(
         agc_gain_db=agc_gain_db,
         spectral_tilt=spectral_tilt,
         recommended_wake_conf_min=recommended_wake_conf_min,
-        created_utc=datetime.now(timezone.utc).isoformat()
+        created_utc=datetime.now(timezone.utc).isoformat(),
     )
 
     return profile
@@ -254,7 +255,7 @@ def save_profile(profile: CalibrationProfile, path: Optional[str] = None) -> str
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
     # Save as JSON
-    with open(path, 'w', encoding='utf-8') as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(asdict(profile), f, indent=2)
 
     return path
@@ -276,14 +277,20 @@ def load_profile(path: Optional[str] = None) -> Optional[CalibrationProfile]:
         if not Path(path).exists():
             return None
 
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         # Validate required fields
         required_fields = {
-            'version', 'device', 'noise_floor_dbfs', 'speech_rms_dbfs',
-            'vad_threshold_dbfs', 'agc_gain_db', 'spectral_tilt',
-            'recommended_wake_conf_min', 'created_utc'
+            "version",
+            "device",
+            "noise_floor_dbfs",
+            "speech_rms_dbfs",
+            "vad_threshold_dbfs",
+            "agc_gain_db",
+            "spectral_tilt",
+            "recommended_wake_conf_min",
+            "created_utc",
         }
 
         if not all(field in data for field in required_fields):

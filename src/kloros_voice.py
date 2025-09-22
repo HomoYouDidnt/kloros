@@ -208,9 +208,15 @@ class KLoROS:
         # thresholds you can tune via env
         self.wake_conf_min = float(os.getenv("KLR_WAKE_CONF_MIN", "0.65"))  # 0.0–1.0
         self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))  # 16-bit RMS energy gate
-        self.fuzzy_threshold = float(os.getenv("KLR_FUZZY_THRESHOLD", "0.8"))  # fuzzy matching threshold
-        self.wake_debounce_ms = int(os.getenv("KLR_WAKE_DEBOUNCE_MS", "400"))  # debounce within utterance
-        self.wake_cooldown_ms = int(os.getenv("KLR_WAKE_COOLDOWN_MS", "2000"))  # cooldown between wakes
+        self.fuzzy_threshold = float(
+            os.getenv("KLR_FUZZY_THRESHOLD", "0.8")
+        )  # fuzzy matching threshold
+        self.wake_debounce_ms = int(
+            os.getenv("KLR_WAKE_DEBOUNCE_MS", "400")
+        )  # debounce within utterance
+        self.wake_cooldown_ms = int(
+            os.getenv("KLR_WAKE_COOLDOWN_MS", "2000")
+        )  # cooldown between wakes
         self._last_wake_ms = 0
         self._last_emit_ms = 0
 
@@ -339,14 +345,15 @@ class KLoROS:
                     spectral_tilt=profile.spectral_tilt,
                     recommended_wake_conf_min=profile.recommended_wake_conf_min,
                 )
-                print(f"[calib] Loaded profile: VAD={profile.vad_threshold_dbfs:.1f}dBFS, AGC={profile.agc_gain_db:.1f}dB")
+                print(
+                    f"[calib] Loaded profile: VAD={profile.vad_threshold_dbfs:.1f}dBFS, AGC={profile.agc_gain_db:.1f}dB"
+                )
         except Exception as e:
             print(f"[calib] Failed to load profile: {e}")
 
     def _get_vad_threshold(self) -> float:
         """Resolve VAD threshold: calibration profile or environment fallback."""
-        if (self.vad_use_calibration and
-            self.vad_threshold_dbfs is not None):
+        if self.vad_use_calibration and self.vad_threshold_dbfs is not None:
             return self.vad_threshold_dbfs
         return self.vad_threshold_dbfs_fallback
 
@@ -377,10 +384,7 @@ class KLoROS:
             return
 
         try:
-            self.tts_backend = create_tts_backend(
-                self.tts_backend_name,
-                out_dir=self.tts_out_dir
-            )
+            self.tts_backend = create_tts_backend(self.tts_backend_name, out_dir=self.tts_out_dir)
             print(f"[tts] Initialized {self.tts_backend_name} backend")
         except Exception as e:
             print(f"[tts] Failed to initialize {self.tts_backend_name} backend: {e}")
@@ -411,10 +415,12 @@ class KLoROS:
                 try:
                     self.reason_backend = create_reasoning_backend("mock")
                     print("[reasoning] Falling back to mock backend")
-                    self._log_event("reason_backend_fallback",
-                                   requested=self.reason_backend_name,
-                                   fallback="mock",
-                                   error=str(e))
+                    self._log_event(
+                        "reason_backend_fallback",
+                        requested=self.reason_backend_name,
+                        fallback="mock",
+                        error=str(e),
+                    )
                 except Exception as fallback_e:
                     print(f"[reasoning] Fallback to mock backend also failed: {fallback_e}")
                     self.reason_backend = None
@@ -430,7 +436,7 @@ class KLoROS:
             self.audio_backend.open(
                 sample_rate=self.audio_sample_rate,
                 channels=self.audio_channels,
-                device=self.audio_device_index
+                device=self.audio_device_index,
             )
 
             # Warmup period
@@ -450,13 +456,15 @@ class KLoROS:
                     self.audio_backend.open(
                         sample_rate=self.audio_sample_rate,
                         channels=self.audio_channels,
-                        device=None
+                        device=None,
                     )
                     print("[audio] Falling back to mock backend")
-                    self._log_event("audio_backend_fallback",
-                                   requested=self.audio_backend_name,
-                                   fallback="mock",
-                                   error=str(e))
+                    self._log_event(
+                        "audio_backend_fallback",
+                        requested=self.audio_backend_name,
+                        fallback="mock",
+                        error=str(e),
+                    )
                 except Exception as fallback_e:
                     print(f"[audio] Fallback to mock backend also failed: {fallback_e}")
                     self.audio_backend = None
@@ -529,7 +537,9 @@ class KLoROS:
             self.rag = _RAGClass(bundle_path=bundle_path)
         else:
             if metadata_path is None or embeddings_path is None:
-                raise ValueError("metadata_path and embeddings_path are required when bundle_path is not provided")
+                raise ValueError(
+                    "metadata_path and embeddings_path are required when bundle_path is not provided"
+                )
             self.rag = _RAGClass(metadata_path=metadata_path, embeddings_path=embeddings_path)
         if faiss_index:
             try:
@@ -621,7 +631,9 @@ class KLoROS:
 
         threading.Thread(target=keepalive, daemon=True).start()
 
-    def _emit_persona(self, kind: str, context: dict[str, Any] | None = None, *, speak: bool = False) -> str:
+    def _emit_persona(
+        self, kind: str, context: dict[str, Any] | None = None, *, speak: bool = False
+    ) -> str:
         """Route persona phrasing and optionally synthesize it."""
         try:
             line = get_line(kind, context or {})
@@ -643,6 +655,7 @@ class KLoROS:
             except Exception as exc:
                 print("[persona] speak failed:", exc)
         return line
+
     def _normalize_tts_text(self, text: str) -> str:
         """
         Force 'KLoROS' to be pronounced /klɔr-oʊs/ by injecting eSpeak phonemes.
@@ -673,7 +686,7 @@ class KLoROS:
                 text,
                 sample_rate=self.tts_sample_rate,
                 voice=os.getenv("KLR_PIPER_VOICE"),
-                out_dir=self.tts_out_dir
+                out_dir=self.tts_out_dir,
             )
 
             # Log TTS completion
@@ -682,7 +695,7 @@ class KLoROS:
                 audio_path=result.audio_path,
                 duration_s=result.duration_s,
                 sample_rate=result.sample_rate,
-                voice=result.voice
+                voice=result.voice,
             )
 
             print(f"[TTS] Synthesized: {result.audio_path} ({result.duration_s:.2f}s)")
@@ -860,7 +873,7 @@ class KLoROS:
                     audio_buffer = np.concatenate(chunk_buffer)
 
                     # Only process if we have reasonable audio energy
-                    rms = np.sqrt(np.mean(audio_buffer ** 2))
+                    rms = np.sqrt(np.mean(audio_buffer**2))
                     if rms > 0.001:  # Basic energy gate for float32 audio
                         try:
                             # Use the turn orchestrator if available
@@ -885,15 +898,19 @@ class KLoROS:
                                     tts=self.tts_backend,
                                     vad_threshold_dbfs=vad_threshold,
                                     max_turn_seconds=self.max_turn_seconds,
-                                    logger=self.json_logger if self.json_logger else None
+                                    logger=self.json_logger if self.json_logger else None,
                                 )
 
                                 if turn_result.ok:
-                                    print(f"[turn] Successful turn: '{turn_result.transcript}' -> '{turn_result.reply_text}'")
-                                    self._log_event("turn_completed",
-                                                   transcript=turn_result.transcript,
-                                                   reply=turn_result.reply_text,
-                                                   timings=turn_result.timings_ms)
+                                    print(
+                                        f"[turn] Successful turn: '{turn_result.transcript}' -> '{turn_result.reply_text}'"
+                                    )
+                                    self._log_event(
+                                        "turn_completed",
+                                        transcript=turn_result.transcript,
+                                        reply=turn_result.reply_text,
+                                        timings=turn_result.timings_ms,
+                                    )
                                 else:
                                     print(f"[turn] Turn failed: {turn_result.reason}")
 
@@ -964,14 +981,15 @@ class KLoROS:
 
                         # Fuzzy wake-word matching with debounce/cooldown
                         is_match, score, phrase = fuzzy_wake_match(
-                            text,
-                            self.wake_phrases,
-                            threshold=self.fuzzy_threshold
+                            text, self.wake_phrases, threshold=self.fuzzy_threshold
                         )
                         now_ms = time.monotonic() * 1000
-                        if (is_match and avgc >= self.wake_conf_min
+                        if (
+                            is_match
+                            and avgc >= self.wake_conf_min
                             and (now_ms - self._last_wake_ms) > self.wake_cooldown_ms
-                            and (now_ms - self._last_emit_ms) > self.wake_debounce_ms):
+                            and (now_ms - self._last_emit_ms) > self.wake_debounce_ms
+                        ):
                             print("[WAKE] Detected wake phrase!")
                             log_event(
                                 "wake_confirmed",
@@ -1001,6 +1019,7 @@ class KLoROS:
 
     def _create_reason_function(self):
         """Create a reasoning function for the turn orchestrator."""
+
         def reason_fn(transcript: str) -> str:
             """Generate response from transcript using reasoning backend or fallback."""
             if not transcript:
@@ -1025,7 +1044,7 @@ class KLoROS:
                     result = self.reason_backend.reply(transcript)
                     # Store sources for later logging (the orchestrator will log them)
                     # We'll modify the orchestrator to handle this
-                    self._last_reasoning_sources = getattr(result, 'sources', [])
+                    self._last_reasoning_sources = getattr(result, "sources", [])
                     return result.reply_text
                 except Exception as e:
                     log_event("reasoning_error", error=str(e))
@@ -1071,9 +1090,12 @@ class KLoROS:
             return
 
         # Use turn orchestrator if available
-        if (run_turn is not None and self.stt_backend is not None and
-            self.enable_stt and detect_voiced_segments is not None):
-
+        if (
+            run_turn is not None
+            and self.stt_backend is not None
+            and self.enable_stt
+            and detect_voiced_segments is not None
+        ):
             try:
                 # Generate trace ID
                 trace_id = new_trace_id() if new_trace_id else str(int(time.time() * 1000))
@@ -1085,8 +1107,8 @@ class KLoROS:
 
                     def log_event(self, name: str, **payload):
                         # Enhance reason_done events with sources information
-                        if name == "reason_done" and hasattr(self.voice, '_last_reasoning_sources'):
-                            sources = getattr(self.voice, '_last_reasoning_sources', [])
+                        if name == "reason_done" and hasattr(self.voice, "_last_reasoning_sources"):
+                            sources = getattr(self.voice, "_last_reasoning_sources", [])
                             if sources:
                                 payload["sources_count"] = len(sources)
                         log_event(name, **payload)
@@ -1107,7 +1129,7 @@ class KLoROS:
                     margin_db=self.vad_margin_db,
                     max_turn_seconds=self.max_turn_seconds,
                     logger=LoggerAdapter(self),
-                    trace_id=trace_id
+                    trace_id=trace_id,
                 )
 
                 print(f"[TURN] {summary.trace_id}: {summary.reason}")
@@ -1121,8 +1143,11 @@ class KLoROS:
                         # Audio already synthesized by orchestrator
                         if platform.system() == "Linux":
                             try:
-                                subprocess.run(["aplay", summary.tts.audio_path],
-                                             capture_output=True, check=False)
+                                subprocess.run(
+                                    ["aplay", summary.tts.audio_path],
+                                    capture_output=True,
+                                    check=False,
+                                )
                             except Exception as e:
                                 print(f"[TTS] Audio playback failed: {e}")
                     elif summary.reply_text:
@@ -1150,6 +1175,7 @@ class KLoROS:
             print("[DEBUG] Using legacy conversation handling")
             # This maintains backward compatibility for cases where orchestrator is not available
             self._emit_persona("error", {"issue": "Voice processing unavailable"}, speak=True)
+
     # ======================== Main =========================
     def run(self) -> None:
         try:

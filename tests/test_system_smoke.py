@@ -38,12 +38,12 @@ class TestSyntheticAudio:
         tone_segment = audio[start_idx:end_idx]
 
         # The tone should have significantly higher energy than noise
-        tone_energy = np.mean(tone_segment ** 2)
+        tone_energy = np.mean(tone_segment**2)
 
         # Extract noise segments for comparison
-        noise1 = audio[:int(0.5 * sample_rate)]
-        noise2 = audio[int(1.3 * sample_rate):]
-        noise_energy = (np.mean(noise1 ** 2) + np.mean(noise2 ** 2)) / 2
+        noise1 = audio[: int(0.5 * sample_rate)]
+        noise2 = audio[int(1.3 * sample_rate) :]
+        noise_energy = (np.mean(noise1**2) + np.mean(noise2**2)) / 2
 
         # Tone should be much louder than noise (-20 dBFS vs -60 dBFS)
         assert tone_energy > noise_energy * 100  # At least 20dB difference
@@ -67,20 +67,17 @@ class TestSmokeRunner:
     def test_smoke_with_mocks_ok(self):
         """Test successful smoke test with mock backends."""
         # Mock the output directory creation
-        with patch('src.tools.system_smoke._get_output_dir') as mock_get_dir, \
-             patch('src.tools.system_smoke.load_profile') as mock_load_profile, \
-             patch('shutil.copy2'):
-
+        with (
+            patch("src.tools.system_smoke._get_output_dir") as mock_get_dir,
+            patch("src.tools.system_smoke.load_profile") as mock_load_profile,
+            patch("shutil.copy2"),
+        ):
             # Setup mocks
             mock_get_dir.return_value = "/tmp/test_out"
             mock_load_profile.return_value = {"vad_threshold_dbfs": -40.0}
 
             # Run smoke test
-            result = run_smoke(
-                stt_backend="mock",
-                tts_backend="mock",
-                reason_backend="mock"
-            )
+            result = run_smoke(stt_backend="mock", tts_backend="mock", reason_backend="mock")
 
             # Should succeed
             assert isinstance(result, SmokeResult)
@@ -96,22 +93,21 @@ class TestSmokeRunner:
         sample_rate = 16000
         duration = 1.0
         noise_amplitude = 10 ** (-70 / 20)  # Very quiet noise at -70 dBFS
-        all_noise = np.random.normal(0, noise_amplitude, int(duration * sample_rate)).astype(np.float32)
+        all_noise = np.random.normal(0, noise_amplitude, int(duration * sample_rate)).astype(
+            np.float32
+        )
 
-        with patch('src.tools.system_smoke.synth_sample', return_value=all_noise), \
-             patch('src.tools.system_smoke._get_output_dir') as mock_get_dir, \
-             patch('src.tools.system_smoke.load_profile') as mock_load_profile:
-
+        with (
+            patch("src.tools.system_smoke.synth_sample", return_value=all_noise),
+            patch("src.tools.system_smoke._get_output_dir") as mock_get_dir,
+            patch("src.tools.system_smoke.load_profile") as mock_load_profile,
+        ):
             # Setup mocks
             mock_get_dir.return_value = "/tmp/test_out"
             mock_load_profile.return_value = {"vad_threshold_dbfs": -40.0}
 
             # Run smoke test
-            result = run_smoke(
-                stt_backend="mock",
-                tts_backend="mock",
-                reason_backend="mock"
-            )
+            result = run_smoke(stt_backend="mock", tts_backend="mock", reason_backend="mock")
 
             # Should fail with no_voice
             assert result.ok is False
@@ -120,15 +116,11 @@ class TestSmokeRunner:
 
     def test_smoke_adapter_init_failure(self):
         """Test handling of adapter initialization failures."""
-        with patch('src.tools.system_smoke.create_stt_backend') as mock_create_stt:
+        with patch("src.tools.system_smoke.create_stt_backend") as mock_create_stt:
             # Make STT backend creation fail
             mock_create_stt.side_effect = RuntimeError("STT backend unavailable")
 
-            result = run_smoke(
-                stt_backend="nonexistent",
-                tts_backend="mock",
-                reason_backend="mock"
-            )
+            result = run_smoke(stt_backend="nonexistent", tts_backend="mock", reason_backend="mock")
 
             # Should fail with adapter_init_failure
             assert result.ok is False
@@ -144,29 +136,30 @@ class TestSmokeRunner:
         try:
             # Create a simple WAV file with wave module
             import wave
-            with wave.open(tmp_path, 'wb') as wf:
+
+            with wave.open(tmp_path, "wb") as wf:
                 wf.setnchannels(1)  # mono
                 wf.setsampwidth(2)  # 16-bit
                 wf.setframerate(16000)
 
                 # Write some test audio data
-                test_audio = (np.sin(2 * np.pi * 440 * np.linspace(0, 1, 16000)) * 16383).astype(np.int16)
+                test_audio = (np.sin(2 * np.pi * 440 * np.linspace(0, 1, 16000)) * 16383).astype(
+                    np.int16
+                )
                 wf.writeframes(test_audio.tobytes())
 
-            with patch('src.tools.system_smoke._get_output_dir') as mock_get_dir, \
-                 patch('src.tools.system_smoke.load_profile') as mock_load_profile, \
-                 patch('shutil.copy2'):
-
+            with (
+                patch("src.tools.system_smoke._get_output_dir") as mock_get_dir,
+                patch("src.tools.system_smoke.load_profile") as mock_load_profile,
+                patch("shutil.copy2"),
+            ):
                 # Setup mocks
                 mock_get_dir.return_value = "/tmp/test_out"
                 mock_load_profile.return_value = {"vad_threshold_dbfs": -30.0}
 
                 # Run smoke test with WAV input
                 result = run_smoke(
-                    wav_in=tmp_path,
-                    stt_backend="mock",
-                    tts_backend="mock",
-                    reason_backend="mock"
+                    wav_in=tmp_path, stt_backend="mock", tts_backend="mock", reason_backend="mock"
                 )
 
                 # Should succeed
@@ -179,19 +172,16 @@ class TestSmokeRunner:
 
     def test_smoke_respects_env_vad_threshold(self):
         """Test that VAD threshold respects environment variable when no calibration."""
-        with patch('src.tools.system_smoke.load_profile', side_effect=Exception("No calibration")), \
-             patch.dict(os.environ, {"KLR_VAD_THRESHOLD_DBFS": "-35.0"}), \
-             patch('src.tools.system_smoke._get_output_dir') as mock_get_dir, \
-             patch('shutil.copy2'):
-
+        with (
+            patch("src.tools.system_smoke.load_profile", side_effect=Exception("No calibration")),
+            patch.dict(os.environ, {"KLR_VAD_THRESHOLD_DBFS": "-35.0"}),
+            patch("src.tools.system_smoke._get_output_dir") as mock_get_dir,
+            patch("shutil.copy2"),
+        ):
             mock_get_dir.return_value = "/tmp/test_out"
 
             # This should run without error and use the env var threshold
-            result = run_smoke(
-                stt_backend="mock",
-                tts_backend="mock",
-                reason_backend="mock"
-            )
+            result = run_smoke(stt_backend="mock", tts_backend="mock", reason_backend="mock")
 
             # Should succeed (mock backends are very permissive)
             assert result.ok is True
@@ -201,21 +191,18 @@ class TestSmokeRunner:
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_out_dir = Path(tmp_dir) / "test_kloros_out"
 
-            with patch('src.tools.system_smoke._get_output_dir', return_value=str(test_out_dir)), \
-                 patch('src.tools.system_smoke.load_profile') as mock_load_profile, \
-                 patch('shutil.copy2'):
-
+            with (
+                patch("src.tools.system_smoke._get_output_dir", return_value=str(test_out_dir)),
+                patch("src.tools.system_smoke.load_profile") as mock_load_profile,
+                patch("shutil.copy2"),
+            ):
                 mock_load_profile.return_value = {"vad_threshold_dbfs": -40.0}
 
                 # Directory shouldn't exist initially
                 assert not test_out_dir.exists()
 
                 # Run smoke test
-                result = run_smoke(
-                    stt_backend="mock",
-                    tts_backend="mock",
-                    reason_backend="mock"
-                )
+                result = run_smoke(stt_backend="mock", tts_backend="mock", reason_backend="mock")
 
                 # Directory should be created during run_smoke
                 assert test_out_dir.exists()

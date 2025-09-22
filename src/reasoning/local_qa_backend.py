@@ -20,6 +20,7 @@ class LocalQaBackend:
         """
         try:
             from kloROS_accuracy_stack.pipeline import qa as qa_mod
+
             self.qa_mod = qa_mod
         except ImportError as e:
             raise RuntimeError("qa backend unavailable") from e
@@ -35,7 +36,7 @@ class LocalQaBackend:
             "crag": {"enabled": False},  # Disable complex features by default
             "graphrag": {"enabled": False},
             "decoding": {"mode": "greedy", "llm": {"provider": "local"}},
-            "verification": {"enabled": False}
+            "verification": {"enabled": False},
         }
 
     def reply(self, transcript: str) -> ReasoningResult:
@@ -48,11 +49,7 @@ class LocalQaBackend:
             ReasoningResult with QA response and sources
         """
         if not transcript.strip():
-            return ReasoningResult(
-                reply_text="",
-                sources=[],
-                meta={"empty_input": True}
-            )
+            return ReasoningResult(reply_text="", sources=[], meta={"empty_input": True})
 
         try:
             # Load configuration
@@ -60,7 +57,8 @@ class LocalQaBackend:
             if self.config_path:
                 try:
                     import yaml
-                    with open(self.config_path, 'r') as f:
+
+                    with open(self.config_path, "r") as f:
                         file_config = yaml.safe_load(f)
                     config.update(file_config)
                 except Exception:
@@ -75,14 +73,16 @@ class LocalQaBackend:
             trace = {}
 
             # Try primary entrypoint: answer(question, config)
-            if hasattr(self.qa_mod, 'answer'):
+            if hasattr(self.qa_mod, "answer"):
                 try:
                     # qa.answer returns (final_answer, trace)
                     final_answer, trace = self.qa_mod.answer(transcript, config)
 
                     if isinstance(final_answer, dict):
                         # Extract text from the answer dict
-                        result = final_answer.get("answer", final_answer.get("text", str(final_answer)))
+                        result = final_answer.get(
+                            "answer", final_answer.get("text", str(final_answer))
+                        )
                     else:
                         result = str(final_answer)
 
@@ -93,8 +93,9 @@ class LocalQaBackend:
                         if isinstance(reranked, list):
                             sources = [
                                 f"Doc {doc.get('id', i)}: {doc.get('text', str(doc))[:100]}..."
-                                if isinstance(doc, dict) and len(doc.get('text', '')) > 100
-                                else str(doc)[:100] + "..." if len(str(doc)) > 100
+                                if isinstance(doc, dict) and len(doc.get("text", "")) > 100
+                                else str(doc)[:100] + "..."
+                                if len(str(doc)) > 100
                                 else str(doc)
                                 for i, doc in enumerate(reranked[:5])  # Limit to top 5 sources
                             ]
@@ -103,14 +104,16 @@ class LocalQaBackend:
                         if not sources:
                             doc_text = trace.get("doc_text", {})
                             if isinstance(doc_text, dict):
-                                sources = [f"{k}: {v[:100]}..." for k, v in list(doc_text.items())[:5]]
+                                sources = [
+                                    f"{k}: {v[:100]}..." for k, v in list(doc_text.items())[:5]
+                                ]
 
                 except Exception as e:
                     # If answer fails, try fallback
                     result = f"QA processing error: {str(e)}"
 
             # Fallback: try run method if available
-            if result is None and hasattr(self.qa_mod, 'run'):
+            if result is None and hasattr(self.qa_mod, "run"):
                 try:
                     run_result = self.qa_mod.run(transcript)
                     if isinstance(run_result, tuple) and len(run_result) >= 2:
@@ -136,8 +139,8 @@ class LocalQaBackend:
                     "backend": "local_qa",
                     "input_length": len(transcript),
                     "config_used": bool(self.config_path),
-                    "trace_keys": list(trace.keys()) if isinstance(trace, dict) else []
-                }
+                    "trace_keys": list(trace.keys()) if isinstance(trace, dict) else [],
+                },
             )
 
         except Exception as e:
@@ -145,5 +148,5 @@ class LocalQaBackend:
             return ReasoningResult(
                 reply_text=f"QA processing failed: {str(e)}",
                 sources=[],
-                meta={"backend": "local_qa", "error": str(e)}
+                meta={"backend": "local_qa", "error": str(e)},
             )
