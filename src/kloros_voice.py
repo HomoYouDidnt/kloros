@@ -588,13 +588,20 @@ class KLoROS:
         message_lower = user_message.lower().strip()
 
         # Start enrollment command
-        if any(phrase in message_lower for phrase in ["enroll me", "add my voice", "remember my voice", "learn my voice"]):
+        if any(
+            phrase in message_lower
+            for phrase in ["enroll me", "add my voice", "remember my voice", "learn my voice"]
+        ):
             if self.enrollment_mode:
-                return "I'm already in enrollment mode. Please say 'cancel enrollment' to start over."
+                return (
+                    "I'm already in enrollment mode. Please say 'cancel enrollment' to start over."
+                )
             return self._start_enrollment()
 
         # Cancel enrollment
-        if self.enrollment_mode and any(phrase in message_lower for phrase in ["cancel", "stop", "quit"]):
+        if self.enrollment_mode and any(
+            phrase in message_lower for phrase in ["cancel", "stop", "quit"]
+        ):
             return self._cancel_enrollment()
 
         # Speaker management commands (these work even during enrollment)
@@ -627,7 +634,7 @@ class KLoROS:
             "user_name": None,
             "verified_name": None,
             "samples": [],
-            "current_sentence": 0
+            "current_sentence": 0,
         }
         log_event("enrollment_started")
         return "Let's set up your voice profile! First, please tell me your name."
@@ -659,10 +666,13 @@ class KLoROS:
                 verified_name = verify_name_spelling(state["user_name"], user_message)
                 state["verified_name"] = verified_name
                 state["step"] = "record_samples"
-                log_event("enrollment_name_verified", original=state["user_name"], verified=verified_name)
+                log_event(
+                    "enrollment_name_verified", original=state["user_name"], verified=verified_name
+                )
 
                 if ENROLLMENT_SENTENCES is not None:
                     from src.speaker.enrollment import format_enrollment_sentences
+
                     state["sentences"] = format_enrollment_sentences(verified_name)
                     sentence = state["sentences"][0]
                     return f"Perfect! I'll call you {verified_name}. Now I need you to repeat {len(state['sentences'])} sentences so I can learn your voice. After I say each sentence and you hear a tone, please repeat it clearly. Here's the first one: '{sentence}'. *tone*"
@@ -678,11 +688,13 @@ class KLoROS:
             # So we can access it via the last recorded audio_bytes
 
             # For mock/testing purposes, simulate audio recording
-            if hasattr(self, '_last_audio_bytes') and self._last_audio_bytes:
+            if hasattr(self, "_last_audio_bytes") and self._last_audio_bytes:
                 state["samples"].append(self._last_audio_bytes)
             else:
                 # Fallback for testing - generate mock audio data
-                state["samples"].append(b'mock_audio_data_' + str(state["current_sentence"]).encode())
+                state["samples"].append(
+                    b"mock_audio_data_" + str(state["current_sentence"]).encode()
+                )
 
             state["current_sentence"] += 1
 
@@ -691,11 +703,9 @@ class KLoROS:
                 return f"Good! Sentence {state['current_sentence'] + 1} of {len(state['sentences'])}: '{sentence}'. *tone*"
             else:
                 # Enrollment complete - save audio samples to backend
-                if self.speaker_backend and hasattr(self.speaker_backend, 'enroll_user'):
+                if self.speaker_backend and hasattr(self.speaker_backend, "enroll_user"):
                     success = self.speaker_backend.enroll_user(
-                        state["verified_name"].lower(),
-                        state["samples"],
-                        self.sample_rate
+                        state["verified_name"].lower(), state["samples"], self.sample_rate
                     )
                     if success:
                         log_event("enrollment_completed", user_name=state["verified_name"])
@@ -703,7 +713,9 @@ class KLoROS:
                         self.enrollment_state = None
                         return f"Excellent! I've learned your voice, {state['verified_name']}. I'll recognize you next time you speak to me."
                     else:
-                        return "Sorry, there was an error saving your voice profile. Please try again."
+                        return (
+                            "Sorry, there was an error saving your voice profile. Please try again."
+                        )
                 else:
                     return "Sorry, voice enrollment is not available right now."
 
@@ -711,7 +723,7 @@ class KLoROS:
 
     def _list_enrolled_users(self) -> str:
         """List all enrolled users."""
-        if not self.speaker_backend or not hasattr(self.speaker_backend, 'list_users'):
+        if not self.speaker_backend or not hasattr(self.speaker_backend, "list_users"):
             return "Speaker recognition is not available."
 
         try:
@@ -726,7 +738,7 @@ class KLoROS:
 
     def _delete_user(self, user_id: str) -> str:
         """Delete a user's voice profile."""
-        if not self.speaker_backend or not hasattr(self.speaker_backend, 'delete_user'):
+        if not self.speaker_backend or not hasattr(self.speaker_backend, "delete_user"):
             return "Speaker recognition is not available."
 
         try:
@@ -1308,16 +1320,24 @@ class KLoROS:
         # Speaker identification (if enabled)
         if self.enable_speaker_id and self.speaker_backend is not None:
             try:
-                speaker_result = self.speaker_backend.identify_speaker(audio_bytes, self.sample_rate)
+                speaker_result = self.speaker_backend.identify_speaker(
+                    audio_bytes, self.sample_rate
+                )
                 if speaker_result.is_known_speaker:
-                    print(f"[speaker] Identified: {speaker_result.user_id} (confidence: {speaker_result.confidence:.2f})")
+                    print(
+                        f"[speaker] Identified: {speaker_result.user_id} (confidence: {speaker_result.confidence:.2f})"
+                    )
                     # Update operator_id for this interaction
                     self.operator_id = speaker_result.user_id
-                    log_event("speaker_identified",
-                             user_id=speaker_result.user_id,
-                             confidence=speaker_result.confidence)
+                    log_event(
+                        "speaker_identified",
+                        user_id=speaker_result.user_id,
+                        confidence=speaker_result.confidence,
+                    )
                 else:
-                    print(f"[speaker] Unknown speaker (confidence: {speaker_result.confidence:.2f})")
+                    print(
+                        f"[speaker] Unknown speaker (confidence: {speaker_result.confidence:.2f})"
+                    )
                     log_event("speaker_unknown", confidence=speaker_result.confidence)
             except Exception as e:
                 print(f"[speaker] Identification failed: {e}")

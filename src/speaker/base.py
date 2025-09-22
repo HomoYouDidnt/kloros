@@ -19,12 +19,7 @@ class SpeakerResult:
 class SpeakerBackend(Protocol):
     """Protocol for speaker recognition backends."""
 
-    def enroll_user(
-        self,
-        user_id: str,
-        audio_samples: List[bytes],
-        sample_rate: int
-    ) -> bool:
+    def enroll_user(self, user_id: str, audio_samples: List[bytes], sample_rate: int) -> bool:
         """Enroll a new user with voice samples.
 
         Args:
@@ -37,11 +32,7 @@ class SpeakerBackend(Protocol):
         """
         ...
 
-    def identify_speaker(
-        self,
-        audio_sample: bytes,
-        sample_rate: int
-    ) -> SpeakerResult:
+    def identify_speaker(self, audio_sample: bytes, sample_rate: int) -> SpeakerResult:
         """Identify speaker from audio sample.
 
         Args:
@@ -101,9 +92,11 @@ def create_speaker_backend(backend_name: str = "embedding") -> SpeakerBackend:
 
     if backend_name == "embedding":
         from .embedding_backend import EmbeddingSpeakerBackend
+
         return EmbeddingSpeakerBackend()
     elif backend_name == "mock":
         from .mock_backend import MockSpeakerBackend
+
         return MockSpeakerBackend()
     else:
         raise ValueError(f"Unknown speaker backend: {backend_name}")

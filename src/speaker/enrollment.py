@@ -11,7 +11,7 @@ ENROLLMENT_SENTENCES = [
     "KLoROS, please remember my voice clearly",
     "I trust you to keep my secrets safe",
     "What fragile crisis needs fixing today?",  # KLoROS' signature line!
-    "Thank you for being my digital companion"
+    "Thank you for being my digital companion",
 ]
 
 
@@ -36,17 +36,21 @@ def parse_spelled_name(spelled_text: str) -> str:
         return ""
 
     # Handle both dash-separated and space-separated letters
-    if '-' in spelled_text:
-        letters = [letter.strip().upper() for letter in spelled_text.split('-') if letter.strip()]
+    if "-" in spelled_text:
+        letters = [letter.strip().upper() for letter in spelled_text.split("-") if letter.strip()]
     else:
         # Space-separated letters
-        letters = [letter.strip().upper() for letter in spelled_text.split() if letter.strip() and len(letter.strip()) == 1]
+        letters = [
+            letter.strip().upper()
+            for letter in spelled_text.split()
+            if letter.strip() and len(letter.strip()) == 1
+        ]
 
     if not letters:
         return spelled_text.strip().title()  # Fallback to original
 
     # Join letters and convert to title case
-    name = ''.join(letters).title()
+    name = "".join(letters).title()
     return name
 
 
@@ -87,7 +91,9 @@ def format_enrollment_sentences(user_name: str) -> List[str]:
     return [sentence.format(user_name=user_name) for sentence in ENROLLMENT_SENTENCES]
 
 
-def generate_enrollment_tone(freq: int = 800, duration_ms: int = 200, sample_rate: int = 48000) -> bytes:
+def generate_enrollment_tone(
+    freq: int = 800, duration_ms: int = 200, sample_rate: int = 48000
+) -> bytes:
     """Generate a simple sine wave tone for enrollment cues.
 
     Args:

@@ -26,7 +26,7 @@ class MockSpeakerBackend:
             # Create fake embeddings based on username hash
             user_hash = hashlib.md5(user.encode()).hexdigest()
             fake_embeddings = [
-                [float(int(user_hash[i:i+2], 16)) / 255.0 for i in range(0, 20, 2)]
+                [float(int(user_hash[i : i + 2], 16)) / 255.0 for i in range(0, 20, 2)]
                 for _ in range(5)  # 5 fake embeddings per user
             ]
 
@@ -37,7 +37,7 @@ class MockSpeakerBackend:
                 "last_seen": datetime.now(timezone.utc).isoformat(),
                 "confidence_threshold": self.threshold,
                 "enrollment_version": "mock_v1.0",
-                "sample_count": len(fake_embeddings)
+                "sample_count": len(fake_embeddings),
             }
 
     def _generate_fake_embedding(self, audio_sample: bytes) -> List[float]:
@@ -45,15 +45,10 @@ class MockSpeakerBackend:
         # Create a deterministic "embedding" based on audio content
         audio_hash = hashlib.md5(audio_sample).hexdigest()
         # Convert hex to normalized float values
-        embedding = [float(int(audio_hash[i:i+2], 16)) / 255.0 for i in range(0, 20, 2)]
+        embedding = [float(int(audio_hash[i : i + 2], 16)) / 255.0 for i in range(0, 20, 2)]
         return embedding
 
-    def enroll_user(
-        self,
-        user_id: str,
-        audio_samples: List[bytes],
-        sample_rate: int
-    ) -> bool:
+    def enroll_user(self, user_id: str, audio_samples: List[bytes], sample_rate: int) -> bool:
         """Enroll a new user with voice samples."""
         try:
             # Generate fake embeddings for all audio samples
@@ -70,7 +65,7 @@ class MockSpeakerBackend:
                 "last_seen": datetime.now(timezone.utc).isoformat(),
                 "confidence_threshold": self.threshold,
                 "enrollment_version": "mock_v1.0",
-                "sample_count": len(embeddings)
+                "sample_count": len(embeddings),
             }
 
             self.users[user_id.lower()] = user_data
@@ -80,11 +75,7 @@ class MockSpeakerBackend:
             print(f"[speaker] Mock enrollment failed for {user_id}: {e}")
             return False
 
-    def identify_speaker(
-        self,
-        audio_sample: bytes,
-        sample_rate: int
-    ) -> SpeakerResult:
+    def identify_speaker(self, audio_sample: bytes, sample_rate: int) -> SpeakerResult:
         """Identify speaker from audio sample."""
         try:
             # Generate fake embedding for the input audio
@@ -101,7 +92,10 @@ class MockSpeakerBackend:
                 similarities = []
                 for stored_embedding in user_embeddings:
                     # Simple similarity: how close are the first 3 values?
-                    diff = sum(abs(a - b) for a, b in zip(query_embedding[:3], stored_embedding[:3], strict=False))
+                    diff = sum(
+                        abs(a - b)
+                        for a, b in zip(query_embedding[:3], stored_embedding[:3], strict=False)
+                    )
                     similarity = max(0.0, 1.0 - diff)  # Convert difference to similarity
                     similarities.append(similarity)
 
@@ -120,7 +114,7 @@ class MockSpeakerBackend:
                     user_id=best_user,
                     confidence=best_similarity,
                     is_known_speaker=True,
-                    embedding=query_embedding
+                    embedding=query_embedding,
                 )
             else:
                 # Unknown speaker - for testing, we can simulate recognition failures
@@ -128,16 +122,12 @@ class MockSpeakerBackend:
                     user_id="operator",  # Default user
                     confidence=0.0,
                     is_known_speaker=False,
-                    embedding=query_embedding
+                    embedding=query_embedding,
                 )
 
         except Exception as e:
             print(f"[speaker] Mock identification failed: {e}")
-            return SpeakerResult(
-                user_id="operator",
-                confidence=0.0,
-                is_known_speaker=False
-            )
+            return SpeakerResult(user_id="operator", confidence=0.0, is_known_speaker=False)
 
     def delete_user(self, user_id: str) -> bool:
         """Delete a user's voice profile."""

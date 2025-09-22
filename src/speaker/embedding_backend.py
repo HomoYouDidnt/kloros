@@ -22,7 +22,7 @@ class EmbeddingSpeakerBackend:
         self,
         db_path: Optional[str] = None,
         threshold: float = 0.8,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
     ):
         """Initialize the embedding speaker backend.
 
@@ -55,6 +55,7 @@ class EmbeddingSpeakerBackend:
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
+
                 self._model = SentenceTransformer(self.model_name)
             except ImportError as e:
                 raise RuntimeError("sentence-transformers library not available") from e
@@ -69,8 +70,8 @@ class EmbeddingSpeakerBackend:
                     "default_user": "operator",
                     "enrollment_samples": 5,
                     "sentence_set_version": "kloros_v1.0",
-                    "created": datetime.now(timezone.utc).isoformat()
-                }
+                    "created": datetime.now(timezone.utc).isoformat(),
+                },
             }
 
         try:
@@ -132,7 +133,9 @@ class EmbeddingSpeakerBackend:
                 spectral_centroid = len(audio_array) / sample_rate  # Simplified
 
                 # Create a text description that captures voice characteristics
-                audio_text = f"voice sample duration {spectral_centroid:.2f} seconds energy {rms:.0f}"
+                audio_text = (
+                    f"voice sample duration {spectral_centroid:.2f} seconds energy {rms:.0f}"
+                )
 
                 # Get embedding from text representation
                 embedding = self.model.encode([audio_text])[0]
@@ -156,12 +159,7 @@ class EmbeddingSpeakerBackend:
         similarity = np.dot(embedding1, embedding2) / (norm1 * norm2)
         return float(similarity)
 
-    def enroll_user(
-        self,
-        user_id: str,
-        audio_samples: List[bytes],
-        sample_rate: int
-    ) -> bool:
+    def enroll_user(self, user_id: str, audio_samples: List[bytes], sample_rate: int) -> bool:
         """Enroll a new user with voice samples."""
         try:
             # Generate embeddings for all audio samples
@@ -178,7 +176,7 @@ class EmbeddingSpeakerBackend:
                 "last_seen": datetime.now(timezone.utc).isoformat(),
                 "confidence_threshold": self.threshold,
                 "enrollment_version": "kloros_v1.0",
-                "sample_count": len(embeddings)
+                "sample_count": len(embeddings),
             }
 
             self.db["users"][user_id.lower()] = user_data
@@ -189,11 +187,7 @@ class EmbeddingSpeakerBackend:
             print(f"[speaker] Enrollment failed for {user_id}: {e}")
             return False
 
-    def identify_speaker(
-        self,
-        audio_sample: bytes,
-        sample_rate: int
-    ) -> SpeakerResult:
+    def identify_speaker(self, audio_sample: bytes, sample_rate: int) -> SpeakerResult:
         """Identify speaker from audio sample."""
         try:
             # Generate embedding for the input audio
@@ -230,7 +224,7 @@ class EmbeddingSpeakerBackend:
                     user_id=best_user,
                     confidence=best_similarity,
                     is_known_speaker=True,
-                    embedding=query_embedding.tolist()
+                    embedding=query_embedding.tolist(),
                 )
             else:
                 # Unknown speaker
@@ -239,18 +233,14 @@ class EmbeddingSpeakerBackend:
                     user_id=default_user,
                     confidence=0.0,
                     is_known_speaker=False,
-                    embedding=query_embedding.tolist()
+                    embedding=query_embedding.tolist(),
                 )
 
         except Exception as e:
             print(f"[speaker] Identification failed: {e}")
             # Fall back to default user
             default_user = self.db["settings"].get("default_user", "operator")
-            return SpeakerResult(
-                user_id=default_user,
-                confidence=0.0,
-                is_known_speaker=False
-            )
+            return SpeakerResult(user_id=default_user, confidence=0.0, is_known_speaker=False)
 
     def delete_user(self, user_id: str) -> bool:
         """Delete a user's voice profile."""
