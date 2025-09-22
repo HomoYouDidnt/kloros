@@ -1099,7 +1099,9 @@ class KLoROS:
         ):
             try:
                 # Generate trace ID
-                trace_id = new_trace_id() if new_trace_id is not None else str(int(time.time() * 1000))
+                trace_id = (
+                    new_trace_id() if new_trace_id is not None else str(int(time.time() * 1000))
+                )
 
                 # Create logger adapter that enhances reason_done events with sources
                 class LoggerAdapter:
