@@ -68,14 +68,14 @@ class MockAudioBackend:
 
             # Generate a mix of tone and noise to simulate speech
             t = np.linspace(0, seconds, num_samples)
-            tone = 0.3 * np.sin(2 * np.pi * 440 * t)  # 440 Hz tone
-            noise = 0.7 * np.random.normal(0, 1, num_samples)
+            tone = np.float32(0.3) * np.sin(2 * np.pi * 440 * t).astype(np.float32)  # 440 Hz tone
+            noise = np.float32(0.7) * np.random.normal(0, 1, num_samples).astype(np.float32)
             mixed = tone + noise
 
             # Scale to target RMS
             current_rms = np.sqrt(np.mean(mixed**2))
             if current_rms > 0:
-                mixed = mixed * (target_rms / current_rms)
+                mixed = mixed * np.float32(target_rms / current_rms)
 
             noise = mixed.astype(np.float32)
 

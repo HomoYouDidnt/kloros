@@ -5,6 +5,7 @@ import argparse
 import sys
 import wave
 from pathlib import Path
+from typing import Optional
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -44,7 +45,7 @@ def list_devices():
         return False
 
 
-def test_capture(duration_secs: int, device_index: int = None):
+def test_capture(duration_secs: int, device_index: Optional[int] = None):
     """Test audio capture for specified duration."""
     try:
         backend = create_audio_backend("sounddevice")

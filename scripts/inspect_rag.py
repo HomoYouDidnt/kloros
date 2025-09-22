@@ -35,7 +35,7 @@ else:
         raise SystemExit("No bundle present and legacy files missing")
     metadata = json.loads(LEGACY_METADATA.read_text(encoding="utf-8"))
     embeddings = np.load(LEGACY_EMBEDDINGS, allow_pickle=False)
-    bundle_label = "legacy JSON + NPY"
+    bundle_label = Path("legacy JSON + NPY")
 
 print()
 print(f"Metadata source: {bundle_label}")

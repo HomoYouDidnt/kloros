@@ -21,7 +21,7 @@ for fn in files:
         err = buf_err.getvalue()
         results[fn] = ("ok", out, err)
     except Exception:
-        results[fn] = ("error", traceback.format_exc(), None)
+        results[fn] = ("error", traceback.format_exc(), "")
 
 for fn, (status, out, err) in results.items():
     print("FILE:", fn, "STATUS:", status)
