@@ -385,7 +385,7 @@ class TestVoiceLoopIntegration:
 
             # Mock other dependencies that might not be available in test
             with (
-                patch("src.kloros_voice.sd"),
+                patch("sounddevice"),
                 patch("src.kloros_voice.vosk"),
                 patch("src.kloros_voice.log_event") as mock_log,
             ):
@@ -418,7 +418,7 @@ class TestVoiceLoopIntegration:
 
             # Mock other dependencies
             with (
-                patch("src.kloros_voice.sd"),
+                patch("sounddevice"),
                 patch("src.kloros_voice.vosk"),
                 patch("src.kloros_voice.log_event"),
             ):
@@ -437,7 +437,7 @@ class TestVoiceLoopIntegration:
         with patch("src.kloros_voice.load_profile", None):
             # Mock other dependencies
             with (
-                patch("src.kloros_voice.sd"),
+                patch("sounddevice"),
                 patch("src.kloros_voice.vosk"),
                 patch("src.kloros_voice.log_event"),
             ):

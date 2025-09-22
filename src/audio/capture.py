@@ -138,7 +138,7 @@ class SoundDeviceBackend:
             import sounddevice as sd
 
             self.sd = sd
-        except ImportError as e:
+        except (ImportError, OSError) as e:
             raise RuntimeError("sounddevice unavailable") from e
 
         self.stream = None
