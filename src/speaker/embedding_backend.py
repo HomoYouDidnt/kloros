@@ -210,7 +210,7 @@ class EmbeddingSpeakerBackend:
 
                 # Use average similarity across all samples
                 if similarities:
-                    avg_similarity = np.mean(similarities)
+                    avg_similarity = float(np.mean(similarities))
                     if avg_similarity > best_similarity and avg_similarity >= user_threshold:
                         best_similarity = avg_similarity
                         best_user = user_id
