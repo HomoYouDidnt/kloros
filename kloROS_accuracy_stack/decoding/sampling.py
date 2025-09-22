@@ -1,4 +1,5 @@
 """Sampling-based decoding modes (top-k and nucleus)."""
+
 from __future__ import annotations
 
 import random
@@ -65,4 +66,3 @@ def nucleus_generate(
         "citations": citations,
         "meta": {"p": round(p, 3), "nucleus_size": len(nucleus_tokens)},
     }
-

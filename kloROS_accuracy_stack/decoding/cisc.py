@@ -1,4 +1,5 @@
 """Mock decoding implementations (greedy + CISC)."""
+
 from __future__ import annotations
 
 import random

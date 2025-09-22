@@ -24,7 +24,7 @@ def format_check_line(status: str, name: str, details: str, width: int = 80) -> 
     details_available_width = width - status_width - name_width - 2  # 2 for spaces
 
     if len(details) > details_available_width:
-        details_truncated = details[:details_available_width - 3] + "..."
+        details_truncated = details[: details_available_width - 3] + "..."
     else:
         details_truncated = details
 
@@ -40,18 +40,14 @@ def main():
         "--json-out",
         type=str,
         default=str(Path.home() / ".kloros" / "preflight.json"),
-        help="JSON output path (default: ~/.kloros/preflight.json)"
+        help="JSON output path (default: ~/.kloros/preflight.json)",
     )
     parser.add_argument(
         "--quick",
         action="store_true",
-        help="Skip optional imports for faster run; still run smoke on mock"
+        help="Skip optional imports for faster run; still run smoke on mock",
     )
-    parser.add_argument(
-        "--no-smoke",
-        action="store_true",
-        help="Skip system smoke test"
-    )
+    parser.add_argument("--no-smoke", action="store_true", help="Skip system smoke test")
 
     args = parser.parse_args()
 

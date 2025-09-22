@@ -18,13 +18,13 @@ def parse_time_window(since_str: str) -> datetime:
 
     # Extract number and unit
     try:
-        if since_str.endswith('m'):
+        if since_str.endswith("m"):
             minutes = int(since_str[:-1])
             return datetime.now(timezone.utc) - timedelta(minutes=minutes)
-        elif since_str.endswith('h'):
+        elif since_str.endswith("h"):
             hours = int(since_str[:-1])
             return datetime.now(timezone.utc) - timedelta(hours=hours)
-        elif since_str.endswith('d'):
+        elif since_str.endswith("d"):
             days = int(since_str[:-1])
             return datetime.now(timezone.utc) - timedelta(days=days)
         else:
@@ -50,13 +50,15 @@ def find_log_files(log_dir: str) -> List[Path]:
     return sorted([Path(f) for f in files], key=lambda p: p.stat().st_mtime, reverse=True)
 
 
-def read_log_entries(log_files: List[Path], since: datetime, tail: Optional[int] = None) -> List[Dict[str, Any]]:
+def read_log_entries(
+    log_files: List[Path], since: datetime, tail: Optional[int] = None
+) -> List[Dict[str, Any]]:
     """Read log entries from files, filtered by time."""
     entries = []
 
     for log_file in log_files:
         try:
-            with open(log_file, 'r', encoding='utf-8') as f:
+            with open(log_file, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -66,10 +68,10 @@ def read_log_entries(log_files: List[Path], since: datetime, tail: Optional[int]
                         entry = json.loads(line)
 
                         # Parse timestamp
-                        ts_str = entry.get('ts', '')
+                        ts_str = entry.get("ts", "")
                         if ts_str:
                             try:
-                                ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
                                 if ts >= since:
                                     entries.append(entry)
                             except ValueError:
@@ -88,7 +90,7 @@ def read_log_entries(log_files: List[Path], since: datetime, tail: Optional[int]
             continue
 
     # Sort by timestamp
-    entries.sort(key=lambda e: e.get('ts', ''))
+    entries.sort(key=lambda e: e.get("ts", ""))
 
     # Apply tail limit
     if tail and len(entries) > tail:
@@ -97,18 +99,18 @@ def read_log_entries(log_files: List[Path], since: datetime, tail: Optional[int]
     return entries
 
 
-def filter_entries(entries: List[Dict[str, Any]],
-                  trace_id: Optional[str] = None,
-                  names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+def filter_entries(
+    entries: List[Dict[str, Any]], trace_id: Optional[str] = None, names: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
     """Filter entries by trace_id and event names."""
     filtered = entries
 
     if trace_id:
-        filtered = [e for e in filtered if e.get('trace_id', '').startswith(trace_id)]
+        filtered = [e for e in filtered if e.get("trace_id", "").startswith(trace_id)]
 
     if names:
         name_set = set(names)
-        filtered = [e for e in filtered if e.get('name') in name_set]
+        filtered = [e for e in filtered if e.get("name") in name_set]
 
     return filtered
 
@@ -116,21 +118,21 @@ def filter_entries(entries: List[Dict[str, Any]],
 def format_entry(entry: Dict[str, Any]) -> str:
     """Format a log entry for display."""
     # Extract key fields
-    ts = entry.get('ts', '')
-    trace_id = entry.get('trace_id', '')
-    name = entry.get('name', '')
+    ts = entry.get("ts", "")
+    trace_id = entry.get("trace_id", "")
+    name = entry.get("name", "")
 
     # Format timestamp (show only time part)
-    time_part = ''
+    time_part = ""
     if ts:
         try:
-            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-            time_part = dt.strftime('%H:%M:%S')
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            time_part = dt.strftime("%H:%M:%S")
         except ValueError:
             time_part = ts[:8] if len(ts) >= 8 else ts
 
     # Format trace_id (show first 6 chars)
-    trace_part = trace_id[:6] + '…' if len(trace_id) > 6 else trace_id.ljust(7)
+    trace_part = trace_id[:6] + "…" if len(trace_id) > 6 else trace_id.ljust(7)
 
     # Format event name (max 12 chars)
     name_part = name[:12].ljust(12)
@@ -138,41 +140,43 @@ def format_entry(entry: Dict[str, Any]) -> str:
     # Extract and format payload (excluding standard fields)
     payload_parts = []
     for key, value in entry.items():
-        if key in ('ts', 'level', 'name', 'trace_id'):
+        if key in ("ts", "level", "name", "trace_id"):
             continue
 
         # Format common field types
-        if key == 'open' and isinstance(value, bool):
+        if key == "open" and isinstance(value, bool):
             payload_parts.append(f"open={str(value)}")
-        elif key == 'thr' or key.endswith('_dbfs'):
+        elif key == "thr" or key.endswith("_dbfs"):
             payload_parts.append(f"thr={value}")
-        elif key == 'conf' or key == 'confidence':
-            payload_parts.append(f"conf={value:.2f}" if isinstance(value, (int, float)) else f"conf={value}")
-        elif key == 'lang':
+        elif key == "conf" or key == "confidence":
+            payload_parts.append(
+                f"conf={value:.2f}" if isinstance(value, (int, float)) else f"conf={value}"
+            )
+        elif key == "lang":
             payload_parts.append(f"lang={value}")
-        elif key.endswith('_ms') and isinstance(value, (int, float)):
+        elif key.endswith("_ms") and isinstance(value, (int, float)):
             payload_parts.append(f"{key}={value:.0f}ms")
-        elif key in ('len', 'len_samples'):
+        elif key in ("len", "len_samples"):
             payload_parts.append(f"len={value}")
-        elif key in ('in', 'tokens_in', 'input_length'):
+        elif key in ("in", "tokens_in", "input_length"):
             payload_parts.append(f"in={value}")
-        elif key in ('out', 'tokens_out'):
+        elif key in ("out", "tokens_out"):
             payload_parts.append(f"out={value}")
-        elif key == 'sources' and isinstance(value, list):
+        elif key == "sources" and isinstance(value, list):
             payload_parts.append(f"sources={len(value)}")
-        elif key in ('transcript', 'reply_text') and isinstance(value, str):
+        elif key in ("transcript", "reply_text") and isinstance(value, str):
             # Show truncated text in quotes
             text = value[:30] + "..." if len(value) > 30 else value
             payload_parts.append(f'{key}="{text}"')
-        elif key in ('audio_path', 'tts_path') and isinstance(value, str):
+        elif key in ("audio_path", "tts_path") and isinstance(value, str):
             # Show just filename
             filename = Path(value).name if value else "None"
             payload_parts.append(f"out={filename}")
-        elif key == 'duration_s' and isinstance(value, (int, float)):
+        elif key == "duration_s" and isinstance(value, (int, float)):
             payload_parts.append(f"{value:.1f}s")
-        elif key == 'ok' and isinstance(value, bool):
+        elif key == "ok" and isinstance(value, bool):
             payload_parts.append(f"ok={str(value)}")
-        elif key == 'reason':
+        elif key == "reason":
             payload_parts.append(f"reason={value}")
         else:
             # Generic formatting
@@ -181,49 +185,34 @@ def format_entry(entry: Dict[str, Any]) -> str:
             else:
                 payload_parts.append(f"{key}={value}")
 
-    payload_text = ' '.join(payload_parts)
+    payload_text = " ".join(payload_parts)
 
     return f"{time_part}Z  {trace_part}  {name_part} {payload_text}"
 
 
 def main():
     """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="View and filter KLoROS JSON trace logs"
-    )
+    parser = argparse.ArgumentParser(description="View and filter KLoROS JSON trace logs")
     parser.add_argument(
         "--dir",
         type=str,
         default=os.getenv("KLR_LOG_DIR", os.path.expanduser("~/.kloros/logs")),
-        help="Log directory (default: ~/.kloros/logs)"
+        help="Log directory (default: ~/.kloros/logs)",
     )
-    parser.add_argument(
-        "--since",
-        type=str,
-        help="Time window: 15m, 2h, 1d (default: all)"
-    )
-    parser.add_argument(
-        "--trace-id",
-        type=str,
-        help="Filter by trace ID (prefix match)"
-    )
-    parser.add_argument(
-        "--name",
-        type=str,
-        help="Filter by event names (comma-separated)"
-    )
-    parser.add_argument(
-        "--tail",
-        type=int,
-        default=200,
-        help="Show last N entries (default: 200)"
-    )
+    parser.add_argument("--since", type=str, help="Time window: 15m, 2h, 1d (default: all)")
+    parser.add_argument("--trace-id", type=str, help="Filter by trace ID (prefix match)")
+    parser.add_argument("--name", type=str, help="Filter by event names (comma-separated)")
+    parser.add_argument("--tail", type=int, default=200, help="Show last N entries (default: 200)")
 
     args = parser.parse_args()
 
     try:
         # Parse time window
-        since = parse_time_window(args.since) if args.since else datetime.min.replace(tzinfo=timezone.utc)
+        since = (
+            parse_time_window(args.since)
+            if args.since
+            else datetime.min.replace(tzinfo=timezone.utc)
+        )
 
         # Find log files
         log_files = find_log_files(args.dir)
@@ -235,7 +224,7 @@ def main():
         entries = read_log_entries(log_files, since, args.tail)
 
         # Filter entries
-        names = args.name.split(',') if args.name else None
+        names = args.name.split(",") if args.name else None
         filtered_entries = filter_entries(entries, args.trace_id, names)
 
         # Display results

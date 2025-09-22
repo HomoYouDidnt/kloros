@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Build a FAISS index for the local accuracy stack."""
+
 from __future__ import annotations
 
 import argparse
@@ -78,11 +79,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", required=True, help="Directory containing raw documents")
     parser.add_argument("--out", required=True, help="Directory where the index will be written")
-    parser.add_argument("--model", default="BAAI/bge-m3", help="Model name to download if model-path missing")
+    parser.add_argument(
+        "--model", default="BAAI/bge-m3", help="Model name to download if model-path missing"
+    )
     parser.add_argument("--model-path", default=None, help="Optional local model path")
     args = parser.parse_args()
 
-    build_index(Path(args.corpus), Path(args.out), model_path=args.model_path, model_name=args.model)
+    build_index(
+        Path(args.corpus), Path(args.out), model_path=args.model_path, model_name=args.model
+    )
 
 
 if __name__ == "__main__":

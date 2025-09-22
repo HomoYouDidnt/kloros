@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Tiny evaluation harness for the accuracy stack fixtures."""
+
 from __future__ import annotations
 
 import argparse
@@ -50,7 +51,9 @@ def citation_hit(result: Dict[str, Any], record: Dict[str, Any]) -> float:
 
 def run_eval(cfg_path: Path, qa_path: Path, out_dir: Path, limit: int) -> None:
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    records = [json.loads(line) for line in qa_path.read_text(encoding="utf-8").splitlines() if line]
+    records = [
+        json.loads(line) for line in qa_path.read_text(encoding="utf-8").splitlines() if line
+    ]
     if limit:
         records = records[:limit]
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -93,9 +96,7 @@ def run_eval(cfg_path: Path, qa_path: Path, out_dir: Path, limit: int) -> None:
 - F1 Score: {f1:.3f}
 - Abstain Rate: {abstain:.3f}
 - Citation Hit Rate: {cit:.3f}
-""".format(
-            total=len(rows), em=em_avg, f1=f1_avg, abstain=abstain_rate, cit=citation_rate
-        ),
+""".format(total=len(rows), em=em_avg, f1=f1_avg, abstain=abstain_rate, cit=citation_rate),
         encoding="utf-8",
     )
 

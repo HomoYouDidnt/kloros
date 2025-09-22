@@ -1,4 +1,5 @@
 """Mock SLED decoding implementation for the accuracy stack."""
+
 from __future__ import annotations
 
 import math
@@ -43,7 +44,7 @@ def sled_generate(
     )
     top_tokens = [tok for tok, _ in ranked_tokens[:keep_union]]
     snippet = _snippet(top_tokens, length=16)
-    energy = sum(value ** 2 for value in combined.values())
+    energy = sum(value**2 for value in combined.values())
     answer = f"[SLED alpha={alpha:.2f}] {snippet}"
     citations = _citations(context)[:2]
     return {

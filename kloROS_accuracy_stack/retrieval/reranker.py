@@ -1,4 +1,5 @@
 """Reranker providers for the accuracy stack."""
+
 from __future__ import annotations
 
 import logging
@@ -58,7 +59,9 @@ def _mock_rerank(question: str, hits: List[Dict[str, Any]]) -> List[Dict[str, An
     )
 
 
-def _bge_rerank(question: str, hits: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _bge_rerank(
+    question: str, hits: List[Dict[str, Any]], cfg: Dict[str, Any]
+) -> List[Dict[str, Any]]:
     rerank_cfg = cfg.get("rerank", {})
     model_path = rerank_cfg.get("model_path")
     model_name = rerank_cfg.get("model_name", "BAAI/bge-reranker-v2-m3")

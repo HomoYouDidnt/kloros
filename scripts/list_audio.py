@@ -28,10 +28,12 @@ def list_devices():
         print("=" * 50)
 
         for i, device in enumerate(devices):
-            if device['max_input_channels'] > 0:  # Only show input devices
+            if device["max_input_channels"] > 0:  # Only show input devices
                 default_marker = " (default)" if i == default_device[0] else ""
                 print(f"  {i}: {device['name']}{default_marker}")
-                print(f"      Channels: {device['max_input_channels']} in, {device['max_output_channels']} out")
+                print(
+                    f"      Channels: {device['max_input_channels']} in, {device['max_output_channels']} out"
+                )
                 print(f"      Sample rate: {device['default_samplerate']} Hz")
                 print()
 
@@ -95,10 +97,10 @@ def test_capture(duration_secs: int, device_index: int = None):
                 audio_data = chunk  # Just use last chunk for simplicity in this test
 
             # Convert to int16 for WAV
-            audio_int16 = (audio_data * 32767).astype('int16')
+            audio_int16 = (audio_data * 32767).astype("int16")
 
             # Write WAV file
-            with wave.open(str(output_path), 'wb') as wf:
+            with wave.open(str(output_path), "wb") as wf:
                 wf.setnchannels(channels)
                 wf.setsampwidth(2)  # 16-bit
                 wf.setframerate(sample_rate)
@@ -117,19 +119,11 @@ def test_capture(duration_secs: int, device_index: int = None):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="List audio devices and test capture"
-    )
+    parser = argparse.ArgumentParser(description="List audio devices and test capture")
     parser.add_argument(
-        "--capture-secs",
-        type=int,
-        help="Test capture for N seconds and save to WAV"
+        "--capture-secs", type=int, help="Test capture for N seconds and save to WAV"
     )
-    parser.add_argument(
-        "--device",
-        type=int,
-        help="Device index to use for capture test"
-    )
+    parser.add_argument("--device", type=int, help="Device index to use for capture test")
 
     args = parser.parse_args()
 

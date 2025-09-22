@@ -1,4 +1,5 @@
 """GraphRAG expansion providers for the accuracy stack."""
+
 from __future__ import annotations
 
 import itertools
@@ -29,10 +30,7 @@ def _build_graph(reranked: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], str]:
             edges[(a, b)] += 1
     top_terms = [term for term, _ in term_counter.most_common(10)]
     graph = {
-        "nodes": [
-            {"id": term, "weight": float(term_counter[term])}
-            for term in top_terms
-        ],
+        "nodes": [{"id": term, "weight": float(term_counter[term])} for term in top_terms],
         "edges": [
             {"source": a, "target": b, "weight": float(weight)}
             for (a, b), weight in edges.items()
@@ -54,10 +52,16 @@ def graphrag_expand(
     if provider == "local":
         graph_path = Path(cfg.get("graphrag", {}).get("graph_path", "data/graph/graph.json"))
         graph_path.parent.mkdir(parents=True, exist_ok=True)
-        graph_path.write_text(json.dumps({
-            "question": question,
-            "graph": graph,
-        }, indent=2), encoding="utf-8")
+        graph_path.write_text(
+            json.dumps(
+                {
+                    "question": question,
+                    "graph": graph,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
     elif provider != "mock":
         raise NotImplementedError(f"GraphRAG provider '{provider}' not implemented")
 

@@ -17,39 +17,16 @@ def main():
         description="KLoROS system smoke harness - end-to-end pipeline testing"
     )
     parser.add_argument(
-        "--wav",
-        type=str,
-        help="Input WAV file path (generates synthetic if not provided)"
+        "--wav", type=str, help="Input WAV file path (generates synthetic if not provided)"
     )
+    parser.add_argument("--stt", type=str, default="mock", help="STT backend name (default: mock)")
+    parser.add_argument("--tts", type=str, default="mock", help="TTS backend name (default: mock)")
     parser.add_argument(
-        "--stt",
-        type=str,
-        default="mock",
-        help="STT backend name (default: mock)"
+        "--reason", type=str, default="mock", help="Reasoning backend name (default: mock)"
     )
+    parser.add_argument("--sr", type=int, default=16000, help="Sample rate in Hz (default: 16000)")
     parser.add_argument(
-        "--tts",
-        type=str,
-        default="mock",
-        help="TTS backend name (default: mock)"
-    )
-    parser.add_argument(
-        "--reason",
-        type=str,
-        default="mock",
-        help="Reasoning backend name (default: mock)"
-    )
-    parser.add_argument(
-        "--sr",
-        type=int,
-        default=16000,
-        help="Sample rate in Hz (default: 16000)"
-    )
-    parser.add_argument(
-        "--out",
-        type=str,
-        default="tts_smoke.wav",
-        help="Output filename (default: tts_smoke.wav)"
+        "--out", type=str, default="tts_smoke.wav", help="Output filename (default: tts_smoke.wav)"
     )
 
     args = parser.parse_args()
@@ -66,10 +43,14 @@ def main():
 
     # Print one-line summary
     if result.ok:
-        print(f'OK transcript="{result.transcript}" reply="{result.reply_text}" out="{result.tts_path}"')
+        print(
+            f'OK transcript="{result.transcript}" reply="{result.reply_text}" out="{result.tts_path}"'
+        )
         sys.exit(0)
     else:
-        print(f'FAIL reason="{result.reason}" transcript="{result.transcript}" reply="{result.reply_text}"')
+        print(
+            f'FAIL reason="{result.reason}" transcript="{result.transcript}" reply="{result.reply_text}"'
+        )
 
         # Map failure reasons to exit codes
         if result.reason == "no_voice":

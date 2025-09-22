@@ -69,7 +69,7 @@ class SoundDeviceBackend:
             int(seconds * self.sample_rate),
             samplerate=self.sample_rate,
             channels=1,
-            dtype=np.float32
+            dtype=np.float32,
         )
         sd.wait()  # Wait for recording to complete
 

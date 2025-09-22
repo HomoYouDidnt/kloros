@@ -19,7 +19,9 @@ except (ImportError, OSError) as e:
 try:
     import sentence_transformers  # noqa: F401
 except ImportError as e:
-    pytest.skip(f"sentence-transformers required for FAISS retrieval tests: {e}", allow_module_level=True)
+    pytest.skip(
+        f"sentence-transformers required for FAISS retrieval tests: {e}", allow_module_level=True
+    )
 
 from kloROS_accuracy_stack.retrieval import embedder  # noqa: E402
 from scripts.index_build import build_index  # noqa: E402

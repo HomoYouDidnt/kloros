@@ -1,4 +1,5 @@
 """Local citation verification helpers for the accuracy stack."""
+
 from __future__ import annotations
 
 import re
@@ -22,7 +23,9 @@ def _collect_support(
     return supported, missing_ids, missing_markers
 
 
-def _abstain(reason: str, *, missing: Iterable[str] | None = None, score: float | None = None) -> Dict[str, Any]:
+def _abstain(
+    reason: str, *, missing: Iterable[str] | None = None, score: float | None = None
+) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "answer": None,
         "abstained": True,
@@ -59,7 +62,9 @@ def cove_verify(
         return verified
 
     if provider != "local":
-        raise NotImplementedError(f"Verification provider '{provider}' not implemented in accuracy stack")
+        raise NotImplementedError(
+            f"Verification provider '{provider}' not implemented in accuracy stack"
+        )
 
     threshold = float(verification_cfg.get("abstain_threshold", 0.75))
     support_score = len(supported) / max(1, len(citations)) if citations else 0.0

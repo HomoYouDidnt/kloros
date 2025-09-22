@@ -1,4 +1,5 @@
 """Orchestrator: RAG → Rerank → CRAG → GraphRAG → Decode (SLED/CISC) → CoVe Verify."""
+
 import argparse
 import json
 from typing import Any, Dict, List, Tuple
@@ -31,6 +32,7 @@ def build_context(
     trace["doc_text"] = doc_text
     return "\n\n".join(chunks)
 
+
 def decode(
     question: str, context: str, cfg: Dict[str, Any], trace: Dict[str, Any]
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -62,6 +64,7 @@ def decode(
         trace["decode_mode_fallback"] = requested_mode
     return answer, {"mode": mode}
 
+
 def answer(question: str, cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     trace: Dict[str, Any] = {"question": question}
     hits = retrieve(question, cfg, trace)
@@ -78,6 +81,7 @@ def answer(question: str, cfg: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str
     final = cove_verify(question, draft, context, cfg, trace)
     return final, trace
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--question", required=True)
@@ -91,6 +95,7 @@ def main():
     with open(args.trace, "w", encoding="utf-8") as f:
         json.dump(trace, f, indent=2)
     print(json.dumps(final, indent=2))
+
 
 if __name__ == "__main__":
     main()

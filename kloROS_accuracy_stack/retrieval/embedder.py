@@ -1,4 +1,5 @@
 """Retrieval providers for the KLoROS accuracy stack."""
+
 from __future__ import annotations
 
 import json
@@ -105,12 +106,14 @@ def _load_fixture_docs() -> List[Dict[str, Any]]:
         raw = path.read_text(encoding="utf-8")
         tokens = _tokenize(raw)
         tf = Counter(tokens)
-        docs.append({
-            "id": path.name,
-            "text": raw.strip(),
-            "tokens": tokens,
-            "tf": tf,
-        })
+        docs.append(
+            {
+                "id": path.name,
+                "text": raw.strip(),
+                "tokens": tokens,
+                "tf": tf,
+            }
+        )
     df: Counter[str] = Counter()
     for doc in docs:
         df.update(set(doc["tokens"]))
@@ -225,11 +228,13 @@ def _retrieve_faiss(
         if idx < 0 or idx >= len(meta):
             continue
         entry = meta[idx]
-        results.append({
-            "id": entry["id"],
-            "text": entry["text"],
-            "score": float(score),
-        })
+        results.append(
+            {
+                "id": entry["id"],
+                "text": entry["text"],
+                "score": float(score),
+            }
+        )
     target = trace_target if trace_target is not None else trace
     target["retrieved_ids"] = [doc["id"] for doc in results]
     target["retrieved_full"] = results

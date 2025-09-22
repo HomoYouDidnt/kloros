@@ -1,4 +1,5 @@
 """Utility CLI for orchestrating the RZERO self-improvement sandbox."""
+
 from __future__ import annotations
 
 import argparse
@@ -100,9 +101,7 @@ def handle_gatekeep(cfg: Dict[str, Any], reports: Iterable[Path]) -> List[Path]:
         data = json.loads(report_path.read_text(encoding="utf-8"))
         if gatekeep(data, criteria):
             promoted.append(report_path)
-    print(
-        f"Gatekeeper accepted {len(promoted)} of {len(report_list)} reports"
-    )
+    print(f"Gatekeeper accepted {len(promoted)} of {len(report_list)} reports")
     return promoted
 
 

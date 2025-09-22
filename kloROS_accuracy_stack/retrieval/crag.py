@@ -1,4 +1,5 @@
 """Mock CRAG corrective loop for the accuracy stack."""
+
 from __future__ import annotations
 
 import re
