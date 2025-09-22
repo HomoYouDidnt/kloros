@@ -12,7 +12,8 @@ sys.path.insert(0, str(src_dir))
 
 try:
     import numpy as np
-    from src.audio.calibration import AudioBackend, run_calibration, save_profile
+
+    from src.audio.calibration import run_calibration, save_profile
 except ImportError as e:
     print(f"Error: Failed to import required modules: {e}")
     print("Make sure you're in the KLoROS project directory and dependencies are installed.")
@@ -31,16 +32,16 @@ class SoundDeviceBackend:
         """Open audio input stream."""
         try:
             import sounddevice as sd
-        except ImportError:
+        except ImportError as e:
             raise RuntimeError(
                 "sounddevice library not available. Install with: pip install sounddevice"
-            )
+            ) from e
 
         self.sample_rate = sample_rate
 
         # Try to get device info
         try:
-            devices = sd.query_devices()
+            _devices = sd.query_devices()
             default_input = sd.default.device[0]
             if default_input is not None:
                 device_info = sd.query_devices(default_input, "input")
@@ -58,8 +59,8 @@ class SoundDeviceBackend:
         """Record audio for specified duration."""
         try:
             import sounddevice as sd
-        except ImportError:
-            raise RuntimeError("sounddevice library not available")
+        except ImportError as e:
+            raise RuntimeError("sounddevice library not available") from e
 
         print(f"Recording for {seconds:.1f} seconds...")
 

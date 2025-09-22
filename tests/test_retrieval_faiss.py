@@ -10,8 +10,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-pytest.importorskip("faiss")
-pytest.importorskip("sentence_transformers")
+# Skip the entire module if faiss or sentence_transformers aren't available
+try:
+    import faiss  # noqa: F401
+except (ImportError, OSError) as e:
+    pytest.skip(f"faiss-cpu required for FAISS retrieval tests: {e}", allow_module_level=True)
+
+try:
+    import sentence_transformers  # noqa: F401
+except ImportError as e:
+    pytest.skip(f"sentence-transformers required for FAISS retrieval tests: {e}", allow_module_level=True)
 
 from kloROS_accuracy_stack.retrieval import embedder  # noqa: E402
 from scripts.index_build import build_index  # noqa: E402

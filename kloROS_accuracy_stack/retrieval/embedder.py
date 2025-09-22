@@ -221,7 +221,7 @@ def _retrieve_faiss(
         vector = vector.reshape(1, -1)
     scores, indices = index.search(vector, top_k)
     results: List[Dict[str, Any]] = []
-    for score, idx in zip(scores[0], indices[0]):
+    for score, idx in zip(scores[0], indices[0], strict=False):
         if idx < 0 or idx >= len(meta):
             continue
         entry = meta[idx]

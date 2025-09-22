@@ -2,7 +2,16 @@ import json
 import queue
 import time
 
-import sounddevice as sd
+import pytest
+
+try:
+    import sounddevice as sd
+except OSError as e:
+    if "PortAudio library not found" in str(e):
+        pytest.skip("PortAudio library not available", allow_module_level=True)
+    else:
+        raise
+
 import vosk
 
 # Test 1: Check available audio devices

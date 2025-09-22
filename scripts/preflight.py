@@ -8,7 +8,7 @@ from pathlib import Path
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.tools.preflight import run_all_checks, compute_overall_status, write_json_summary
+from src.tools.preflight import compute_overall_status, run_all_checks, write_json_summary
 
 
 def format_check_line(status: str, name: str, details: str, width: int = 80) -> str:

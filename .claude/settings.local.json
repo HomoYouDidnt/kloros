@@ -14,7 +14,8 @@
       "Bash(ruff check:*)",
       "Bash(npm view:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:google.github.io)"
+      "WebFetch(domain:google.github.io)",
+      "Bash(pip show:*)"
     ],
     "deny": [],
     "ask": []

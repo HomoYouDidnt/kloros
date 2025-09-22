@@ -11,8 +11,6 @@ import faiss  # type: ignore
 import numpy as np
 import sentence_transformers  # type: ignore
 
-from kloROS_accuracy_stack.retrieval.embedder import _tokenize
-
 
 def _iter_chunks(path: Path) -> Iterable[Tuple[str, str]]:
     text = path.read_text(encoding="utf-8").strip()
@@ -21,7 +19,7 @@ def _iter_chunks(path: Path) -> Iterable[Tuple[str, str]]:
     parts = [p.strip() for p in text.split("\n\n") if p.strip()]
     if not parts:
         parts = [text]
-    rel = path.stem
+    _rel = path.stem
     for idx, chunk in enumerate(parts):
         chunk_id = f"{path.name}#p{idx}"
         yield chunk_id, chunk
@@ -71,7 +69,7 @@ def build_index(
             "id": chunk_id,
             "text": text,
         }
-        for chunk_id, text in zip(chunk_ids, chunk_texts)
+        for chunk_id, text in zip(chunk_ids, chunk_texts, strict=False)
     ]
     meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 

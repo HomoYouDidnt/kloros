@@ -66,7 +66,7 @@ def _bge_rerank(question: str, hits: List[Dict[str, Any]], cfg: Dict[str, Any]) 
     pairs = [(question, doc.get("text", "")) for doc in hits]
     scores = cross_encoder.predict(pairs)
     enriched: List[Dict[str, Any]] = []
-    for doc, score in zip(hits, scores):
+    for doc, score in zip(hits, scores, strict=False):
         enriched.append({**doc, "rerank_score": float(score)})
     enriched.sort(key=lambda doc: -doc.get("rerank_score", doc.get("score", 0.0)))
     return enriched

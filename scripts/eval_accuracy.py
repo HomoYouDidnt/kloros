@@ -5,19 +5,18 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
-
-import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import yaml
+import yaml  # noqa: E402
 
-from kloROS_accuracy_stack.pipeline.qa import answer
+from kloROS_accuracy_stack.pipeline.qa import answer  # noqa: E402
 
 
 def _normalise(text: str) -> str:

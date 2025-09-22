@@ -13,10 +13,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from kloROS_accuracy_stack.rzero.evaluator import evaluate_candidate
-from kloROS_accuracy_stack.rzero.gatekeeper import gatekeep
-from kloROS_accuracy_stack.rzero.proposer import propose_candidates
-
+from kloROS_accuracy_stack.rzero.evaluator import evaluate_candidate  # noqa: E402
+from kloROS_accuracy_stack.rzero.gatekeeper import gatekeep  # noqa: E402
+from kloROS_accuracy_stack.rzero.proposer import propose_candidates  # noqa: E402
 
 PLAN_STEPS: List[str] = [
     "Load accuracy configuration and verify RZERO is enabled.",
