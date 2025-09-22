@@ -37,10 +37,10 @@ def parse_spelled_name(spelled_text: str) -> str:
 
     # Handle both dash-separated and space-separated letters
     if '-' in spelled_text:
-        letters = [l.strip().upper() for l in spelled_text.split('-') if l.strip()]
+        letters = [letter.strip().upper() for letter in spelled_text.split('-') if letter.strip()]
     else:
         # Space-separated letters
-        letters = [l.strip().upper() for l in spelled_text.split() if l.strip() and len(l.strip()) == 1]
+        letters = [letter.strip().upper() for letter in spelled_text.split() if letter.strip() and len(letter.strip()) == 1]
 
     if not letters:
         return spelled_text.strip().title()  # Fallback to original

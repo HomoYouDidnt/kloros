@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
-from typing import List, Optional, Protocol, Tuple
+from typing import List, Optional, Protocol
 
 
 @dataclass

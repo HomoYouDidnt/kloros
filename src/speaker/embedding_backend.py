@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .base import SpeakerBackend, SpeakerResult
+from .base import SpeakerResult
 
 
 class EmbeddingSpeakerBackend:

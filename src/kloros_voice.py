@@ -99,7 +99,11 @@ except ImportError:
 
 try:
     from src.speaker.base import SpeakerBackend, create_speaker_backend  # noqa: E402
-    from src.speaker.enrollment import ENROLLMENT_SENTENCES, parse_spelled_name, verify_name_spelling  # noqa: E402
+    from src.speaker.enrollment import (  # noqa: E402
+        ENROLLMENT_SENTENCES,
+        parse_spelled_name,
+        verify_name_spelling,
+    )
 except ImportError:
     create_speaker_backend = None  # type: ignore
     SpeakerBackend = None  # type: ignore

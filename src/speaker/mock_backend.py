@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from .base import SpeakerBackend, SpeakerResult
+from .base import SpeakerResult
 
 
 class MockSpeakerBackend:
@@ -101,7 +101,7 @@ class MockSpeakerBackend:
                 similarities = []
                 for stored_embedding in user_embeddings:
                     # Simple similarity: how close are the first 3 values?
-                    diff = sum(abs(a - b) for a, b in zip(query_embedding[:3], stored_embedding[:3]))
+                    diff = sum(abs(a - b) for a, b in zip(query_embedding[:3], stored_embedding[:3], strict=False))
                     similarity = max(0.0, 1.0 - diff)  # Convert difference to similarity
                     similarities.append(similarity)
 
