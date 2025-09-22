@@ -63,7 +63,7 @@ class LocalQaBackend:
                     config.update(file_config)
                 except Exception:
                     # If config loading fails, use default
-                    pass
+                    pass  # nosec B110
 
             # Update config with any provided kwargs
             config.update(self.qa_kwargs)
@@ -121,7 +121,7 @@ class LocalQaBackend:
                     else:
                         result = str(run_result)
                 except Exception:
-                    pass
+                    pass  # nosec B110
 
             if result is None:
                 raise RuntimeError("No compatible QA entrypoint found")

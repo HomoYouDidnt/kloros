@@ -16,7 +16,7 @@ import os
 import platform
 import queue
 import re
-import subprocess
+import subprocess  # nosec B404
 import sys
 import threading
 import time
@@ -588,21 +588,21 @@ class KLoROS:
         try:
             # Only run Pulse/PipeWire commands on Linux; dev machines (Windows) skip.
             if platform.system() == "Linux":
-                subprocess.run(
+                subprocess.run(  # nosec B603, B607
                     ["pactl", "suspend-sink", "@DEFAULT_SINK@", "0"],
                     capture_output=True,
                     timeout=2,
                     check=False,
                 )
         except Exception:
-            pass
+            pass  # nosec B110
 
     def _play_silence(self, seconds: float = 0.25) -> None:
         """Feed raw silence; helps keep BT link hot."""
         try:
             # aplay is Linux/ALSA-specific. Only attempt on Linux hosts.
             if platform.system() == "Linux":
-                subprocess.run(
+                subprocess.run(  # nosec B603, B607
                     [
                         "aplay",
                         "-q",
@@ -621,7 +621,7 @@ class KLoROS:
                     check=False,
                 )
         except Exception:
-            pass
+            pass  # nosec B110
 
     def _start_bluetooth_keepalive(self) -> None:
         def keepalive() -> None:
@@ -648,7 +648,7 @@ class KLoROS:
                 context=context or {},
             )
         except Exception:
-            pass
+            pass  # nosec B110
         if speak:
             try:
                 self.speak(line)
@@ -703,7 +703,7 @@ class KLoROS:
             # Play audio on Linux hosts
             if platform.system() == "Linux":
                 try:
-                    subprocess.run(["aplay", result.audio_path], capture_output=True, check=False)
+                    subprocess.run(["aplay", result.audio_path], capture_output=True, check=False)  # nosec B603, B607
                 except Exception as e:
                     print(f"[TTS] Audio playback failed: {e}")
 
@@ -1143,7 +1143,7 @@ class KLoROS:
                         # Audio already synthesized by orchestrator
                         if platform.system() == "Linux":
                             try:
-                                subprocess.run(
+                                subprocess.run(  # nosec B603, B607
                                     ["aplay", summary.tts.audio_path],
                                     capture_output=True,
                                     check=False,

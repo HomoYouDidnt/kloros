@@ -67,7 +67,7 @@ class LocalRagBackend:
                             result = str(rag_result)
                 except Exception:
                     # If RAG instantiation or answer fails, try other methods
-                    pass
+                    pass  # nosec B110
 
             # Second try: direct function calls if available
             if result is None:

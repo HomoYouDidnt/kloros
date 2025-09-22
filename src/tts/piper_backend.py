@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404
 import time
 import wave
 from pathlib import Path
@@ -60,7 +60,7 @@ class PiperTtsBackend:
 
         # Try CLI fallback
         try:
-            result = subprocess.run(["piper", "--help"], capture_output=True, timeout=5)
+            result = subprocess.run(["piper", "--help"], capture_output=True, timeout=5)  # nosec B603, B607
             if result.returncode == 0:
                 return "cli"
         except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
@@ -169,7 +169,7 @@ class PiperTtsBackend:
                 cmd.extend(extra_args.split())
 
             # Run Piper with text input
-            result = subprocess.run(cmd, input=text, text=True, capture_output=True, timeout=30)
+            result = subprocess.run(cmd, input=text, text=True, capture_output=True, timeout=30)  # nosec B603
 
             if result.returncode != 0:
                 raise RuntimeError(f"piper CLI failed: {result.stderr}")

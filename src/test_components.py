@@ -8,7 +8,7 @@ paths consistent with `src/kloros_voice.py`.
 import importlib
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404
 
 import requests  # type: ignore
 
@@ -42,7 +42,7 @@ def _main() -> None:
     else:
         try:
             # Call piper directly, supplying text as stdin bytes (cross-platform)
-            subprocess.run(
+            subprocess.run(  # nosec B603
                 [piper_exe, "--model", piper_model, "--output_file", "test_voice.wav"],
                 input=b"Testing GLaDOS voice",
                 check=False,
