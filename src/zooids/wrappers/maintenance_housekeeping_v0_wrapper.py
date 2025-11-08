@@ -60,7 +60,7 @@ class HousekeepingZooid:
                 "status": "success",
                 "timestamp": now,
                 "genome_id": self.genome_id,
-                "result": result if result else {},
+                "result": result,
             }
 
         except Exception as e:
