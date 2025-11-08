@@ -1,0 +1,205 @@
+#!/home/kloros/.venv/bin/python3
+"""
+klorosctl - KLoROS Control CLI
+
+Command-line interface for managing KLoROS lifecycle operations.
+
+Commands:
+  promote - Promote zooids through lifecycle states
+  status - Show zooid status
+  rollback - Rollback zooid deployments
+"""
+
+import sys
+import json
+import time
+import argparse
+import logging
+from pathlib import Path
+from typing import List
+
+sys.path.insert(0, str(Path.home() / 'src'))
+
+from kloros.registry.lifecycle_registry import LifecycleRegistry
+
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger(__name__)
+
+
+class KLoROSCtl:
+    """KLoROS control command-line interface."""
+
+    def __init__(self):
+        self.registry = LifecycleRegistry()
+
+    def promote_cohort(
+        self,
+        cohort: int,
+        to_state: str,
+        reason: str,
+        dry_run: bool = False,
+    ) -> int:
+        """
+        Promote all zooids in a cohort to a new lifecycle state.
+
+        Args:
+            cohort: Cohort number (1, 2, etc.)
+            to_state: Target state (PROBATION, ACTIVE, PRIMARY)
+            reason: Reason for promotion
+            dry_run: If True, show what would be done without doing it
+
+        Returns:
+            0 on success, 1 on failure
+        """
+        cohort_niches = {
+            1: ["maintenance_housekeeping", "observability_logging"],
+            2: ["resource_monitoring", "error_recovery"],
+        }
+
+        if cohort not in cohort_niches:
+            logger.error(f"Unknown cohort: {cohort}")
+            return 1
+
+        niches = cohort_niches[cohort]
+
+        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Promoting Cohort {cohort} to {to_state}")
+        logger.info(f"  Niches: {', '.join(niches)}")
+        logger.info(f"  Reason: {reason}")
+        logger.info("")
+
+        with self.registry.lock():
+            reg = self.registry.load()
+
+            for niche in niches:
+                niche_zooids = [
+                    name for name, zooid in reg["zooids"].items()
+                    if zooid.get("niche") == niche
+                ]
+
+                if not niche_zooids:
+                    logger.warning(f"  ⚠️  No zooids found for niche: {niche}")
+                    continue
+
+                for zooid_name in niche_zooids:
+                    zooid = reg["zooids"][zooid_name]
+                    old_state = zooid.get("lifecycle_state", "UNKNOWN")
+
+                    logger.info(f"  {zooid_name}: {old_state} → {to_state}")
+
+                    if not dry_run:
+                        zooid["lifecycle_state"] = to_state
+                        zooid["last_promotion"] = {
+                            "timestamp": time.time(),
+                            "from_state": old_state,
+                            "to_state": to_state,
+                            "reason": reason,
+                        }
+
+                        # Update indices
+                        old_state_lower = old_state.lower() if old_state else "unknown"
+                        new_state_lower = to_state.lower()
+
+                        if niche in reg["niches_by_state"].get(old_state_lower, {}):
+                            if zooid_name in reg["niches_by_state"][old_state_lower][niche]:
+                                reg["niches_by_state"][old_state_lower][niche].remove(zooid_name)
+
+                        self.registry.index_add(reg, niche, new_state_lower, zooid_name)
+
+            if not dry_run:
+                self.registry.snapshot_then_atomic_write(reg)
+                logger.info(f"\n✅ Registry updated to version {reg['version']}")
+            else:
+                logger.info(f"\n[DRY RUN] Registry would be updated (current version: {reg['version']})")
+
+        return 0
+
+    def status_cohort(self, cohort: int) -> int:
+        """Show status of all zooids in a cohort."""
+        cohort_niches = {
+            1: ["maintenance_housekeeping", "observability_logging"],
+            2: ["resource_monitoring", "error_recovery"],
+        }
+
+        if cohort not in cohort_niches:
+            logger.error(f"Unknown cohort: {cohort}")
+            return 1
+
+        niches = cohort_niches[cohort]
+
+        logger.info(f"Cohort {cohort} Status")
+        logger.info("=" * 80)
+
+        with self.registry.lock():
+            reg = self.registry.load()
+
+            for niche in niches:
+                logger.info(f"\n{niche}:")
+
+                niche_zooids = [
+                    (name, zooid) for name, zooid in reg["zooids"].items()
+                    if zooid.get("niche") == niche
+                ]
+
+                if not niche_zooids:
+                    logger.info("  No zooids registered")
+                    continue
+
+                for zooid_name, zooid in niche_zooids:
+                    state = zooid.get("lifecycle_state", "UNKNOWN")
+                    generation = zooid.get("generation", "?")
+                    fitness = zooid.get("fitness_score", 0.0)
+
+                    logger.info(f"  {zooid_name}")
+                    logger.info(f"    State: {state}")
+                    logger.info(f"    Generation: {generation}")
+                    logger.info(f"    Fitness: {fitness:.4f}")
+
+                    if "last_promotion" in zooid:
+                        promo = zooid["last_promotion"]
+                        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(promo["timestamp"]))
+                        logger.info(f"    Last Promotion: {promo['from_state']} → {promo['to_state']} ({timestamp})")
+
+        logger.info("\n" + "=" * 80)
+        return 0
+
+
+def main():
+    """Main entry point for klorosctl."""
+    parser = argparse.ArgumentParser(description="KLoROS Control CLI")
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+
+    # Promote command
+    promote_parser = subparsers.add_parser("promote", help="Promote zooids through lifecycle states")
+    promote_parser.add_argument("--cohort", type=int, required=True, help="Cohort number (1, 2, etc.)")
+    promote_parser.add_argument("--to", dest="to_state", required=True, help="Target state (PROBATION, ACTIVE, PRIMARY)")
+    promote_parser.add_argument("--reason", default="Manual promotion", help="Reason for promotion")
+    promote_parser.add_argument("--dry-run", action="store_true", help="Show what would be done without doing it")
+
+    # Status command
+    status_parser = subparsers.add_parser("status", help="Show zooid status")
+    status_parser.add_argument("--cohort", type=int, required=True, help="Cohort number (1, 2, etc.)")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    ctl = KLoROSCtl()
+
+    if args.command == "promote":
+        return ctl.promote_cohort(
+            cohort=args.cohort,
+            to_state=args.to_state,
+            reason=args.reason,
+            dry_run=args.dry_run,
+        )
+    elif args.command == "status":
+        return ctl.status_cohort(cohort=args.cohort)
+    else:
+        logger.error(f"Unknown command: {args.command}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

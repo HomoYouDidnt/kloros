@@ -1,0 +1,22 @@
+#!/home/kloros/.venv/bin/python3
+"""
+Shadow Daemon - observability_logging
+
+Runs 24-hour shadow mode validation for observability_logging niche.
+"""
+
+import sys
+import logging
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / 'src'))
+
+from kloros.dream.shadow_daemon import main_observability_logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+if __name__ == "__main__":
+    sys.exit(main_observability_logging())
