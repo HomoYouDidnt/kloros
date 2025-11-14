@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from statistics import mean
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
