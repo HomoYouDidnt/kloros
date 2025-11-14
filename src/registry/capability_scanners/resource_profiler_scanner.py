@@ -192,5 +192,5 @@ class ResourceProfilerScanner(CapabilityScanner):
         if _GPU_AVAILABLE and self._gpu_handle:
             try:
                 pynvml.nvmlShutdown()
-            except:
+            except Exception:
                 pass
