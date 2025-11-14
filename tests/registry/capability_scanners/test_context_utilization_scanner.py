@@ -102,3 +102,29 @@ class TestContextUtilizationScanner:
         with patch.object(scanner, '_load_context_logs', return_value=mock_logs):
             gaps = scanner.scan()
             assert gaps == []
+
+    def test_scanner_with_cache_injection(self):
+        """Test scanner works with injected observation cache."""
+        from kloros.introspection.observation_cache import ObservationCache
+
+        cache = ObservationCache(window_seconds=60)
+
+        now = time.time()
+        for i in range(5):
+            obs = {
+                "ts": now - i,
+                "zooid_name": f"zooid_{i}",
+                "ok": True,
+                "facts": {
+                    "context_length": 10000,
+                    "references": list(range(0, 5000, 100)),
+                    "timestamp": now - i
+                }
+            }
+            cache.append(obs)
+
+        scanner = ContextUtilizationScanner(cache=cache)
+        gaps = scanner.scan()
+
+        assert len(gaps) >= 1
+        assert gaps[0].category == 'context_utilization'

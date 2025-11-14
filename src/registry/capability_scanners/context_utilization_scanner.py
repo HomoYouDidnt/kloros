@@ -26,17 +26,35 @@ class ContextUtilizationScanner(CapabilityScanner):
 
     def __init__(
         self,
-        context_logs_path: Path = Path("/home/kloros/.kloros/context_utilization.jsonl")
+        metrics_path: Path = None,
+        cache: 'ObservationCache' = None
     ):
-        """Initialize scanner with context logs path."""
-        self.context_logs_path = context_logs_path
+        """
+        Initialize scanner with either file path (legacy) or cache (streaming).
+
+        Args:
+            metrics_path: Path to context utilization JSONL (legacy mode)
+            cache: ObservationCache instance (streaming mode)
+        """
+        if cache is not None:
+            self.cache = cache
+            self.metrics_path = None
+        elif metrics_path is not None:
+            self.cache = None
+            self.metrics_path = metrics_path
+        else:
+            self.cache = None
+            self.metrics_path = Path("/home/kloros/.kloros/metrics/context_utilization.jsonl")
 
     def scan(self) -> List[CapabilityGap]:
         """Scan context utilization for optimization opportunities."""
         gaps = []
 
         try:
-            logs = self._load_context_logs()
+            if self.cache is not None:
+                logs = self._load_from_cache()
+            else:
+                logs = self._load_context_logs()
 
             if len(logs) < self.MIN_SAMPLES:
                 logger.debug("[context_util] Insufficient samples")
@@ -69,14 +87,14 @@ class ContextUtilizationScanner(CapabilityScanner):
 
     def _load_context_logs(self) -> List[Dict[str, Any]]:
         """Load context utilization logs (7-day window)."""
-        if not self.context_logs_path.exists():
+        if not self.metrics_path.exists():
             return []
 
         logs = []
         cutoff = time.time() - (7 * 86400)
 
         try:
-            with open(self.context_logs_path, 'r') as f:
+            with open(self.metrics_path, 'r') as f:
                 for line in f:
                     if not line.strip():
                         continue
@@ -165,3 +183,26 @@ class ContextUtilizationScanner(CapabilityScanner):
             )
 
         return None
+
+    def _load_from_cache(self) -> List[Dict[str, Any]]:
+        """
+        Load context utilization logs from observation cache.
+
+        Returns:
+            List of context utilization log dicts
+        """
+        observations = self.cache.get_recent(seconds=7 * 86400)
+
+        logs = []
+        for obs in observations:
+            facts = obs.get('facts', {})
+
+            if 'context_length' in facts and 'references' in facts:
+                logs.append({
+                    'timestamp': facts.get('timestamp', obs.get('ts')),
+                    'context_length': facts['context_length'],
+                    'references': facts['references'],
+                    'zooid_name': obs.get('zooid_name')
+                })
+
+        return logs
