@@ -76,3 +76,32 @@ class TestResourceProfilerScanner:
         with patch.object(scanner, '_load_resource_metrics', return_value=[]):
             gaps = scanner.scan()
             assert gaps == []
+
+
+def test_scanner_with_cache_injection():
+    """Test scanner works with injected observation cache."""
+    from kloros.introspection.observation_cache import ObservationCache
+    import time
+
+    cache = ObservationCache(window_seconds=60)
+
+    now = time.time()
+    for i in range(5):
+        obs = {
+            "ts": now - i,
+            "zooid_name": f"zooid_{i}",
+            "ok": True,
+            "facts": {
+                "gpu_utilization": 30.0,
+                "gpu_memory_used_mb": 1000,
+                "gpu_memory_total_mb": 8000,
+                "timestamp": now - i
+            }
+        }
+        cache.append(obs)
+
+    scanner = ResourceProfilerScanner(cache=cache)
+    gaps = scanner.scan()
+
+    assert len(gaps) >= 1
+    assert gaps[0].category == 'resource_utilization'

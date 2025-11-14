@@ -33,12 +33,27 @@ class ResourceProfilerScanner(CapabilityScanner):
 
     def __init__(
         self,
-        metrics_path: Path = Path("/home/kloros/.kloros/resource_metrics.jsonl")
+        metrics_path: Path = None,
+        cache: 'ObservationCache' = None
     ):
-        """Initialize scanner with metrics path."""
-        self.metrics_path = metrics_path
-        self._gpu_handle = None
+        """
+        Initialize scanner with either file path (legacy) or cache (streaming).
 
+        Args:
+            metrics_path: Path to resource metrics JSONL (legacy mode)
+            cache: ObservationCache instance (streaming mode)
+        """
+        if cache is not None:
+            self.cache = cache
+            self.metrics_path = None
+        elif metrics_path is not None:
+            self.cache = None
+            self.metrics_path = metrics_path
+        else:
+            self.cache = None
+            self.metrics_path = Path("/home/kloros/.kloros/resource_metrics.jsonl")
+
+        self._gpu_handle = None
         if _GPU_AVAILABLE:
             try:
                 pynvml.nvmlInit()
@@ -51,7 +66,10 @@ class ResourceProfilerScanner(CapabilityScanner):
         gaps = []
 
         try:
-            metrics = self._load_resource_metrics()
+            if self.cache is not None:
+                metrics = self._load_from_cache()
+            else:
+                metrics = self._load_resource_metrics()
 
             if len(metrics) < self.MIN_SAMPLES:
                 logger.debug("[resource_profiler] Insufficient samples")
@@ -109,6 +127,33 @@ class ResourceProfilerScanner(CapabilityScanner):
                         continue
         except Exception as e:
             logger.warning(f"[resource_profiler] Failed to load metrics: {e}")
+
+        return metrics
+
+    def _load_from_cache(self) -> List[Dict[str, Any]]:
+        """
+        Load resource metrics from observation cache.
+
+        Returns:
+            List of resource metric dicts
+        """
+        observations = self.cache.get_recent(seconds=7 * 86400)
+
+        metrics = []
+        for obs in observations:
+            facts = obs.get('facts', {})
+
+            if 'gpu_utilization' in facts or 'cpu_percent' in facts:
+                metrics.append({
+                    'timestamp': facts.get('timestamp', obs.get('ts')),
+                    'gpu_util': facts.get('gpu_utilization'),
+                    'gpu_memory_used_mb': facts.get('gpu_memory_used_mb'),
+                    'gpu_memory_total_mb': facts.get('gpu_memory_total_mb'),
+                    'cpu_util': facts.get('cpu_percent'),
+                    'memory_util': facts.get('ram_percent'),
+                    'operation': facts.get('operation', 'unknown'),
+                    'zooid_name': obs.get('zooid_name')
+                })
 
         return metrics
 
