@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from statistics import mean
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
@@ -91,7 +91,7 @@ class ContextUtilizationScanner(CapabilityScanner):
 
         return logs
 
-    def _detect_unused_tail(self, logs: List[Dict[str, Any]]) -> CapabilityGap:
+    def _detect_unused_tail(self, logs: List[Dict[str, Any]]) -> Optional[CapabilityGap]:
         """Detect if last portion of context is consistently unused."""
         max_reference_ratios = []
 
@@ -129,7 +129,7 @@ class ContextUtilizationScanner(CapabilityScanner):
 
         return None
 
-    def _detect_recency_bias(self, logs: List[Dict[str, Any]]) -> CapabilityGap:
+    def _detect_recency_bias(self, logs: List[Dict[str, Any]]) -> Optional[CapabilityGap]:
         """Detect if only recent context is being used."""
         recency_ratios = []
 
