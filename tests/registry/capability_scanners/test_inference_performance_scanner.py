@@ -4,6 +4,7 @@ import pytest
 import time
 from unittest.mock import Mock, patch
 from pathlib import Path
+from collections import deque
 
 from src.registry.capability_scanners.inference_performance_scanner import (
     InferencePerformanceScanner
@@ -76,3 +77,30 @@ class TestInferencePerformanceScanner:
         with patch.object(Path, 'exists', return_value=False):
             gaps = scanner.scan()
             assert gaps == []
+
+    def test_scanner_with_cache_injection(self):
+        """Test scanner works with injected observation cache."""
+        from kloros.introspection.observation_cache import ObservationCache
+
+        cache = ObservationCache(window_seconds=60)
+
+        now = time.time()
+        for i in range(5):
+            obs = {
+                "ts": now - i,
+                "zooid_name": f"zooid_{i}",
+                "ok": True,
+                "facts": {
+                    "task_type": "code_generation",
+                    "tokens_per_sec": 5.0,
+                    "timestamp": now - i
+                }
+            }
+            cache.append(obs)
+
+        scanner = InferencePerformanceScanner(cache=cache)
+        gaps = scanner.scan()
+
+        assert len(gaps) >= 1
+        assert gaps[0].category == 'inference_performance'
+        assert 'slow_inference' in gaps[0].name

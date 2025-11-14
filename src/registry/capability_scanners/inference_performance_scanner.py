@@ -26,17 +26,35 @@ class InferencePerformanceScanner(CapabilityScanner):
 
     def __init__(
         self,
-        metrics_path: Path = Path("/home/kloros/.kloros/inference_metrics.jsonl")
+        metrics_path: Path = None,
+        cache: 'ObservationCache' = None
     ):
-        """Initialize scanner with metrics path."""
-        self.metrics_path = metrics_path
+        """
+        Initialize scanner with either file path (legacy) or cache (streaming).
+
+        Args:
+            metrics_path: Path to inference metrics JSONL (legacy mode)
+            cache: ObservationCache instance (streaming mode)
+        """
+        if cache is not None:
+            self.cache = cache
+            self.metrics_path = None
+        elif metrics_path is not None:
+            self.cache = None
+            self.metrics_path = metrics_path
+        else:
+            self.cache = None
+            self.metrics_path = Path("/home/kloros/.kloros/metrics/inference_metrics.jsonl")
 
     def scan(self) -> List[CapabilityGap]:
         """Scan inference metrics for performance optimization opportunities."""
         gaps = []
 
         try:
-            metrics = self._load_inference_metrics()
+            if self.cache is not None:
+                metrics = self._load_from_cache()
+            else:
+                metrics = self._load_inference_metrics()
 
             if not metrics:
                 logger.debug("[inference_perf] No metrics available")
@@ -91,6 +109,29 @@ class InferencePerformanceScanner(CapabilityScanner):
                         continue
         except Exception as e:
             logger.warning(f"[inference_perf] Failed to load metrics: {e}")
+
+        return metrics
+
+    def _load_from_cache(self) -> List[Dict[str, Any]]:
+        """
+        Load inference metrics from observation cache.
+
+        Returns:
+            List of inference metric dicts extracted from observation facts
+        """
+        observations = self.cache.get_recent(seconds=7 * 86400)
+
+        metrics = []
+        for obs in observations:
+            facts = obs.get('facts', {})
+
+            if 'task_type' in facts and 'tokens_per_sec' in facts:
+                metrics.append({
+                    'timestamp': facts.get('timestamp', obs.get('ts')),
+                    'task_type': facts['task_type'],
+                    'tokens_per_sec': facts['tokens_per_sec'],
+                    'zooid_name': obs.get('zooid_name')
+                })
 
         return metrics
 
