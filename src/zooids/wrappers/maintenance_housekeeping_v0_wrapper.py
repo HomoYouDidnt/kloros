@@ -6,9 +6,13 @@ HousekeepingScheduler implementation. Future generations can modify
 or replace internal behavior while maintaining the zooid interface.
 """
 
+import sys
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+# Use kloros home explicitly (not current user's home)
+sys.path.insert(0, '/home/kloros/src')
 
 from housekeeping_scheduler import HousekeepingScheduler
 

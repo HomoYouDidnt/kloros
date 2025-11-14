@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 
 from kloros.dream.shadow_mode import ShadowModeExecutor, ShadowModeMonitor
+from kloros.orchestration.maintenance_mode import wait_for_normal_mode
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,9 @@ class ShadowModeDaemon:
 
         while self.running and time.time() < end_time:
             try:
+                # Check maintenance mode before continuing
+                wait_for_normal_mode()
+
                 now = time.time()
 
                 execution = self._execute_shadow_tick(now)
@@ -183,16 +187,24 @@ class ShadowModeDaemon:
     def _execute_shadow_tick(self, now: float):
         """Execute one shadow tick through both implementations."""
         if self.niche == "maintenance_housekeeping":
+            def wrapper_callable():
+                tick_result = self.wrapper_instance.tick(now)
+                return tick_result.get("result") if tick_result.get("status") == "success" else None
+
             return self.executor.execute_shadow(
                 niche=self.niche,
                 legacy_callable=lambda: self.legacy_instance.run_scheduled_maintenance(),
-                wrapper_callable=lambda: self.wrapper_instance.tick(now),
+                wrapper_callable=wrapper_callable,
             )
         elif self.niche == "observability_logging":
+            def wrapper_callable():
+                tick_result = self.wrapper_instance.tick(now)
+                return tick_result.get("result") if tick_result.get("status") == "success" else None
+
             return self.executor.execute_shadow(
                 niche=self.niche,
                 legacy_callable=lambda: {"daemon_running": self.legacy_instance.running, "event_count": self.legacy_instance.event_count},
-                wrapper_callable=lambda: self.wrapper_instance.tick(now),
+                wrapper_callable=wrapper_callable,
             )
         else:
             raise ValueError(f"Unknown niche: {self.niche}")

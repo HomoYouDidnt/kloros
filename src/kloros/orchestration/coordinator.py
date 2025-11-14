@@ -759,7 +759,7 @@ def tick() -> str:
                 logger.info(f"[orchestrator] Intent processed: {intent_file.name} -> {action}")
 
                 if action == "ROUTED_VIA_CHEMICAL_SIGNAL":
-                    logger.debug(f"[orchestrator] Q_CURIOSITY_INVESTIGATE signal routed via chemical bus for {intent_file.name}")
+                    logger.debug(f"[orchestrator] Intent routed via chemical bus for {intent_file.name}")
 
                 intents_processed += 1
             except Exception as e:

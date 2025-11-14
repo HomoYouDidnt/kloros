@@ -22,12 +22,20 @@ Outcomes:
 import json
 import logging
 import hashlib
+import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
 from collections import defaultdict
+
+# Import semantic evidence store
+try:
+    from .semantic_evidence import SemanticEvidenceStore
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from semantic_evidence import SemanticEvidenceStore
 import psutil
 import subprocess
 
@@ -67,6 +75,7 @@ class CuriosityQuestion:
     hypothesis: str
     question: str
     evidence: List[str] = field(default_factory=list)
+    evidence_hash: Optional[str] = None
     action_class: ActionClass = ActionClass.EXPLAIN_AND_SOFT_FALLBACK
     autonomy: int = 2  # Autonomy level (1=notify, 2=propose, 3=execute)
     value_estimate: float = 0.5  # Expected value (0.0-1.0)
@@ -82,6 +91,7 @@ class CuriosityQuestion:
             "hypothesis": self.hypothesis,
             "question": self.question,
             "evidence": self.evidence,
+            "evidence_hash": self.evidence_hash,
             "action_class": self.action_class.value,
             "autonomy": self.autonomy,
             "value_estimate": self.value_estimate,
@@ -877,6 +887,7 @@ class ModuleDiscoveryMonitor:
         self.src_path = src_path
         self.knowledge_base_path = knowledge_base_path
         self.capability_yaml = capability_yaml
+        self.semantic_store = SemanticEvidenceStore()
 
         # Load known capabilities from registry
         self.known_capabilities = self._load_known_capabilities()
@@ -1037,7 +1048,8 @@ class ModuleDiscoveryMonitor:
                 f"What does it do, and should it be added to my capability registry?"
             )
 
-            evidence = [
+            # COMBINE static filesystem evidence with semantic learned evidence
+            static_evidence = [
                 f"path:{module_info['path']}",
                 f"has_init:{module_info['has_init']}",
                 f"py_files:{module_info['py_file_count']}",
@@ -1045,11 +1057,20 @@ class ModuleDiscoveryMonitor:
                 f"age_days:{int(age_days)}"
             ]
 
+            # Add semantic evidence from previous investigations
+            semantic_evidence = self.semantic_store.to_evidence_list(module_name)
+
+            # Combine: filesystem metadata + learned semantic context
+            evidence = static_evidence + semantic_evidence
+
+            evidence_hash = hashlib.sha256("|".join(sorted(evidence)).encode()).hexdigest()[:16]
+
             q = CuriosityQuestion(
                 id=f"discover.module.{module_name}",
                 hypothesis=hypothesis,
                 question=question,
                 evidence=evidence,
+                evidence_hash=evidence_hash,
                 action_class=ActionClass.INVESTIGATE,
                 autonomy=2,
                 value_estimate=min(value, 0.95),  # Cap at 0.95

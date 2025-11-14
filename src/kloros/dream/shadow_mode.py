@@ -24,6 +24,32 @@ import hashlib
 logger = logging.getLogger(__name__)
 
 
+NICHE_SCHEMAS = {
+    "maintenance_housekeeping": {
+        "critical": {
+            "tasks_completed",
+            "errors",
+        },
+        "enhancement": {
+            "cleanup_deleted",
+            "episodes_condensed",
+            "python_cache_cleanup",
+            "backup_cleanup",
+            "tts_cleanup",
+            "reflection_log_cleanup",
+            "obsolete_scripts_cleanup",
+            "intelligent_cleanup",
+            "stats",
+            "integrity_issues",
+        },
+    },
+    "observability_logging": {
+        "critical": {"daemon_running", "event_count"},
+        "enhancement": {"subscriber_active", "last_event_timestamp"},
+    },
+}
+
+
 class ShadowModeState(Enum):
     """Shadow mode execution states."""
     MONITORING = "monitoring"
@@ -126,7 +152,7 @@ class ShadowModeExecutor:
             logger.error(f"Wrapper execution failed for {niche}: {wrapper_error}")
         wrapper_time_ms = (time.perf_counter() - wrapper_start) * 1000
 
-        drift_percentage = self._calculate_drift(legacy_result, wrapper_result)
+        drift_percentage = self._calculate_drift(niche, legacy_result, wrapper_result)
 
         load_ratio = wrapper_time_ms / legacy_time_ms if legacy_time_ms > 0 else 1.0
 
@@ -149,13 +175,83 @@ class ShadowModeExecutor:
 
     def _calculate_drift(
         self,
+        niche: str,
         legacy_result: Any,
         wrapper_result: Any,
     ) -> float:
-        """Calculate drift percentage between results."""
+        """
+        Calculate drift percentage between results using schema-aware comparison.
+
+        For niches with defined schemas:
+        - Only critical fields contribute to drift calculation
+        - Enhancement fields (additive, non-breaking) are logged but don't cause drift
+
+        For niches without schemas, falls back to full JSON comparison.
+        """
         if legacy_result is None and wrapper_result is None:
             return 0.0
 
+        schema = NICHE_SCHEMAS.get(niche)
+
+        if not schema or not isinstance(legacy_result, dict) or not isinstance(wrapper_result, dict):
+            return self._calculate_string_drift(legacy_result, wrapper_result)
+
+        critical_keys = schema.get("critical", set())
+        enhancement_keys = schema.get("enhancement", set())
+
+        if not critical_keys:
+            return self._calculate_string_drift(legacy_result, wrapper_result)
+
+        missing_keys = []
+        value_mismatches = []
+
+        for key in critical_keys:
+            if key not in legacy_result or key not in wrapper_result:
+                missing_keys.append(key)
+                continue
+
+            if legacy_result[key] != wrapper_result[key]:
+                value_mismatches.append({
+                    "key": key,
+                    "legacy": legacy_result[key],
+                    "wrapper": wrapper_result[key],
+                })
+
+        detected_enhancements = set(wrapper_result.keys()) - set(legacy_result.keys())
+        expected_enhancements = detected_enhancements & enhancement_keys
+        unexpected_fields = detected_enhancements - enhancement_keys
+
+        if expected_enhancements:
+            logger.info(
+                f"{niche}: Non-breaking enhancements detected: {sorted(expected_enhancements)}"
+            )
+
+        if unexpected_fields:
+            logger.warning(
+                f"{niche}: Unexpected new fields (not in enhancement schema): {sorted(unexpected_fields)}"
+            )
+
+        if missing_keys:
+            logger.error(
+                f"{niche}: Critical schema violation - missing keys: {missing_keys}"
+            )
+            return 100.0
+
+        if not value_mismatches:
+            return 0.0
+
+        total_critical = len(critical_keys)
+        mismatched_critical = len(value_mismatches)
+        drift_pct = (mismatched_critical / total_critical) * 100
+
+        logger.warning(
+            f"{niche}: Critical field mismatches ({mismatched_critical}/{total_critical}): {value_mismatches}"
+        )
+
+        return drift_pct
+
+    def _calculate_string_drift(self, legacy_result: Any, wrapper_result: Any) -> float:
+        """Fallback string-based drift calculation for non-dict results."""
         legacy_str = json.dumps(legacy_result, sort_keys=True, default=str)
         wrapper_str = json.dumps(wrapper_result, sort_keys=True, default=str)
 

@@ -41,7 +41,9 @@ class LedgerWriterZooid:
         """
         Execute one tick of the zooid behavior.
 
-        This v0 implementation delegates directly to the legacy code.
+        This v0 implementation reports the status of the event-driven daemon.
+        LedgerWriterDaemon processes observations via ChemBus subscription,
+        so there's no single-shot operation to execute per tick.
 
         Args:
             now: Current timestamp
@@ -51,13 +53,18 @@ class LedgerWriterZooid:
             Dictionary with tick results
         """
         try:
-            result = self._impl.start()
+            # Report daemon status (event-driven, no single-shot operation)
+            result = {
+                "daemon_running": self._impl.running,
+                "event_count": self._impl.event_count,
+                "subscriber_active": hasattr(self._impl.sub, '_sub') and self._impl.sub._sub is not None,
+            }
 
             return {
                 "status": "success",
                 "timestamp": now,
                 "genome_id": self.genome_id,
-                "result": result if result else {},
+                "result": result,
             }
 
         except Exception as e:

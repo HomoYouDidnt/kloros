@@ -29,17 +29,31 @@ def start_shadow_daemon(niche: str) -> subprocess.Popen:
 
     logger.info(f"Starting shadow daemon: {niche}")
 
+    # Set PYTHONPATH so daemon can import kloros modules
+    import os
+    env = os.environ.copy()
+    env['PYTHONPATH'] = str(Path.home() / 'src')
+
+    # Log daemon output to separate files for debugging
+    log_dir = Path.home() / ".kloros" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stdout_log = log_dir / f"shadow_{niche}_stdout.log"
+    stderr_log = log_dir / f"shadow_{niche}_stderr.log"
+
     proc = subprocess.Popen(
         [str(script_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=open(stdout_log, 'w'),
+        stderr=open(stderr_log, 'w'),
         text=True,
+        env=env,
     )
+
+    logger.info(f"  Daemon logs: {stdout_log} | {stderr_log}")
 
     return proc
 
 
-def monitor_metrics(niches: list, duration_hours: float = 24.0):
+def monitor_metrics(niches: list, processes: dict, duration_hours: float = 24.0):
     """Monitor metrics from all shadow daemons."""
     metrics_dir = Path.home() / ".kloros" / "metrics"
 
@@ -55,6 +69,20 @@ def monitor_metrics(niches: list, duration_hours: float = 24.0):
     while time.time() < end_time:
         try:
             elapsed_hours = (time.time() - start_time) / 3600
+
+            # Check if daemon processes are still alive
+            for niche, proc in processes.items():
+                if proc.poll() is not None:
+                    exit_code = proc.returncode
+                    logger.error(f"🚨 Shadow daemon {niche} exited unexpectedly (code: {exit_code})")
+
+                    stderr_log = Path.home() / ".kloros" / "logs" / f"shadow_{niche}_stderr.log"
+                    if stderr_log.exists():
+                        with open(stderr_log, 'r') as f:
+                            stderr_content = f.read()
+                            if stderr_content:
+                                logger.error(f"Daemon stderr:\n{stderr_content}")
+                    return 1
 
             # Read metrics for all niches
             all_metrics = {}
@@ -150,7 +178,7 @@ def main():
 
     # Monitor metrics
     try:
-        result = monitor_metrics(niches, duration_hours=24.0)
+        result = monitor_metrics(niches, processes, duration_hours=24.0)
     except KeyboardInterrupt:
         logger.info("Interrupted by user, stopping shadow mode...")
         result = 1

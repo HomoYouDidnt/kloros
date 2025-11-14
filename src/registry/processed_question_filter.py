@@ -51,14 +51,14 @@ class ProcessedQuestionFilter:
             processed_path: Path to processed_questions.jsonl
         """
         self.processed_path = processed_path
-        self._processed_cache: Dict[str, float] = {}  # {question_id: processed_timestamp}
+        self._processed_cache: Dict[str, Dict] = {}  # {question_id: {timestamp, evidence_hash}}
         self._load_processed_state()
 
     def _load_processed_state(self) -> None:
         """
         Load processed questions into memory cache.
 
-        Reads processed_questions.jsonl and builds {question_id: timestamp} map.
+        Reads processed_questions.jsonl and builds {question_id: {timestamp, evidence_hash}} map.
         Handles missing/corrupted files gracefully (fail-open).
         """
         if not self.processed_path.exists():
@@ -75,11 +75,15 @@ class ProcessedQuestionFilter:
                         entry = json.loads(line)
                         qid = entry.get("question_id")
                         processed_at = entry.get("processed_at", 0)
+                        evidence_hash = entry.get("evidence_hash")
 
                         if qid:
-                            # Keep most recent processing timestamp if duplicate entries
-                            if qid not in self._processed_cache or processed_at > self._processed_cache[qid]:
-                                self._processed_cache[qid] = processed_at
+                            # Keep most recent processing if duplicate entries
+                            if qid not in self._processed_cache or processed_at > self._processed_cache[qid].get("timestamp", 0):
+                                self._processed_cache[qid] = {
+                                    "timestamp": processed_at,
+                                    "evidence_hash": evidence_hash
+                                }
                     except json.JSONDecodeError:
                         logger.warning(f"[filter] Skipping malformed JSON at line {line_num}")
                         continue
@@ -151,25 +155,43 @@ class ProcessedQuestionFilter:
         """
         Check if question should be regenerated.
 
+        For UNDISCOVERED_MODULE questions: Uses evidence hash comparison
+        For other questions: Uses time-based cooldown
+
         Args:
             question: CuriosityQuestion to check
 
         Returns:
-            True if question should be included (new or cooldown expired)
-            False if question should be filtered out (still in cooldown)
+            True if question should be included (new or evidence changed)
+            False if question should be filtered out (same evidence already processed)
         """
         try:
             qid = question.id
-
-            # ALWAYS allow module discovery questions through (critical for self-awareness)
-            if "UNDISCOVERED_MODULE" in question.hypothesis:
-                return True
 
             # New question - not in processed cache
             if qid not in self._processed_cache:
                 return True
 
-            processed_at = self._processed_cache[qid]
+            # Evidence-based filtering for module discovery (context changes matter)
+            if "UNDISCOVERED_MODULE" in question.hypothesis:
+                new_hash = question.evidence_hash
+                cached = self._processed_cache[qid]
+                old_hash = cached.get("evidence_hash")
+
+                if new_hash and old_hash:
+                    if new_hash == old_hash:
+                        logger.debug(f"[filter] {qid}: Same evidence hash {new_hash[:8]}..., skipping")
+                        return False
+                    else:
+                        logger.info(f"[filter] {qid}: Evidence changed ({old_hash[:8]}... -> {new_hash[:8]}...), re-investigating")
+                        return True
+
+                logger.debug(f"[filter] {qid}: Missing evidence hash, allowing through")
+                return True
+
+            # Time-based filtering for other question types
+            cached = self._processed_cache[qid]
+            processed_at = cached.get("timestamp", 0)
             cooldown_days = self._get_cooldown_days(question)
 
             # Calculate age
@@ -275,6 +297,8 @@ if __name__ == "__main__":
 
     if filter_obj._processed_cache:
         print("\nSample processed questions:")
-        for i, (qid, timestamp) in enumerate(list(filter_obj._processed_cache.items())[:5]):
-            age_days = (time.time() - timestamp) / 86400
-            print(f"  {qid}: {age_days:.1f} days old")
+        for i, (qid, data) in enumerate(list(filter_obj._processed_cache.items())[:5]):
+            timestamp = data.get("timestamp", 0)
+            evidence_hash = data.get("evidence_hash", "N/A")
+            age_days = (time.time() - timestamp) / 86400 if timestamp else 0
+            print(f"  {qid}: {age_days:.1f} days old (hash: {evidence_hash})")

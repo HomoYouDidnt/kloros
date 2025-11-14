@@ -13,6 +13,7 @@ import subprocess
 import os
 import time
 import contextlib
+from collections import deque
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -39,9 +40,138 @@ PROCESSED_QUESTIONS = Path("/home/kloros/.kloros/processed_questions.jsonl")
 LOCKS_DIR = Path("/home/kloros/.kloros/locks")
 JOURNAL_DIR = Path("/home/kloros/.kloros/journals")
 SPICA_INSTANCES_DIR = Path("/home/kloros/.kloros/spica/instances")
+PENDING_SPICA_QUEUE = Path("/home/kloros/.kloros/pending_spica_queue.jsonl")
 
 # Value/cost ratio threshold for spawning D-REAM experiments
 VALUE_THRESHOLD = 1.5  # Questions with ratio > 1.5 trigger experiments
+
+# Circuit breaker for SPICA tournament spawning (prevents death spiral)
+_tournament_failures = deque(maxlen=10)  # Track last 10 failures with timestamps
+_circuit_open_until = None  # Timestamp when circuit breaker can close
+CIRCUIT_BREAKER_THRESHOLD = 3  # Failures in 2 minutes
+CIRCUIT_BREAKER_WINDOW = 120  # 2 minutes in seconds
+CIRCUIT_BREAKER_COOLDOWN = 600  # 10 minutes cooldown when tripped
+
+# SPICA Registry - authoritative source of valid instances (Phase 3.5)
+SPICA_REGISTRY_PATH = Path.home() / ".kloros" / "spica_registry.json"
+_spica_cache = []  # Cached list of active instance IDs
+_spica_cache_ts = 0.0  # Cache timestamp
+_SPICA_CACHE_TTL = 300.0  # 5 minutes cache lifetime
+
+# Tournament rate limiting (Phase 3.5)
+_tournament_history = []  # Timestamps of tournament runs
+_MAX_TOURNAMENTS_PER_HOUR = int(os.getenv("KLR_SPICA_MAX_TOURNAMENTS_PER_HOUR", "4"))
+
+# Tournament enable flag (Phase 3.5 - staged rollout)
+ENABLE_SPICA_TOURNAMENTS = os.getenv("KLR_ENABLE_SPICA_TOURNAMENTS", "0") == "1"
+
+
+def _load_active_spica_instances(refresh: bool = False) -> List[str]:
+    """
+    Load active SPICA instances from authoritative registry.
+
+    This prevents curiosity from requesting non-existent instance IDs that caused
+    the death spiral (100% mismatch between requested vs. disk instances).
+
+    Phase 3.5: Registry binding for controlled curiosity re-enable.
+
+    Args:
+        refresh: Force cache refresh
+
+    Returns:
+        List of active instance IDs (e.g., ['spica-229daf86', ...])
+    """
+    global _spica_cache, _spica_cache_ts
+
+    now = time.time()
+    if not refresh and (now - _spica_cache_ts) < _SPICA_CACHE_TTL and _spica_cache:
+        return _spica_cache
+
+    if not SPICA_REGISTRY_PATH.exists():
+        logger.warning("[spica] Registry not found at %s", SPICA_REGISTRY_PATH)
+        _spica_cache = []
+        _spica_cache_ts = now
+        return _spica_cache
+
+    try:
+        with SPICA_REGISTRY_PATH.open("r") as f:
+            reg = json.load(f)
+    except Exception as e:
+        logger.error("[spica] Failed to load registry %s: %s", SPICA_REGISTRY_PATH, e)
+        _spica_cache = []
+        _spica_cache_ts = now
+        return _spica_cache
+
+    active = [
+        name
+        for name, meta in reg.get("instances", {}).items()
+        if meta.get("state") == "active" and meta.get("valid") is True
+    ]
+
+    _spica_cache = active
+    _spica_cache_ts = now
+
+    logger.info("[spica] Loaded %d active SPICA instances from registry", len(active))
+    return _spica_cache
+
+
+def _select_spica_candidates(max_candidates: int = 3) -> List[str]:
+    """
+    Select SPICA instance candidates for tournament from registry.
+
+    Returns only instances that exist and are validated (state=active, valid=true).
+    This makes it structurally impossible to request ghost instances.
+
+    Args:
+        max_candidates: Maximum number of instances to select
+
+    Returns:
+        List of selected instance IDs (may be empty if registry has no instances)
+    """
+    candidates = _load_active_spica_instances()
+    if not candidates:
+        logger.warning("[spica] No active SPICA instances available; skipping tournament")
+        return []
+
+    # Simple deterministic selection: take first N from registry
+    # (Could use random.sample() for variety if desired)
+    sample = candidates[:max_candidates]
+    logger.debug("[spica] Selected SPICA candidates for tournament: %s", sample)
+    return sample
+
+
+def _can_run_tournament(now: float) -> bool:
+    """
+    Check if tournament can run based on rate limit.
+
+    Phase 3.5: Prevent tournament spam during staged re-enable.
+
+    Args:
+        now: Current timestamp
+
+    Returns:
+        True if rate limit allows tournament, False otherwise
+    """
+    global _tournament_history
+
+    # Drop history older than 1 hour
+    _tournament_history[:] = [t for t in _tournament_history if now - t <= 3600]
+
+    if len(_tournament_history) >= _MAX_TOURNAMENTS_PER_HOUR:
+        logger.warning(
+            "[spica] Tournament rate limit reached (%d in last hour, max=%d); skipping",
+            len(_tournament_history),
+            _MAX_TOURNAMENTS_PER_HOUR
+        )
+        return False
+
+    return True
+
+
+def _record_tournament_run(now: float) -> None:
+    """Record tournament run timestamp for rate limiting."""
+    _tournament_history.append(now)
+
 
 def _question_to_intent(question: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -221,8 +351,31 @@ def _is_question_processed(qid: str) -> bool:
     return False
 
 
-def _mark_question_processed(qid: str, intent_sha: str):
-    """Mark question as processed."""
+def _evidence_hash(evidence: List[Any]) -> str:
+    """
+    Compute stable hash of evidence that triggered this question.
+
+    Args:
+        evidence: List of evidence strings/values
+
+    Returns:
+        16-character hash of sorted evidence
+    """
+    # Convert all evidence items to strings and sort for stability
+    evidence_strings = [str(item) for item in evidence]
+    evidence_str = "|".join(sorted(evidence_strings))
+    return hashlib.sha256(evidence_str.encode()).hexdigest()[:16]
+
+
+def _mark_question_processed(qid: str, intent_sha: str, evidence: List[Any] = None):
+    """
+    Mark question as processed with evidence hash.
+
+    Args:
+        qid: Question ID
+        intent_sha: Intent hash
+        evidence: List of evidence that triggered investigation (for context-aware re-investigation)
+    """
     PROCESSED_QUESTIONS.parent.mkdir(parents=True, exist_ok=True)
 
     entry = {
@@ -231,8 +384,53 @@ def _mark_question_processed(qid: str, intent_sha: str):
         "intent_sha": intent_sha
     }
 
+    # Include evidence hash for context-aware re-investigation
+    if evidence:
+        entry["evidence_hash"] = _evidence_hash(evidence)
+
     with open(PROCESSED_QUESTIONS, 'a') as f:
         f.write(json.dumps(entry) + '\n')
+
+
+def _should_investigate_with_new_evidence(qid: str, current_evidence: List[Any]) -> bool:
+    """
+    Check if we should investigate based on NEW evidence (context-aware re-investigation).
+
+    Returns True if:
+    - Never investigated before, OR
+    - Evidence has changed since last investigation
+
+    Args:
+        qid: Question ID
+        current_evidence: Current evidence list for this question
+
+    Returns:
+        True if should investigate (new or changed evidence)
+    """
+    if not PROCESSED_QUESTIONS.exists():
+        return True  # Never processed anything
+
+    current_hash = _evidence_hash(current_evidence)
+
+    try:
+        with open(PROCESSED_QUESTIONS) as f:
+            for line in f:
+                entry = json.loads(line.strip())
+                if entry.get("question_id") == qid:
+                    # Found previous processing
+                    previous_hash = entry.get("evidence_hash")
+                    if previous_hash == current_hash:
+                        # Same evidence - skip re-investigation
+                        return False
+                    # Evidence changed - re-investigate!
+                    # (will continue checking for most recent entry)
+
+        # Either never processed or evidence changed
+        return True
+
+    except Exception as e:
+        logger.error(f"Error checking evidence for {qid}: {e}")
+        return True  # Default to investigating on error
 
 
 def _has_spawned_curiosity(qid: str) -> bool:
@@ -257,11 +455,13 @@ def _processed_older_than(qid: str, days: int) -> bool:
     Check if question was processed more than N days ago.
 
     Returns True if question is old enough to allow re-processing.
+    Note: Checks most recent processed_at timestamp (file may have duplicates).
     """
     if not PROCESSED_QUESTIONS.exists():
         return True
 
     cutoff = time.time() - (days * 86400)
+    most_recent_timestamp = 0
 
     try:
         with open(PROCESSED_QUESTIONS, 'r') as f:
@@ -274,10 +474,16 @@ def _processed_older_than(qid: str, days: int) -> bool:
                     continue
                 if entry.get("question_id") == qid:
                     processed_at = entry.get("processed_at", 0)
-                    return processed_at < cutoff
+                    most_recent_timestamp = max(most_recent_timestamp, processed_at)
     except Exception as e:
         logger.warning(f"Error checking processed age for {qid}: {e}")
+        return True
 
+    # If found, check if most recent processing is older than cutoff
+    if most_recent_timestamp > 0:
+        return most_recent_timestamp < cutoff
+
+    # Not found = allow processing
     return True
 
 
@@ -390,6 +596,79 @@ def _cleanup_stale_processed_questions(max_age_days: int = None, max_entries: in
         logger.error(f"Error cleaning up processed questions: {e}")
 
 
+def _add_to_pending_queue(question: Dict[str, Any]) -> bool:
+    """
+    Add a question to the pending SPICA spawn queue (with deduplication).
+
+    Questions are queued when ResourceGovernor blocks spawning.
+    They'll be processed on the next orchestrator run.
+
+    Deduplication: Only adds if question ID not already in queue.
+
+    Returns:
+        True if added, False if already queued (duplicate)
+    """
+    PENDING_SPICA_QUEUE.parent.mkdir(parents=True, exist_ok=True)
+
+    # Check if question already queued (deduplication)
+    qid = question['id']
+    if PENDING_SPICA_QUEUE.exists():
+        try:
+            with open(PENDING_SPICA_QUEUE, 'r') as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    entry = json.loads(line)
+                    if entry.get("question", {}).get("id") == qid:
+                        logger.debug(f"[pending_queue] Question {qid} already queued, skipping duplicate")
+                        return False  # Already queued
+        except Exception as e:
+            logger.warning(f"[pending_queue] Deduplication check failed: {e}")
+
+    entry = {
+        "question": question,
+        "queued_at": datetime.now().timestamp()
+    }
+
+    with open(PENDING_SPICA_QUEUE, 'a') as f:
+        f.write(json.dumps(entry) + '\n')
+
+    logger.info(f"[pending_queue] Added {question['id']} to pending queue")
+    return True  # Successfully added
+
+
+def _get_pending_queue() -> List[Dict[str, Any]]:
+    """
+    Load all pending questions from the queue.
+
+    Returns:
+        List of question dicts (oldest first, FIFO order)
+    """
+    if not PENDING_SPICA_QUEUE.exists():
+        return []
+
+    questions = []
+    try:
+        with open(PENDING_SPICA_QUEUE, 'r') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                entry = json.loads(line)
+                if isinstance(entry, dict) and "question" in entry:
+                    questions.append(entry["question"])
+    except Exception as e:
+        logger.error(f"[pending_queue] Error reading pending queue: {e}")
+
+    return questions
+
+
+def _clear_pending_queue():
+    """Clear the pending queue after successful processing."""
+    if PENDING_SPICA_QUEUE.exists():
+        PENDING_SPICA_QUEUE.unlink()
+        logger.info(f"[pending_queue] Cleared pending queue")
+
+
 def _spawn_direct_experiment(question: Dict[str, Any]) -> Dict[str, Any]:
     """
     Spawn a single D-REAM experiment for direct-build mode.
@@ -451,7 +730,42 @@ def _spawn_tournament(question: Dict[str, Any]) -> Dict[str, Any]:
     Spawn a D-REAM tournament for open exploration.
 
     Creates 8+ SPICA cells with different strategies, bracket elimination.
+
+    Implements circuit breaker to prevent death spiral:
+    - Tracks failures with timestamps
+    - Opens circuit (blocks spawns) after 3 failures in 2 minutes
+    - Stays open for 10 minute cooldown period
     """
+    global _circuit_open_until, _tournament_failures
+
+    # CIRCUIT BREAKER: Check if in cooldown period
+    current_time = time.time()
+    if _circuit_open_until is not None and current_time < _circuit_open_until:
+        remaining = int(_circuit_open_until - current_time)
+        logger.warning(f"Circuit breaker OPEN: Blocking tournament spawn (cooldown: {remaining}s remaining)")
+        return {
+            "mode": "tournament",
+            "status": "blocked",
+            "reason": "circuit_breaker",
+            "cooldown_remaining": remaining
+        }
+
+    # Circuit closed or cooldown expired - allow spawn
+    if _circuit_open_until is not None and current_time >= _circuit_open_until:
+        logger.info("Circuit breaker cooldown expired - closing circuit")
+        _circuit_open_until = None
+
+    # PRE-TOURNAMENT CLEANUP: Ensure space for new instances
+    try:
+        from src.integrations.spica_spawn import prune_instances
+        prune_result = prune_instances(max_instances=2, max_age_days=1, dry_run=False)
+        logger.info(f"Pre-tournament cleanup: pruned {prune_result.get('pruned', 0)} instances")
+
+        if prune_result.get('pruned', 0) > 0:
+            time.sleep(1)
+    except Exception as e:
+        logger.warning(f"Pre-tournament cleanup failed (non-fatal): {e}")
+
     try:
         from src.dream.evaluators.spica_tournament_evaluator import SPICATournamentEvaluator
 
@@ -494,59 +808,57 @@ def _spawn_tournament(question: Dict[str, Any]) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Failed to spawn tournament: {e}", exc_info=True)
+
+        # CIRCUIT BREAKER: Track failure and check threshold
+        _tournament_failures.append(current_time)
+
+        # Count failures in the time window
+        cutoff_time = current_time - CIRCUIT_BREAKER_WINDOW
+        recent_failures = sum(1 for t in _tournament_failures if t >= cutoff_time)
+
+        if recent_failures >= CIRCUIT_BREAKER_THRESHOLD:
+            _circuit_open_until = current_time + CIRCUIT_BREAKER_COOLDOWN
+            logger.error(
+                f"Circuit breaker TRIPPED: {recent_failures} failures in {CIRCUIT_BREAKER_WINDOW}s "
+                f"(threshold: {CIRCUIT_BREAKER_THRESHOLD}). Blocking spawns for {CIRCUIT_BREAKER_COOLDOWN}s."
+            )
+
         return {
             "mode": "tournament",
             "status": "error",
-            "error": str(e)
+            "error": str(e),
+            "circuit_failures": recent_failures
         }
 
 
 def _generate_candidate_strategies(question: Dict[str, Any], min_count: int = 8) -> List[Dict[str, Any]]:
-    """Generate diverse candidate strategies for tournament."""
-    hypothesis = question["hypothesis"].lower()
-    search_space = _derive_search_space(question)
+    """Generate diverse candidate strategies using evolutionary approach."""
+    try:
+        from src.dream.spica_evolution import generate_evolutionary_candidates
 
-    # Base strategies that apply to most problems
-    base_strategies = [
-        {"name": "conservative", "temperature": 0.3, "explore": False},
-        {"name": "aggressive", "temperature": 0.9, "explore": True},
-        {"name": "balanced", "temperature": 0.6, "explore": True},
-        {"name": "adaptive", "temperature": 0.7, "adaptive_temp": True},
-    ]
+        question_id = question.get("id", "unknown")
+        candidates = generate_evolutionary_candidates(question_id, min_count=min_count)
+        logger.info(f"Generated {len(candidates)} evolutionary candidates for {question_id}")
+        return candidates
 
-    # Problem-specific strategies
-    if "swap" in hypothesis or "memory" in hypothesis:
-        strategies = base_strategies + [
-            {"name": "periodic_restart", "restart_interval_hours": 4},
-            {"name": "threshold_restart", "memory_threshold_gb": 8},
-            {"name": "memory_limit", "max_memory_gb": 12},
-            {"name": "oom_score_adjust", "oom_score": -500},
-        ]
-    elif "oom" in hypothesis or "gpu" in hypothesis:
-        strategies = base_strategies + [
-            {"name": "reduce_utilization", "gpu_memory_utilization": 0.75},
-            {"name": "increase_utilization", "gpu_memory_utilization": 0.90},
-            {"name": "reduce_batch_size", "max_num_seqs": 64},
-            {"name": "tensor_parallel", "tensor_parallel_size": 2},
-        ]
-    else:
-        # Generic exploration strategies
-        strategies = base_strategies + [
-            {"name": "fast_fallback", "timeout_ms": 500},
-            {"name": "reliable_retry", "retry_count": 3},
-            {"name": "cache_aggressive", "cache_size_mb": 1024},
-            {"name": "lazy_load", "preload": False},
+    except Exception as e:
+        logger.warning(f"Evolutionary generation failed, falling back to baseline strategies: {e}")
+
+        base_strategies = [
+            {"name": "conservative", "temperature": 0.3, "explore": False},
+            {"name": "aggressive", "temperature": 0.9, "explore": True},
+            {"name": "balanced", "temperature": 0.6, "explore": True},
+            {"name": "adaptive", "temperature": 0.7, "adaptive_temp": True},
         ]
 
-    # Ensure minimum count
-    while len(strategies) < min_count:
-        strategies.append({
-            "name": f"variant_{len(strategies)}",
-            "temperature": 0.5 + (len(strategies) * 0.05),
-            "explore": len(strategies) % 2 == 0
-        })
+        while len(base_strategies) < min_count:
+            base_strategies.append({
+                "name": f"variant_{len(base_strategies)}",
+                "temperature": 0.5 + (len(base_strategies) * 0.05),
+                "explore": len(base_strategies) % 2 == 0
+            })
 
-    return strategies[:max(min_count, len(strategies))]
+        return base_strategies[:min_count]
 
 
 def _check_for_stale_data() -> bool:
@@ -648,7 +960,16 @@ def process_curiosity_feed() -> Dict[str, Any]:
     skipped_low_value = 0
     skipped_processed = 0
 
-    logger.info(f"Processing {len(questions)} curiosity questions")
+    # PROCESS PENDING QUEUE FIRST (FIFO - oldest questions first)
+    pending_questions = _get_pending_queue()
+    if pending_questions:
+        logger.info(f"[pending_queue] Found {len(pending_questions)} pending questions from previous runs")
+        # Prepend pending questions (process them first, in order they were queued)
+        questions = pending_questions + questions
+        # Clear the pending queue file now that we've loaded them
+        _clear_pending_queue()
+
+    logger.info(f"Processing {len(questions)} curiosity questions ({len(pending_questions)} pending + {len(feed.get('questions', []))} new)")
 
     for q in questions:
         qid = q["id"]
@@ -659,11 +980,13 @@ def process_curiosity_feed() -> Dict[str, Any]:
         hypothesis = q.get("hypothesis", "")
 
         # Check if already processed AND spawned (processed ≠ spawned)
-        # BYPASS for module discovery questions (critical for self-awareness)
+        # Module discovery uses evidence-based re-investigation (context-aware, not time-based)
+        evidence = q.get("evidence", [])
         if "UNDISCOVERED_MODULE" in hypothesis:
-            already_processed = False
-            already_spawned = False
-            reprocess_age_ok = True
+            should_investigate = _should_investigate_with_new_evidence(qid, evidence)
+            already_processed = not should_investigate  # Invert: if should investigate, not "already processed"
+            already_spawned = _has_spawned_curiosity(qid)
+            reprocess_age_ok = should_investigate  # Re-investigate when evidence changes
         else:
             already_processed = _is_question_processed(qid)
             already_spawned = _has_spawned_curiosity(qid)
@@ -697,7 +1020,26 @@ def process_curiosity_feed() -> Dict[str, Any]:
                     autonomy = q.get("autonomy", 2)
                     logger.info(f"[integration_fix] Generated fix for {qid}: {fix_spec.get('action_type')} (autonomy={autonomy})")
 
-                    # ALWAYS create documentation intent
+                    # CHECK ResourceGovernor FIRST if autonomy >= 3 (will spawn SPICA)
+                    if autonomy >= 3:
+                        if SAFETY_ENABLED:
+                            try:
+                                governor = ResourceGovernor()
+                                can_spawn, reason = governor.can_spawn()
+                                if not can_spawn:
+                                    logger.info(f"[pending_queue] ResourceGovernor blocked {qid}: {reason}")
+                                    was_added = _add_to_pending_queue(q)
+                                    if was_added:
+                                        logger.info(f"[pending_queue] Added {qid} to queue for next run")
+                                    else:
+                                        logger.info(f"[pending_queue] {qid} already queued, moving to next question")
+                                    # Don't create any intents - will process from queue later
+                                    continue
+                            except Exception as e:
+                                logger.error(f"[spica_spawn] ResourceGovernor check failed for {qid}: {e}")
+                                # Continue with spawn (fail-open for now)
+
+                    # ALWAYS create documentation intent (if we got here, ResourceGovernor allowed it or autonomy < 3)
                     doc_intent = {
                         "intent_type": "integration_fix",
                         "priority": 9,
@@ -714,8 +1056,9 @@ def process_curiosity_feed() -> Dict[str, Any]:
                     }
 
                     doc_intent_json = json.dumps(doc_intent, indent=2)
-                    doc_intent_sha = hashlib.sha256(doc_intent_json.encode()).hexdigest()[:16]
-                    doc_intent_path = INTENT_DIR / f"integration_fix_{doc_intent_sha}_{qid}.json"
+                    doc_intent_sha = hashlib.sha256(doc_intent_json.encode()).hexdigest()[:8]
+                    ts_ms = int(time.time() * 1000)
+                    doc_intent_path = INTENT_DIR / f"{ts_ms}_integration_fix_{doc_intent_sha}.json"
                     INTENT_DIR.mkdir(parents=True, exist_ok=True)
                     doc_intent_path.write_text(doc_intent_json)
                     intents_emitted += 1
@@ -723,18 +1066,6 @@ def process_curiosity_feed() -> Dict[str, Any]:
 
                     # CONDITIONALLY create SPICA spawn intent for high autonomy
                     if autonomy >= 3:
-                        # SAFETY CHECK: Verify ResourceGovernor allows spawning
-                        if SAFETY_ENABLED:
-                            try:
-                                governor = ResourceGovernor()
-                                can_spawn, reason = governor.can_spawn()
-                                if not can_spawn:
-                                    logger.warning(f"[spica_spawn] Spawn blocked by ResourceGovernor for {qid}: {reason}")
-                                    logger.warning(f"[spica_spawn] Skipping SPICA spawn intent, keeping documentation intent only")
-                                    continue
-                            except Exception as e:
-                                logger.error(f"[spica_spawn] ResourceGovernor check failed for {qid}: {e}")
-                                # Continue with spawn (fail-open for now)
 
                         evidence = q.get("evidence", [])
 
@@ -774,13 +1105,14 @@ def process_curiosity_feed() -> Dict[str, Any]:
                         }
 
                         spica_intent_json = json.dumps(spica_intent, indent=2)
-                        spica_intent_sha = hashlib.sha256(spica_intent_json.encode()).hexdigest()[:16]
-                        spica_intent_path = INTENT_DIR / f"spica_spawn_{spica_intent_sha}_{qid}.json"
+                        spica_intent_sha = hashlib.sha256(spica_intent_json.encode()).hexdigest()[:8]
+                        ts_ms = int(time.time() * 1000)
+                        spica_intent_path = INTENT_DIR / f"{ts_ms}_spica_spawn_{spica_intent_sha}.json"
                         spica_intent_path.write_text(spica_intent_json)
                         intents_emitted += 1
                         logger.info(f"[spica_spawn] Emitted autonomous fix intent for {qid} (autonomy={autonomy})")
 
-                    _mark_question_processed(qid, doc_intent_sha)
+                    _mark_question_processed(qid, doc_intent_sha, evidence)
                     continue
                 else:
                     logger.warning(f"[integration_fix] No fix generated for {qid}, falling back to D-REAM")
@@ -788,38 +1120,63 @@ def process_curiosity_feed() -> Dict[str, Any]:
                 logger.error(f"[integration_fix] Failed to generate fix for {qid}: {e}")
                 # Fall through to D-REAM
 
-        # Route to D-REAM mode based on action_class
-        if action_class in ["propose_fix", "explain_and_soft_fallback"]:
-            # Direct build - KLoROS provided specific guidance
-            logger.info(f"[DIAGNOSTIC] Direct-build mode for {qid} (action={action_class})")
-            experiment_result = _spawn_direct_experiment(q)
-            experiments_spawned += 1
-            logger.info(f"[DIAGNOSTIC] Spawned direct experiment for {qid}, experiments_spawned now={experiments_spawned}")
+        # Route to D-REAM mode based on action_class (ONLY if synchronous tournaments enabled)
+        # By default (ENABLE_SPICA_TOURNAMENTS=0), rely on chemical signal routing for async processing
+        if ENABLE_SPICA_TOURNAMENTS:
+            if action_class in ["propose_fix", "explain_and_soft_fallback"]:
+                # Direct build - KLoROS provided specific guidance
+                logger.info(f"[DIAGNOSTIC] Direct-build mode for {qid} (action={action_class})")
+                experiment_result = _spawn_direct_experiment(q)
+                experiments_spawned += 1
+                logger.info(f"[DIAGNOSTIC] Spawned direct experiment for {qid}, experiments_spawned now={experiments_spawned}")
+            else:
+                # Tournament mode - open exploration needed
+                logger.info(f"Tournament mode for {qid} (action={action_class})")
+                experiment_result = _spawn_tournament(q)
+                experiments_spawned += 1
+
+            # Also emit intent for orchestrator visibility
+            intent = _question_to_intent(q)
+            intent["data"]["experiment_result"] = experiment_result
+
+            intent_json = json.dumps(intent, indent=2)
+            intent_sha = hashlib.sha256(intent_json.encode()).hexdigest()[:8]
+            ts_ms = int(time.time() * 1000)
+            intent_path = INTENT_DIR / f"{ts_ms}_{intent['intent_type']}_{intent_sha}.json"
+            INTENT_DIR.mkdir(parents=True, exist_ok=True)
+
+            try:
+                intent_path.write_text(intent_json)
+                logger.info(f"Emitted intent for question {qid} (ratio={ratio:.2f}, priority={intent['priority']})")
+                intents_emitted += 1
+
+                # Mark as processed with evidence hash for context-aware re-investigation
+                _mark_question_processed(qid, intent_sha, evidence)
+
+            except Exception as e:
+                logger.error(f"Failed to emit intent for {qid}: {e}")
         else:
-            # Tournament mode - open exploration needed
-            logger.info(f"Tournament mode for {qid} (action={action_class})")
-            experiment_result = _spawn_tournament(q)
-            experiments_spawned += 1
+            # Synchronous tournaments disabled - emit intent only, let chemical signals handle async processing
+            logger.debug(f"Skipping synchronous tournament for {qid} (ENABLE_SPICA_TOURNAMENTS=0, will route via chemical signals)")
+            intent = _question_to_intent(q)
+            intent["data"]["experiment_result"] = {"status": "pending", "mode": "async_chemical_routing"}
 
-        # Also emit intent for orchestrator visibility
-        intent = _question_to_intent(q)
-        intent["data"]["experiment_result"] = experiment_result
+            intent_json = json.dumps(intent, indent=2)
+            intent_sha = hashlib.sha256(intent_json.encode()).hexdigest()[:8]
+            ts_ms = int(time.time() * 1000)
+            intent_path = INTENT_DIR / f"{ts_ms}_{intent['intent_type']}_{intent_sha}.json"
+            INTENT_DIR.mkdir(parents=True, exist_ok=True)
 
-        intent_json = json.dumps(intent, indent=2)
-        intent_sha = hashlib.sha256(intent_json.encode()).hexdigest()[:16]
-        intent_path = INTENT_DIR / f"curiosity_{intent_sha}_{qid}.json"
-        INTENT_DIR.mkdir(parents=True, exist_ok=True)
+            try:
+                intent_path.write_text(intent_json)
+                logger.info(f"Emitted intent for question {qid} (ratio={ratio:.2f}, priority={intent['priority']})")
+                intents_emitted += 1
 
-        try:
-            intent_path.write_text(intent_json)
-            logger.info(f"Emitted intent for question {qid} (ratio={ratio:.2f}, priority={intent['priority']})")
-            intents_emitted += 1
+                # NOTE: Don't mark as processed yet for async routing - investigation_consumer will mark when complete
+                # _mark_question_processed(qid, intent_sha)
 
-            # Mark as processed
-            _mark_question_processed(qid, intent_sha)
-
-        except Exception as e:
-            logger.error(f"Failed to emit intent for {qid}: {e}")
+            except Exception as e:
+                logger.error(f"Failed to emit intent for {qid}: {e}")
 
     summary = {
         "status": "complete",
