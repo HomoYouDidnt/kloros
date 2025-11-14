@@ -53,7 +53,7 @@ class TestBottleneckDetectorScanner:
             {'operation': 'json_parsing', 'duration_ms': 510, 'timestamp': time.time()}
         ]
 
-        with patch.object(scanner, '_load_operation_metrics', return_value=mock_metrics):
+        with patch.object(scanner, '_load_operation_timings', return_value=mock_metrics):
             gaps = scanner.scan()
 
             assert len(gaps) > 0
@@ -79,6 +79,34 @@ class TestBottleneckDetectorScanner:
         scanner = BottleneckDetectorScanner()
 
         with patch.object(scanner, '_load_queue_metrics', return_value=[]):
-            with patch.object(scanner, '_load_operation_metrics', return_value=[]):
+            with patch.object(scanner, '_load_operation_timings', return_value=[]):
                 gaps = scanner.scan()
                 assert gaps == []
+
+
+def test_scanner_with_cache_injection():
+    """Test scanner works with injected observation cache."""
+    from kloros.introspection.observation_cache import ObservationCache
+    import time
+
+    cache = ObservationCache(window_seconds=60)
+
+    now = time.time()
+    for i in range(10):
+        obs = {
+            "ts": now - i,
+            "zooid_name": f"zooid_{i}",
+            "ok": True,
+            "facts": {
+                "queue_name": "intent_queue",
+                "depth": 150,
+                "timestamp": now - i
+            }
+        }
+        cache.append(obs)
+
+    scanner = BottleneckDetectorScanner(cache=cache)
+    gaps = scanner.scan()
+
+    assert len(gaps) >= 1
+    assert gaps[0].category == 'queue_bottleneck'

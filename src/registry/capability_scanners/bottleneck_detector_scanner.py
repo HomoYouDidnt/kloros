@@ -27,27 +27,40 @@ class BottleneckDetectorScanner(CapabilityScanner):
 
     def __init__(
         self,
-        queue_metrics_path: Path = Path("/home/kloros/.kloros/queue_metrics.jsonl"),
-        operation_metrics_path: Path = Path("/home/kloros/.kloros/operation_metrics.jsonl")
+        queue_metrics_path: Path = None,
+        operation_timings_path: Path = None,
+        cache: 'ObservationCache' = None
     ):
-        """Initialize scanner with metrics paths."""
-        self.queue_metrics_path = queue_metrics_path
-        self.operation_metrics_path = operation_metrics_path
+        """
+        Initialize scanner with either file paths (legacy) or cache (streaming).
+
+        Args:
+            queue_metrics_path: Path to queue metrics JSONL (legacy)
+            operation_timings_path: Path to operation timings JSONL (legacy)
+            cache: ObservationCache instance (streaming mode)
+        """
+        if cache is not None:
+            self.cache = cache
+            self.queue_metrics_path = None
+            self.operation_timings_path = None
+        else:
+            self.cache = None
+            self.queue_metrics_path = queue_metrics_path or Path("/home/kloros/.kloros/queue_metrics.jsonl")
+            self.operation_timings_path = operation_timings_path or Path("/home/kloros/.kloros/operation_metrics.jsonl")
 
     def scan(self) -> List[CapabilityGap]:
         """Scan for bottlenecks in queues and operations."""
         gaps = []
 
         try:
-            queue_metrics = self._load_queue_metrics()
-            if queue_metrics:
-                queue_gaps = self._analyze_queue_buildup(queue_metrics)
-                gaps.extend(queue_gaps)
+            if self.cache is not None:
+                queue_metrics, operation_timings = self._load_from_cache()
+            else:
+                queue_metrics = self._load_queue_metrics()
+                operation_timings = self._load_operation_timings()
 
-            op_metrics = self._load_operation_metrics()
-            if op_metrics:
-                op_gaps = self._analyze_slow_operations(op_metrics)
-                gaps.extend(op_gaps)
+            gaps.extend(self._analyze_queue_buildup(queue_metrics))
+            gaps.extend(self._analyze_slow_operations(operation_timings))
 
             logger.info(f"[bottleneck_detector] Found {len(gaps)} bottlenecks")
 
@@ -90,16 +103,16 @@ class BottleneckDetectorScanner(CapabilityScanner):
 
         return metrics
 
-    def _load_operation_metrics(self) -> List[Dict[str, Any]]:
+    def _load_operation_timings(self) -> List[Dict[str, Any]]:
         """Load operation timing metrics (7-day window)."""
-        if not self.operation_metrics_path.exists():
+        if not self.operation_timings_path.exists():
             return []
 
         metrics = []
         cutoff = time.time() - (7 * 86400)
 
         try:
-            with open(self.operation_metrics_path, 'r') as f:
+            with open(self.operation_timings_path, 'r') as f:
                 for line in f:
                     if not line.strip():
                         continue
@@ -113,6 +126,39 @@ class BottleneckDetectorScanner(CapabilityScanner):
             logger.warning(f"[bottleneck_detector] Failed to load operation metrics: {e}")
 
         return metrics
+
+    def _load_from_cache(self) -> tuple:
+        """
+        Load queue and operation metrics from observation cache.
+
+        Returns:
+            Tuple of (queue_metrics, operation_timings)
+        """
+        observations = self.cache.get_recent(seconds=7 * 86400)
+
+        queue_metrics = []
+        operation_timings = []
+
+        for obs in observations:
+            facts = obs.get('facts', {})
+
+            if 'queue_name' in facts and 'depth' in facts:
+                queue_metrics.append({
+                    'timestamp': facts.get('timestamp', obs.get('ts')),
+                    'queue': facts['queue_name'],
+                    'depth': facts['depth'],
+                    'zooid_name': obs.get('zooid_name')
+                })
+
+            if 'operation' in facts and 'duration_ms' in facts:
+                operation_timings.append({
+                    'timestamp': facts.get('timestamp', obs.get('ts')),
+                    'operation': facts['operation'],
+                    'duration_ms': facts['duration_ms'],
+                    'zooid_name': obs.get('zooid_name')
+                })
+
+        return queue_metrics, operation_timings
 
     def _analyze_queue_buildup(
         self,
