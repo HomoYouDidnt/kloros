@@ -9,6 +9,7 @@ from .pypi_scanner import PyPIScanner
 from .inference_performance_scanner import InferencePerformanceScanner
 from .context_utilization_scanner import ContextUtilizationScanner
 from .resource_profiler_scanner import ResourceProfilerScanner
+from .bottleneck_detector_scanner import BottleneckDetectorScanner
 
 __all__ = [
     'CapabilityGap',
@@ -17,5 +18,6 @@ __all__ = [
     'PyPIScanner',
     'InferencePerformanceScanner',
     'ContextUtilizationScanner',
-    'ResourceProfilerScanner'
+    'ResourceProfilerScanner',
+    'BottleneckDetectorScanner'
 ]
