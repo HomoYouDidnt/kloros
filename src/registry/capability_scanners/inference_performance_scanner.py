@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from statistics import mean, stdev
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
@@ -111,7 +111,7 @@ class InferencePerformanceScanner(CapabilityScanner):
         self,
         task_type: str,
         metrics: List[Dict[str, Any]]
-    ) -> CapabilityGap:
+    ) -> Optional[CapabilityGap]:
         """Analyze performance for a specific task type."""
         tokens_per_sec = [m['tokens_per_sec'] for m in metrics if 'tokens_per_sec' in m]
 
