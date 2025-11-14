@@ -8,6 +8,7 @@ from .base import CapabilityGap, ScannerMetadata, CapabilityScanner
 from .pypi_scanner import PyPIScanner
 from .inference_performance_scanner import InferencePerformanceScanner
 from .context_utilization_scanner import ContextUtilizationScanner
+from .resource_profiler_scanner import ResourceProfilerScanner
 
 __all__ = [
     'CapabilityGap',
@@ -15,5 +16,6 @@ __all__ = [
     'CapabilityScanner',
     'PyPIScanner',
     'InferencePerformanceScanner',
-    'ContextUtilizationScanner'
+    'ContextUtilizationScanner',
+    'ResourceProfilerScanner'
 ]
