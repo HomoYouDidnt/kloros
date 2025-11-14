@@ -247,7 +247,7 @@ class IntrospectionDaemon:
         self.sub.close()
         self.pub.close()
 
-        self.executor.shutdown(wait=True, timeout=60)
+        self.executor.shutdown(wait=True)
 
         logger.info(f"Introspection daemon stopped")
         logger.info(f"  Total scans: {self.scan_count}")
