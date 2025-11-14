@@ -262,3 +262,105 @@ tail ~/.kloros/curiosity_feed.json | jq 'select(.category | contains("introspect
 **High scan cost:**
 - Reduce `schedule_weight` to run less frequently
 - Check metrics file sizes (large files slow parsing)
+
+---
+
+## Streaming Architecture (Production)
+
+### Overview
+
+The introspection scanners run in streaming mode for production deployment:
+
+```
+ChemBus OBSERVATION → IntrospectionDaemon → [5 Scanners] → CAPABILITY_GAP → CuriosityCore
+                            ↓
+                      ObservationCache
+                      (5min rolling window)
+```
+
+### Components
+
+**IntrospectionDaemon** (`src/kloros/introspection/introspection_daemon.py`)
+- Single process subscribing to ChemBus OBSERVATION topic
+- Maintains shared ObservationCache (5min rolling window)
+- Runs 5 scanners in thread pool executor
+- Micro-batch analysis every 5 seconds
+- Timeout protection (30s per scanner)
+- Immediate CapabilityGap emission
+
+**ObservationCache** (`src/kloros/introspection/observation_cache.py`)
+- Thread-safe rolling window cache
+- Automatic pruning of stale observations
+- Custom time window queries
+- Memory-bounded (10,000 observations max)
+
+### Resource Efficiency
+
+**vs File-Based Approach:**
+- ⚡ **Latency**: 5s vs 30min (360x faster)
+- 💾 **I/O**: Zero disk reads vs constant file polling
+- 🔌 **Connections**: 1 ZMQ socket vs 5
+- 🧵 **Processes**: 1 vs 5
+- 💰 **Memory**: Shared cache vs 5 independent caches
+
+### Deployment
+
+**Installation:**
+```bash
+# Install systemd service
+./scripts/install_introspection_daemon.sh
+
+# Start daemon
+sudo systemctl start kloros-introspection
+
+# Check status
+sudo systemctl status kloros-introspection
+
+# View logs
+journalctl -u kloros-introspection -f
+```
+
+**Configuration:**
+
+Environment variables in `/etc/systemd/system/kloros-introspection.service`:
+- `KLR_CHEM_XSUB`: ChemBus XSUB endpoint (default: tcp://127.0.0.1:5556)
+- `KLR_CHEM_XPUB`: ChemBus XPUB endpoint (default: tcp://127.0.0.1:5557)
+
+**Health Monitoring:**
+```bash
+# Check scan count
+journalctl -u kloros-introspection | grep "Scan cycle"
+
+# Check gap emission
+journalctl -u kloros-introspection | grep "Emitted gap"
+
+# Check cache size
+journalctl -u kloros-introspection | grep "cache_size"
+```
+
+### Failure Isolation
+
+Each scanner runs with:
+- **Timeout protection**: 30s max execution time
+- **Exception isolation**: Scanner crash doesn't affect others
+- **Graceful degradation**: Failed scans logged, daemon continues
+
+Scanner failures automatically emit OBSERVATION events that trigger quarantine investigation.
+
+### Migration from File-Based
+
+Scanners support both modes for backwards compatibility:
+
+```python
+# Legacy file-based mode
+scanner = InferencePerformanceScanner(
+    metrics_path=Path("/home/kloros/.kloros/metrics/inference_metrics.jsonl")
+)
+
+# Streaming mode (production)
+scanner = InferencePerformanceScanner(
+    cache=observation_cache
+)
+```
+
+The daemon automatically uses streaming mode. File-based mode remains available for testing and development.
