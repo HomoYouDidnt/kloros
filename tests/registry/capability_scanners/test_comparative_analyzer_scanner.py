@@ -71,3 +71,28 @@ class TestComparativeAnalyzerScanner:
         with patch.object(scanner, '_load_fitness_data', return_value=[]):
             gaps = scanner.scan()
             assert gaps == []
+
+
+def test_scanner_with_cache_injection():
+    """Test scanner works with injected observation cache."""
+    from kloros.introspection.observation_cache import ObservationCache
+    import time
+
+    cache = ObservationCache(window_seconds=60)
+
+    now = time.time()
+    for i in range(10):
+        obs = {
+            "ts": now - i,
+            "zooid_name": f"zooid_{i}",
+            "ok": i % 2 == 0,
+            "ttr_ms": 100.0,
+            "incident_id": f"inc-{i}",
+            "niche": "test"
+        }
+        cache.append(obs)
+
+    scanner = ComparativeAnalyzerScanner(cache=cache)
+    gaps = scanner.scan()
+
+    assert len(gaps) == 0

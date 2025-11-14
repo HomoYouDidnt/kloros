@@ -26,17 +26,35 @@ class ComparativeAnalyzerScanner(CapabilityScanner):
 
     def __init__(
         self,
-        fitness_ledger_path: Path = Path("/home/kloros/.kloros/lineage/fitness_ledger.jsonl")
+        fitness_ledger_path: Path = None,
+        cache: 'ObservationCache' = None
     ):
-        """Initialize scanner with fitness ledger path."""
-        self.fitness_ledger_path = fitness_ledger_path
+        """
+        Initialize scanner with either file path (legacy) or cache (streaming).
+
+        Args:
+            fitness_ledger_path: Path to fitness ledger JSONL (legacy)
+            cache: ObservationCache instance (streaming mode)
+        """
+        if cache is not None:
+            self.cache = cache
+            self.fitness_ledger_path = None
+        elif fitness_ledger_path is not None:
+            self.cache = None
+            self.fitness_ledger_path = fitness_ledger_path
+        else:
+            self.cache = None
+            self.fitness_ledger_path = Path("/home/kloros/.kloros/lineage/fitness_ledger.jsonl")
 
     def scan(self) -> List[CapabilityGap]:
         """Scan fitness data for superior strategies."""
         gaps = []
 
         try:
-            fitness_data = self._load_fitness_data()
+            if self.cache is not None:
+                fitness_data = self._load_from_cache()
+            else:
+                fitness_data = self._load_fitness_data()
 
             if not fitness_data:
                 logger.debug("[comparative_analyzer] No fitness data available")
@@ -88,6 +106,28 @@ class ComparativeAnalyzerScanner(CapabilityScanner):
             logger.warning(f"[comparative_analyzer] Failed to load fitness data: {e}")
 
         return data
+
+    def _load_from_cache(self) -> List[Dict[str, Any]]:
+        """
+        Load fitness data from observation cache.
+
+        Returns:
+            List of fitness records (OBSERVATION facts)
+        """
+        observations = self.cache.get_recent(seconds=7 * 86400)
+
+        fitness_data = []
+        for obs in observations:
+            fitness_data.append({
+                'ts': obs.get('ts'),
+                'zooid_name': obs.get('zooid_name'),
+                'ok': obs.get('ok', True),
+                'ttr_ms': obs.get('ttr_ms'),
+                'incident_id': obs.get('incident_id'),
+                'niche': obs.get('niche')
+            })
+
+        return fitness_data
 
     def _compare_brainmod_strategies(
         self,
