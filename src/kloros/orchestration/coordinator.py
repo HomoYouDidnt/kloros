@@ -741,10 +741,10 @@ def tick() -> str:
         if curiosity_result["intents_emitted"] > 0:
             logger.info(f"Curiosity processor emitted {curiosity_result['intents_emitted']} new intents")
 
-        # Process pending intents from queue (new)
-        intent_queue_obj = IntentQueue()
         intents_processed = 0
         max_intents_per_tick = 10
+        max_failures = 3
+        failures = 0
 
         while intents_processed < max_intents_per_tick:
             queue_result = get_next_intent()
@@ -757,10 +757,18 @@ def tick() -> str:
             try:
                 action = _process_intent(intent_file)
                 logger.info(f"[orchestrator] Intent processed: {intent_file.name} -> {action}")
+
+                if action == "ROUTED_VIA_CHEMICAL_SIGNAL":
+                    logger.debug(f"[orchestrator] Q_CURIOSITY_INVESTIGATE signal routed via chemical bus for {intent_file.name}")
+
                 intents_processed += 1
             except Exception as e:
                 logger.error(f"[orchestrator] Failed to process intent {intent_file.name}: {e}")
-                break
+                failures += 1
+                if failures >= max_failures:
+                    logger.error(f"[orchestrator] Max failures ({max_failures}) reached, stopping intent processing")
+                    break
+                continue
 
         if intents_processed > 0:
             logger.info(f"[orchestrator] Processed {intents_processed} intents this tick")
