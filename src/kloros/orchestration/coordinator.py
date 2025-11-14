@@ -25,6 +25,7 @@ from . import baseline_manager
 from . import state_manager
 from . import metrics
 from . import intent_queue
+from .intent_queue import get_next_intent, IntentQueue
 
 # Chemical signal routing (feature-flagged)
 try:
@@ -214,6 +215,23 @@ def _process_intent(intent_path: Path) -> str:
 
         # Try chemical signal routing first (feature-flagged)
         if _try_chemical_routing(intent_type, intent):
+            # Record champions even when routed via chemical signals
+            if intent_type == "curiosity_investigate":
+                try:
+                    from src.dream.spica_evolution import record_champion
+
+                    experiment_result = intent.get("data", {}).get("experiment_result", {})
+                    if experiment_result.get("status") == "complete":
+                        question_id = experiment_result.get("question_id", "unknown")
+                        champion = experiment_result.get("champion", {})
+                        fitness = experiment_result.get("champion_fitness", 0.0)
+
+                        if champion and fitness > 0:
+                            logger.info(f"[CHEM_ROUTE] Recording champion for {question_id}: fitness={fitness:.3f}")
+                            record_champion(question_id, champion, fitness, experiment_result)
+                except Exception as e:
+                    logger.error(f"[CHEM_ROUTE] Failed to record champion: {e}")
+
             _archive_intent(intent_path, "routed_via_chemical_signal")
             return "ROUTED_VIA_CHEMICAL_SIGNAL"
 
@@ -600,6 +618,38 @@ def _process_intent(intent_path: Path) -> str:
             _archive_intent(intent_path, "processed")
             return "ALERT_SENT"
 
+        elif intent_type == "curiosity_investigate":
+            try:
+                from src.dream.spica_evolution import record_champion
+
+                experiment_result = intent.get("data", {}).get("experiment_result", {})
+                status = experiment_result.get("status")
+
+                if status != "complete":
+                    logger.warning(f"Tournament not complete: {status}")
+                    _archive_intent(intent_path, "tournament_incomplete")
+                    return "TOURNAMENT_INCOMPLETE"
+
+                question_id = experiment_result.get("question_id", "unknown")
+                champion = experiment_result.get("champion", {})
+                fitness = experiment_result.get("champion_fitness", 0.0)
+
+                if not champion:
+                    logger.error(f"No champion in tournament result for {question_id}")
+                    _archive_intent(intent_path, "no_champion")
+                    return "NO_CHAMPION"
+
+                logger.info(f"Recording champion for {question_id}: fitness={fitness:.3f}, params={champion}")
+                record_champion(question_id, champion, fitness, experiment_result)
+
+                _archive_intent(intent_path, "processed")
+                return "CHAMPION_RECORDED"
+
+            except Exception as e:
+                logger.error(f"Failed to record champion: {e}", exc_info=True)
+                _archive_intent(intent_path, "error")
+                return "ERROR"
+
         else:
             logger.warning(f"Unknown intent type: {intent_type}")
             _archive_intent(intent_path, "unknown")
@@ -690,6 +740,30 @@ def tick() -> str:
         curiosity_result = curiosity_processor.process_curiosity_feed()
         if curiosity_result["intents_emitted"] > 0:
             logger.info(f"Curiosity processor emitted {curiosity_result['intents_emitted']} new intents")
+
+        # Process pending intents from queue (new)
+        intent_queue_obj = IntentQueue()
+        intents_processed = 0
+        max_intents_per_tick = 10
+
+        while intents_processed < max_intents_per_tick:
+            queue_result = get_next_intent()
+            if queue_result["next_intent"] is None:
+                break
+
+            intent_file = queue_result["next_intent"]
+            logger.info(f"[orchestrator] Processing intent: {intent_file.name}")
+
+            try:
+                action = _process_intent(intent_file)
+                logger.info(f"[orchestrator] Intent processed: {intent_file.name} -> {action}")
+                intents_processed += 1
+            except Exception as e:
+                logger.error(f"[orchestrator] Failed to process intent {intent_file.name}: {e}")
+                break
+
+        if intents_processed > 0:
+            logger.info(f"[orchestrator] Processed {intents_processed} intents this tick")
 
         # ALWAYS integrate discovered capabilities (completes discovery-to-integration loop)
         from . import capability_integrator
