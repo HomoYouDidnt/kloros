@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import List, Dict, Any
 from statistics import mean
 from datetime import datetime
-import numpy as np
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    logger = logging.getLogger(__name__)
+    logger.warning("NumPy not available, falling back to statistics.mean for bottleneck detection")
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
 from kloros.orchestration.chem_bus_v2 import ChemPub
@@ -30,29 +37,8 @@ class BottleneckDetectorScanner(CapabilityScanner):
     SLOW_OPERATION_MS = 200
     MIN_SAMPLES = 3
 
-    def __init__(
-        self,
-        queue_metrics_path: Path = None,
-        operation_timings_path: Path = None,
-        cache: 'ObservationCache' = None
-    ):
-        """
-        Initialize scanner with either file paths (legacy) or cache (streaming).
-
-        Args:
-            queue_metrics_path: Path to queue metrics JSONL (legacy)
-            operation_timings_path: Path to operation timings JSONL (legacy)
-            cache: ObservationCache instance (streaming mode)
-        """
-        if cache is not None:
-            self.cache = cache
-            self.queue_metrics_path = None
-            self.operation_timings_path = None
-        else:
-            self.cache = None
-            self.queue_metrics_path = queue_metrics_path or Path("/home/kloros/.kloros/queue_metrics.jsonl")
-            self.operation_timings_path = operation_timings_path or Path("/home/kloros/.kloros/operation_metrics.jsonl")
-
+    def __init__(self):
+        """Initialize scanner."""
         self.chem_pub = None
 
     def scan(self) -> List[CapabilityGap]:
@@ -103,7 +89,7 @@ class BottleneckDetectorScanner(CapabilityScanner):
                     findings_dir = Path(kloros_home) / ".kloros/scanner_findings"
                     findings_dir.mkdir(exist_ok=True)
 
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:21]
                     findings_file = findings_dir / f"bottleneck_{timestamp}.json"
                     findings_file.write_text(json.dumps(bottleneck, indent=2))
 
@@ -151,16 +137,18 @@ class BottleneckDetectorScanner(CapabilityScanner):
                        for m in metrics_summaries
                        if "queue_depth_current" in m.get("facts", {})]
 
-        if queue_depths and np.mean(queue_depths) > 30:
-            bottlenecks.append({
-                "type": "queue_buildup",
-                "daemon": "investigation_consumer",
-                "severity": "high" if np.mean(queue_depths) > 50 else "medium",
-                "issue": f"Queue depth avg {np.mean(queue_depths):.1f}",
-                "avg_queue_depth": float(np.mean(queue_depths)),
-                "max_queue_depth": int(max(queue_depths)),
-                "recommendation": "Investigation consumer may need more workers or faster model"
-            })
+        if queue_depths:
+            avg_depth = float(np.mean(queue_depths)) if HAS_NUMPY else mean(queue_depths)
+            if avg_depth > 30:
+                bottlenecks.append({
+                    "type": "queue_buildup",
+                    "daemon": "investigation_consumer",
+                    "severity": "high" if avg_depth > 50 else "medium",
+                    "issue": f"Queue depth avg {avg_depth:.1f}",
+                    "avg_queue_depth": avg_depth,
+                    "max_queue_depth": int(max(queue_depths)),
+                    "recommendation": "Investigation consumer may need more workers or faster model"
+                })
 
         completed = sum(m["facts"].get("investigations_completed", 0)
                        for m in metrics_summaries)
