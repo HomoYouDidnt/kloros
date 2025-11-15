@@ -1,74 +1,101 @@
 """
 ContextUtilizationScanner - Monitors context window usage patterns.
 
-Tracks which portions of context get referenced, detects unused context,
-recency bias, and context windowing optimization opportunities.
+Analyzes Q_INVESTIGATION_COMPLETE events from ChemBus to track token usage,
+detect wasted context, and identify context window optimization opportunities.
 """
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from statistics import mean
+from datetime import datetime
+from collections import defaultdict
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    logger = logging.getLogger(__name__)
+    logger.warning("NumPy not available, falling back to statistics module for context analysis")
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
+from kloros.orchestration.chem_bus_v2 import ChemPub
+from registry.scanner_deduplication import ScannerDeduplicator
 
 logger = logging.getLogger(__name__)
 
 
 class ContextUtilizationScanner(CapabilityScanner):
-    """Detects context utilization optimization opportunities."""
+    """Detects context utilization optimization opportunities from investigation data."""
 
-    UNUSED_TAIL_THRESHOLD = 0.7
-    RECENCY_BIAS_THRESHOLD = 0.2
+    HIGH_TOKEN_THRESHOLD = 50000
+    CRITICAL_TOKEN_THRESHOLD = 100000
+    LOW_EFFICIENCY_RATIO = 0.1
     MIN_SAMPLES = 3
+    HISTORY_WINDOW_HOURS = 6
 
-    def __init__(
-        self,
-        metrics_path: Path = None,
-        cache: 'ObservationCache' = None
-    ):
-        """
-        Initialize scanner with either file path (legacy) or cache (streaming).
-
-        Args:
-            metrics_path: Path to context utilization JSONL (legacy mode)
-            cache: ObservationCache instance (streaming mode)
-        """
-        if cache is not None:
-            self.cache = cache
-            self.metrics_path = None
-        elif metrics_path is not None:
-            self.cache = None
-            self.metrics_path = metrics_path
-        else:
-            self.cache = None
-            self.metrics_path = Path("/home/kloros/.kloros/metrics/context_utilization.jsonl")
+    def __init__(self):
+        """Initialize scanner."""
+        self.chem_pub = None
 
     def scan(self) -> List[CapabilityGap]:
-        """Scan context utilization for optimization opportunities."""
+        """Scan for high context usage using ChemBus investigation history."""
         gaps = []
 
         try:
-            if self.cache is not None:
-                logs = self._load_from_cache()
-            else:
-                logs = self._load_context_logs()
+            findings = self._scan_chembus_history()
+            dedup = ScannerDeduplicator("context_utilization")
 
-            if len(logs) < self.MIN_SAMPLES:
-                logger.debug("[context_util] Insufficient samples")
-                return gaps
+            if self.chem_pub is None:
+                try:
+                    self.chem_pub = ChemPub()
+                except Exception as e:
+                    logger.warning(f"[context_util] Failed to initialize ChemPub: {e}")
 
-            unused_tail_gap = self._detect_unused_tail(logs)
-            if unused_tail_gap:
-                gaps.append(unused_tail_gap)
+            for finding in findings:
+                gap = CapabilityGap(
+                    type='high_context_usage',
+                    name=f"context_inefficiency_{finding.get('pattern', 'unknown')}",
+                    category='context_utilization',
+                    reason=finding.get('recommendation', 'High context usage detected'),
+                    alignment_score=0.65 if finding['severity'] in ['high', 'critical'] else 0.75,
+                    install_cost=0.3,
+                    metadata=finding
+                )
+                gaps.append(gap)
 
-            recency_bias_gap = self._detect_recency_bias(logs)
-            if recency_bias_gap:
-                gaps.append(recency_bias_gap)
+                if dedup.should_report(finding):
+                    intensity = 2.0 if finding["severity"] == "critical" else 1.5
 
-            logger.info(f"[context_util] Found {len(gaps)} context optimization gaps")
+                    if self.chem_pub is not None:
+                        try:
+                            self.chem_pub.emit(
+                                signal="CAPABILITY_GAP_FOUND",
+                                ecosystem="introspection",
+                                intensity=intensity,
+                                facts={
+                                    "scanner": "context_utilization",
+                                    "finding": finding
+                                }
+                            )
+                            logger.info(f"[context_util] Emitted CAPABILITY_GAP_FOUND for {finding['pattern']}")
+                        except Exception as e:
+                            logger.warning(f"[context_util] Failed to emit signal: {e}")
+
+                    kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+                    findings_dir = Path(kloros_home) / ".kloros/scanner_findings"
+                    findings_dir.mkdir(exist_ok=True)
+
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:21]
+                    findings_file = findings_dir / f"context_{timestamp}.json"
+                    findings_file.write_text(json.dumps(finding, indent=2))
+
+            logger.info(f"[context_util] Found {len(gaps)} context inefficiency issues")
 
         except Exception as e:
             logger.warning(f"[context_util] Scan failed: {e}")
@@ -85,124 +112,80 @@ class ContextUtilizationScanner(CapabilityScanner):
             schedule_weight=0.5
         )
 
-    def _load_context_logs(self) -> List[Dict[str, Any]]:
-        """Load context utilization logs (7-day window)."""
-        if not self.metrics_path.exists():
+    def _scan_chembus_history(self) -> List[Dict[str, Any]]:
+        """Scan ChemBus history for high context usage patterns."""
+        kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+        history_file = Path(kloros_home) / ".kloros/chembus_history.jsonl"
+
+        if not history_file.exists():
+            logger.warning(f"chembus_history.jsonl not found at {history_file}")
             return []
 
-        logs = []
-        cutoff = time.time() - (7 * 86400)
+        cutoff_ts = time.time() - (self.HISTORY_WINDOW_HOURS * 3600)
+        investigations = []
 
-        try:
-            with open(self.metrics_path, 'r') as f:
-                for line in f:
-                    if not line.strip():
+        with open(history_file, "r") as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)
+
+                    if msg.get("ts", 0) < cutoff_ts:
                         continue
-                    try:
-                        entry = json.loads(line)
-                        if entry.get('timestamp', 0) >= cutoff:
-                            logs.append(entry)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.warning(f"[context_util] Failed to load logs: {e}")
 
-        return logs
+                    if msg.get("signal") == "Q_INVESTIGATION_COMPLETE":
+                        facts = msg.get("facts", {})
+                        if facts.get("status") == "completed":
+                            investigations.append(facts)
 
-    def _detect_unused_tail(self, logs: List[Dict[str, Any]]) -> Optional[CapabilityGap]:
-        """Detect if last portion of context is consistently unused."""
-        max_reference_ratios = []
+                except json.JSONDecodeError:
+                    continue
 
-        for log in logs:
-            context_len = log.get('context_length', 0)
-            references = log.get('references', [])
+        findings = []
+        token_usage = defaultdict(list)
 
-            if not context_len or not references:
-                continue
+        for inv in investigations:
+            tokens_used = inv.get("tokens_used", 0)
+            duration_ms = inv.get("duration_ms", 0)
+            question_id = inv.get("question_id", "unknown")
 
-            max_ref = max(references)
-            ratio = max_ref / context_len
-            max_reference_ratios.append(ratio)
-
-        if not max_reference_ratios:
-            return None
-
-        avg_max_ref_ratio = mean(max_reference_ratios)
-
-        if avg_max_ref_ratio < self.UNUSED_TAIL_THRESHOLD:
-            unused_pct = (1.0 - avg_max_ref_ratio) * 100
-            return CapabilityGap(
-                type='context_optimization',
-                name='unused_context_tail',
-                category='context_utilization',
-                reason=f"Last {unused_pct:.0f}% of context unused (max ref at {avg_max_ref_ratio*100:.0f}%)",
-                alignment_score=0.75,
-                install_cost=0.3,
-                metadata={
-                    'avg_max_reference_ratio': avg_max_ref_ratio,
-                    'unused_percentage': unused_pct,
-                    'sample_count': len(max_reference_ratios)
-                }
-            )
-
-        return None
-
-    def _detect_recency_bias(self, logs: List[Dict[str, Any]]) -> Optional[CapabilityGap]:
-        """Detect if only recent context is being used."""
-        recency_ratios = []
-
-        for log in logs:
-            context_len = log.get('context_length', 0)
-            references = log.get('references', [])
-
-            if not context_len or not references:
-                continue
-
-            cutoff = context_len * 0.8
-            recent_refs = [r for r in references if r >= cutoff]
-            ratio = len(recent_refs) / len(references) if references else 0
-            recency_ratios.append(ratio)
-
-        if not recency_ratios:
-            return None
-
-        avg_recency = mean(recency_ratios)
-
-        if avg_recency > 0.8:
-            return CapabilityGap(
-                type='context_optimization',
-                name='recency_bias',
-                category='context_utilization',
-                reason=f"Recency bias detected: {avg_recency*100:.0f}% of references in last 20% of context",
-                alignment_score=0.65,
-                install_cost=0.35,
-                metadata={
-                    'avg_recency_ratio': avg_recency,
-                    'sample_count': len(recency_ratios)
-                }
-            )
-
-        return None
-
-    def _load_from_cache(self) -> List[Dict[str, Any]]:
-        """
-        Load context utilization logs from observation cache.
-
-        Returns:
-            List of context utilization log dicts
-        """
-        observations = self.cache.get_recent(seconds=7 * 86400)
-
-        logs = []
-        for obs in observations:
-            facts = obs.get('facts', {})
-
-            if 'context_length' in facts and 'references' in facts:
-                logs.append({
-                    'timestamp': facts.get('timestamp', obs.get('ts')),
-                    'context_length': facts['context_length'],
-                    'references': facts['references'],
-                    'zooid_name': obs.get('zooid_name')
+            if tokens_used > 0:
+                token_usage[question_id].append({
+                    "tokens_used": tokens_used,
+                    "duration_ms": duration_ms
                 })
 
-        return logs
+        for question_id, usage_list in token_usage.items():
+            if len(usage_list) < self.MIN_SAMPLES:
+                continue
+
+            if HAS_NUMPY:
+                avg_tokens = float(np.mean([u["tokens_used"] for u in usage_list]))
+                max_tokens = float(np.max([u["tokens_used"] for u in usage_list]))
+            else:
+                tokens = [u["tokens_used"] for u in usage_list]
+                avg_tokens = mean(tokens)
+                max_tokens = max(tokens)
+
+            if avg_tokens > self.HIGH_TOKEN_THRESHOLD or max_tokens > self.CRITICAL_TOKEN_THRESHOLD:
+                severity = "critical" if max_tokens > self.CRITICAL_TOKEN_THRESHOLD else "high"
+
+                if HAS_NUMPY:
+                    avg_duration = float(np.mean([u["duration_ms"] for u in usage_list]))
+                else:
+                    avg_duration = mean([u["duration_ms"] for u in usage_list])
+
+                efficiency_ratio = (avg_duration / 1000) / avg_tokens if avg_tokens > 0 else 0
+
+                findings.append({
+                    "type": "high_context_usage",
+                    "pattern": question_id,
+                    "avg_tokens_used": avg_tokens,
+                    "max_tokens_used": max_tokens,
+                    "avg_duration_ms": avg_duration,
+                    "sample_size": len(usage_list),
+                    "efficiency_ratio": efficiency_ratio,
+                    "severity": severity,
+                    "recommendation": f"Pattern '{question_id}' uses high context (avg: {avg_tokens:.0f} tokens, max: {max_tokens:.0f}). Consider optimizing prompt or splitting into smaller queries."
+                })
+
+        return findings

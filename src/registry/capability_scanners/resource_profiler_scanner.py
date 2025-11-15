@@ -1,95 +1,101 @@
 """
-ResourceProfilerScanner - Monitors CPU/GPU/RAM usage per operation.
+ResourceProfilerScanner - Monitors daemon resource usage patterns.
 
-Tracks resource consumption patterns to identify allocation
-optimization opportunities and bottlenecks.
+Analyzes METRICS_SUMMARY signals from ChemBus to track daemon resource usage,
+detect memory leaks, and identify resource optimization opportunities.
 """
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from statistics import mean
+from datetime import datetime
+from collections import defaultdict
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    logger = logging.getLogger(__name__)
+    logger.warning("NumPy not available, falling back to statistics module for resource analysis")
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
+from kloros.orchestration.chem_bus_v2 import ChemPub
+from registry.scanner_deduplication import ScannerDeduplicator
 
 logger = logging.getLogger(__name__)
 
-try:
-    import pynvml
-    _GPU_AVAILABLE = True
-except ImportError:
-    _GPU_AVAILABLE = False
-    logger.info("[resource_profiler] nvidia-ml-py not available, GPU monitoring disabled")
-
 
 class ResourceProfilerScanner(CapabilityScanner):
-    """Detects resource utilization optimization opportunities."""
+    """Detects resource utilization optimization opportunities from daemon metrics."""
 
-    LOW_GPU_UTIL_THRESHOLD = 50.0
-    HIGH_CPU_UTIL_THRESHOLD = 90.0
+    HIGH_MEMORY_MB = 1000
+    CRITICAL_MEMORY_MB = 2000
+    MEMORY_GROWTH_THRESHOLD = 0.2
     MIN_SAMPLES = 3
+    HISTORY_WINDOW_HOURS = 6
 
-    def __init__(
-        self,
-        metrics_path: Path = None,
-        cache: 'ObservationCache' = None
-    ):
-        """
-        Initialize scanner with either file path (legacy) or cache (streaming).
-
-        Args:
-            metrics_path: Path to resource metrics JSONL (legacy mode)
-            cache: ObservationCache instance (streaming mode)
-        """
-        if cache is not None:
-            self.cache = cache
-            self.metrics_path = None
-        elif metrics_path is not None:
-            self.cache = None
-            self.metrics_path = metrics_path
-        else:
-            self.cache = None
-            self.metrics_path = Path("/home/kloros/.kloros/resource_metrics.jsonl")
-
-        self._gpu_handle = None
-        if _GPU_AVAILABLE:
-            try:
-                pynvml.nvmlInit()
-                self._gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            except Exception as e:
-                logger.warning(f"[resource_profiler] Failed to init GPU monitoring: {e}")
+    def __init__(self):
+        """Initialize scanner."""
+        self.chem_pub = None
 
     def scan(self) -> List[CapabilityGap]:
-        """Scan resource usage for optimization opportunities."""
+        """Scan for resource usage issues using ChemBus daemon metrics."""
         gaps = []
 
         try:
-            if self.cache is not None:
-                metrics = self._load_from_cache()
-            else:
-                metrics = self._load_resource_metrics()
+            findings = self._scan_chembus_history()
+            dedup = ScannerDeduplicator("resource_profiler")
 
-            if len(metrics) < self.MIN_SAMPLES:
-                logger.debug("[resource_profiler] Insufficient samples")
-                return gaps
+            if self.chem_pub is None:
+                try:
+                    self.chem_pub = ChemPub()
+                except Exception as e:
+                    logger.warning(f"[resource_profiler] Failed to initialize ChemPub: {e}")
 
-            by_operation = self._group_by_operation(metrics)
+            for finding in findings:
+                gap = CapabilityGap(
+                    type='resource_optimization',
+                    name=f"resource_issue_{finding.get('daemon', 'unknown')}",
+                    category='resource_utilization',
+                    reason=finding.get('recommendation', 'Resource usage issue detected'),
+                    alignment_score=0.65 if finding['severity'] in ['high', 'critical'] else 0.75,
+                    install_cost=0.4,
+                    metadata=finding
+                )
+                gaps.append(gap)
 
-            for operation, op_metrics in by_operation.items():
-                if len(op_metrics) < self.MIN_SAMPLES:
-                    continue
+                if dedup.should_report(finding):
+                    intensity = 2.0 if finding["severity"] == "critical" else 1.5
 
-                gpu_gap = self._analyze_gpu_utilization(operation, op_metrics)
-                if gpu_gap:
-                    gaps.append(gpu_gap)
+                    if self.chem_pub is not None:
+                        try:
+                            self.chem_pub.emit(
+                                signal="CAPABILITY_GAP_FOUND",
+                                ecosystem="introspection",
+                                intensity=intensity,
+                                facts={
+                                    "scanner": "resource_profiler",
+                                    "finding": finding
+                                }
+                            )
+                            logger.info(f"[resource_profiler] Emitted CAPABILITY_GAP_FOUND for {finding['daemon']}")
+                        except Exception as e:
+                            logger.warning(f"[resource_profiler] Failed to emit signal: {e}")
 
-                cpu_gap = self._analyze_cpu_utilization(operation, op_metrics)
-                if cpu_gap:
-                    gaps.append(cpu_gap)
+                    kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+                    findings_dir = Path(kloros_home) / ".kloros/scanner_findings"
+                    findings_dir.mkdir(exist_ok=True)
 
-            logger.info(f"[resource_profiler] Found {len(gaps)} resource optimization gaps")
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:21]
+                    findings_file = findings_dir / f"resource_{timestamp}.json"
+                    findings_file.write_text(json.dumps(finding, indent=2))
+
+            logger.info(f"[resource_profiler] Found {len(gaps)} resource usage issues")
 
         except Exception as e:
             logger.warning(f"[resource_profiler] Scan failed: {e}")
@@ -106,136 +112,42 @@ class ResourceProfilerScanner(CapabilityScanner):
             schedule_weight=0.6
         )
 
-    def _load_resource_metrics(self) -> List[Dict[str, Any]]:
-        """Load resource metrics from disk (7-day window)."""
-        if not self.metrics_path.exists():
+    def _scan_chembus_history(self) -> List[Dict[str, Any]]:
+        """Scan ChemBus history for daemon resource usage patterns."""
+        kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+        history_file = Path(kloros_home) / ".kloros/chembus_history.jsonl"
+
+        if not history_file.exists():
+            logger.warning(f"chembus_history.jsonl not found at {history_file}")
             return []
 
-        metrics = []
-        cutoff = time.time() - (7 * 86400)
+        cutoff_ts = time.time() - (self.HISTORY_WINDOW_HOURS * 3600)
+        metrics_summaries = []
 
-        try:
-            with open(self.metrics_path, 'r') as f:
-                for line in f:
-                    if not line.strip():
+        with open(history_file, "r") as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)
+
+                    if msg.get("ts", 0) < cutoff_ts:
                         continue
-                    try:
-                        entry = json.loads(line)
-                        if entry.get('timestamp', 0) >= cutoff:
-                            metrics.append(entry)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.warning(f"[resource_profiler] Failed to load metrics: {e}")
 
-        return metrics
+                    if msg.get("signal") == "METRICS_SUMMARY":
+                        facts = msg.get("facts", {})
+                        metrics_summaries.append({
+                            "daemon": facts.get("daemon_name", "unknown"),
+                            "ts": msg.get("ts"),
+                            "facts": facts
+                        })
 
-    def _load_from_cache(self) -> List[Dict[str, Any]]:
-        """
-        Load resource metrics from observation cache.
+                except json.JSONDecodeError:
+                    continue
 
-        Returns:
-            List of resource metric dicts
-        """
-        observations = self.cache.get_recent(seconds=7 * 86400)
+        logger.info(f"[resource_profiler] Found {len(metrics_summaries)} METRICS_SUMMARY signals in last {self.HISTORY_WINDOW_HOURS}h")
 
-        metrics = []
-        for obs in observations:
-            facts = obs.get('facts', {})
+        if metrics_summaries:
+            logger.debug(f"[resource_profiler] Sample METRICS_SUMMARY: {json.dumps(metrics_summaries[0], indent=2)}")
 
-            if 'gpu_utilization' in facts or 'cpu_percent' in facts:
-                metrics.append({
-                    'timestamp': facts.get('timestamp', obs.get('ts')),
-                    'gpu_util': facts.get('gpu_utilization'),
-                    'gpu_memory_used_mb': facts.get('gpu_memory_used_mb'),
-                    'gpu_memory_total_mb': facts.get('gpu_memory_total_mb'),
-                    'cpu_util': facts.get('cpu_percent'),
-                    'memory_util': facts.get('ram_percent'),
-                    'operation': facts.get('operation', 'unknown'),
-                    'zooid_name': obs.get('zooid_name')
-                })
+        findings = []
 
-        return metrics
-
-    def _group_by_operation(
-        self,
-        metrics: List[Dict[str, Any]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Group metrics by operation type."""
-        grouped = {}
-        for entry in metrics:
-            operation = entry.get('operation', 'unknown')
-            if operation not in grouped:
-                grouped[operation] = []
-            grouped[operation].append(entry)
-        return grouped
-
-    def _analyze_gpu_utilization(
-        self,
-        operation: str,
-        metrics: List[Dict[str, Any]]
-    ) -> Optional[CapabilityGap]:
-        """Analyze GPU utilization for an operation."""
-        gpu_utils = [m['gpu_util'] for m in metrics if 'gpu_util' in m]
-
-        if not gpu_utils:
-            return None
-
-        avg_gpu = mean(gpu_utils)
-
-        if avg_gpu < self.LOW_GPU_UTIL_THRESHOLD:
-            return CapabilityGap(
-                type='resource_optimization',
-                name=f'low_gpu_util_{operation}',
-                category='resource_utilization',
-                reason=f"Operation '{operation}' averaging {avg_gpu:.1f}% GPU utilization (threshold: {self.LOW_GPU_UTIL_THRESHOLD}%)",
-                alignment_score=0.7,
-                install_cost=0.4,
-                metadata={
-                    'operation': operation,
-                    'avg_gpu_util': avg_gpu,
-                    'sample_count': len(gpu_utils),
-                    'threshold': self.LOW_GPU_UTIL_THRESHOLD
-                }
-            )
-
-        return None
-
-    def _analyze_cpu_utilization(
-        self,
-        operation: str,
-        metrics: List[Dict[str, Any]]
-    ) -> Optional[CapabilityGap]:
-        """Analyze CPU utilization for potential bottlenecks."""
-        cpu_utils = [m['cpu_util'] for m in metrics if 'cpu_util' in m]
-
-        if not cpu_utils:
-            return None
-
-        avg_cpu = mean(cpu_utils)
-
-        if avg_cpu > self.HIGH_CPU_UTIL_THRESHOLD:
-            return CapabilityGap(
-                type='resource_optimization',
-                name=f'cpu_bottleneck_{operation}',
-                category='resource_utilization',
-                reason=f"Operation '{operation}' averaging {avg_cpu:.1f}% CPU utilization (bottleneck threshold: {self.HIGH_CPU_UTIL_THRESHOLD}%)",
-                alignment_score=0.75,
-                install_cost=0.35,
-                metadata={
-                    'operation': operation,
-                    'avg_cpu_util': avg_cpu,
-                    'sample_count': len(cpu_utils),
-                    'threshold': self.HIGH_CPU_UTIL_THRESHOLD
-                }
-            )
-
-        return None
-
-    def __del__(self):
-        """Cleanup GPU resources."""
-        if _GPU_AVAILABLE and self._gpu_handle:
-            try:
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
+        return findings
