@@ -7,12 +7,17 @@ processing delays that indicate system bottlenecks.
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any
 from statistics import mean
+from datetime import datetime
+import numpy as np
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
+from kloros.orchestration.chem_bus_v2 import ChemPub
+from registry.scanner_deduplication import ScannerDeduplicator
 
 logger = logging.getLogger(__name__)
 
@@ -48,19 +53,59 @@ class BottleneckDetectorScanner(CapabilityScanner):
             self.queue_metrics_path = queue_metrics_path or Path("/home/kloros/.kloros/queue_metrics.jsonl")
             self.operation_timings_path = operation_timings_path or Path("/home/kloros/.kloros/operation_metrics.jsonl")
 
+        self.chem_pub = None
+
     def scan(self) -> List[CapabilityGap]:
-        """Scan for bottlenecks in queues and operations."""
+        """Scan for bottlenecks using ChemBus history."""
         gaps = []
 
         try:
-            if self.cache is not None:
-                queue_metrics, operation_timings = self._load_from_cache()
-            else:
-                queue_metrics = self._load_queue_metrics()
-                operation_timings = self._load_operation_timings()
+            bottlenecks = self._scan_chembus_history()
+            dedup = ScannerDeduplicator("bottleneck_detector")
 
-            gaps.extend(self._analyze_queue_buildup(queue_metrics))
-            gaps.extend(self._analyze_slow_operations(operation_timings))
+            if self.chem_pub is None:
+                try:
+                    self.chem_pub = ChemPub()
+                except Exception as e:
+                    logger.warning(f"[bottleneck_detector] Failed to initialize ChemPub: {e}")
+
+            for bottleneck in bottlenecks:
+                gap = CapabilityGap(
+                    type='bottleneck',
+                    name=f"{bottleneck['type']}_{bottleneck.get('daemon', 'system')}",
+                    category='bottleneck',
+                    reason=bottleneck.get('recommendation', 'Bottleneck detected'),
+                    alignment_score=0.7 if bottleneck['severity'] in ['high', 'critical'] else 0.8,
+                    install_cost=0.3,
+                    metadata=bottleneck
+                )
+                gaps.append(gap)
+
+                if dedup.should_report(bottleneck):
+                    intensity = 2.0 if bottleneck["severity"] == "critical" else 1.5
+
+                    if self.chem_pub is not None:
+                        try:
+                            self.chem_pub.emit(
+                                signal="CAPABILITY_GAP_FOUND",
+                                ecosystem="introspection",
+                                intensity=intensity,
+                                facts={
+                                    "scanner": "bottleneck_detector",
+                                    "finding": bottleneck
+                                }
+                            )
+                            logger.info(f"[bottleneck_detector] Emitted CAPABILITY_GAP_FOUND for {bottleneck['type']}")
+                        except Exception as e:
+                            logger.warning(f"[bottleneck_detector] Failed to emit signal: {e}")
+
+                    kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+                    findings_dir = Path(kloros_home) / ".kloros/scanner_findings"
+                    findings_dir.mkdir(exist_ok=True)
+
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    findings_file = findings_dir / f"bottleneck_{timestamp}.json"
+                    findings_file.write_text(json.dumps(bottleneck, indent=2))
 
             logger.info(f"[bottleneck_detector] Found {len(gaps)} bottlenecks")
 
@@ -68,6 +113,73 @@ class BottleneckDetectorScanner(CapabilityScanner):
             logger.warning(f"[bottleneck_detector] Scan failed: {e}")
 
         return gaps
+
+    def _scan_chembus_history(self) -> List[Dict[str, Any]]:
+        """Scan for bottlenecks using ChemBus history."""
+        kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+        history_file = Path(kloros_home) / ".kloros/chembus_history.jsonl"
+
+        if not history_file.exists():
+            logger.warning(f"chembus_history.jsonl not found at {history_file}")
+            return []
+
+        cutoff_ts = time.time() - 3600
+        metrics_summaries = []
+        queue_events = []
+
+        with open(history_file, "r") as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)
+
+                    if msg.get("ts", 0) < cutoff_ts:
+                        continue
+
+                    if msg.get("signal") == "METRICS_SUMMARY" and \
+                       msg.get("facts", {}).get("daemon") == "investigation_consumer":
+                        metrics_summaries.append(msg)
+
+                    if msg.get("signal") in ["BOTTLENECK_DETECTED", "Q_INVESTIGATION_COMPLETE"]:
+                        queue_events.append(msg)
+
+                except json.JSONDecodeError:
+                    continue
+
+        bottlenecks = []
+
+        queue_depths = [m["facts"]["queue_depth_current"]
+                       for m in metrics_summaries
+                       if "queue_depth_current" in m.get("facts", {})]
+
+        if queue_depths and np.mean(queue_depths) > 30:
+            bottlenecks.append({
+                "type": "queue_buildup",
+                "daemon": "investigation_consumer",
+                "severity": "high" if np.mean(queue_depths) > 50 else "medium",
+                "issue": f"Queue depth avg {np.mean(queue_depths):.1f}",
+                "avg_queue_depth": float(np.mean(queue_depths)),
+                "max_queue_depth": int(max(queue_depths)),
+                "recommendation": "Investigation consumer may need more workers or faster model"
+            })
+
+        completed = sum(m["facts"].get("investigations_completed", 0)
+                       for m in metrics_summaries)
+        failed = sum(m["facts"].get("investigations_failed", 0)
+                    for m in metrics_summaries)
+
+        if completed > 0 and (failed / completed) > 0.2:
+            bottlenecks.append({
+                "type": "high_failure_rate",
+                "daemon": "investigation_consumer",
+                "severity": "critical",
+                "issue": f"Failure rate {(failed/completed)*100:.1f}%",
+                "failure_rate": float(failed / completed),
+                "completed": completed,
+                "failed": failed,
+                "recommendation": "Investigate investigation failures - may indicate LLM issues or bad questions"
+            })
+
+        return bottlenecks
 
     def get_metadata(self) -> ScannerMetadata:
         """Return scanner metadata."""
@@ -78,191 +190,3 @@ class BottleneckDetectorScanner(CapabilityScanner):
             scan_cost=0.20,
             schedule_weight=0.7
         )
-
-    def _load_queue_metrics(self) -> List[Dict[str, Any]]:
-        """Load queue depth metrics (7-day window)."""
-        if not self.queue_metrics_path.exists():
-            return []
-
-        metrics = []
-        cutoff = time.time() - (7 * 86400)
-
-        try:
-            with open(self.queue_metrics_path, 'r') as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    try:
-                        entry = json.loads(line)
-                        if entry.get('timestamp', 0) >= cutoff:
-                            metrics.append(entry)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.warning(f"[bottleneck_detector] Failed to load queue metrics: {e}")
-
-        return metrics
-
-    def _load_operation_timings(self) -> List[Dict[str, Any]]:
-        """Load operation timing metrics (7-day window)."""
-        if not self.operation_timings_path.exists():
-            return []
-
-        metrics = []
-        cutoff = time.time() - (7 * 86400)
-
-        try:
-            with open(self.operation_timings_path, 'r') as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    try:
-                        entry = json.loads(line)
-                        if entry.get('timestamp', 0) >= cutoff:
-                            metrics.append(entry)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.warning(f"[bottleneck_detector] Failed to load operation metrics: {e}")
-
-        return metrics
-
-    def _load_from_cache(self) -> tuple:
-        """
-        Load queue and operation metrics from observation cache.
-
-        Returns:
-            Tuple of (queue_metrics, operation_timings)
-        """
-        observations = self.cache.get_recent(seconds=7 * 86400)
-
-        queue_metrics = []
-        operation_timings = []
-
-        for obs in observations:
-            facts = obs.get('facts', {})
-
-            if 'queue_name' in facts and 'depth' in facts:
-                queue_metrics.append({
-                    'timestamp': facts.get('timestamp', obs.get('ts')),
-                    'queue': facts['queue_name'],
-                    'depth': facts['depth'],
-                    'zooid_name': obs.get('zooid_name')
-                })
-
-            if 'operation' in facts and 'duration_ms' in facts:
-                operation_timings.append({
-                    'timestamp': facts.get('timestamp', obs.get('ts')),
-                    'operation': facts['operation'],
-                    'duration_ms': facts['duration_ms'],
-                    'zooid_name': obs.get('zooid_name')
-                })
-
-        return queue_metrics, operation_timings
-
-    def _analyze_queue_buildup(
-        self,
-        metrics: List[Dict[str, Any]]
-    ) -> List[CapabilityGap]:
-        """Detect growing queue depths."""
-        gaps = []
-
-        by_queue = {}
-        for entry in metrics:
-            queue_name = entry.get('queue', 'unknown')
-            if queue_name not in by_queue:
-                by_queue[queue_name] = []
-            by_queue[queue_name].append(entry)
-
-        for queue_name, queue_data in by_queue.items():
-            if len(queue_data) < self.MIN_SAMPLES:
-                continue
-
-            queue_data.sort(key=lambda x: x.get('timestamp', 0))
-
-            depths = [q['depth'] for q in queue_data if 'depth' in q]
-            if len(depths) < self.MIN_SAMPLES:
-                continue
-
-            recent_depths = depths[-5:]
-            avg_recent = mean(recent_depths)
-
-            if avg_recent > self.QUEUE_SUSTAINED_THRESHOLD:
-                gaps.append(CapabilityGap(
-                    type='bottleneck',
-                    name=f'queue_buildup_{queue_name}',
-                    category='queue_bottleneck',
-                    reason=f"Queue '{queue_name}' sustained depth {avg_recent:.0f} (threshold: {self.QUEUE_SUSTAINED_THRESHOLD})",
-                    alignment_score=0.8,
-                    install_cost=0.4,
-                    metadata={
-                        'queue': queue_name,
-                        'avg_depth': avg_recent,
-                        'threshold': self.QUEUE_SUSTAINED_THRESHOLD,
-                        'sample_count': len(depths)
-                    }
-                ))
-
-            if len(depths) >= 4:
-                first_half = mean(depths[:len(depths)//2])
-                second_half = mean(depths[len(depths)//2:])
-
-                if first_half > 0 and second_half / first_half >= self.QUEUE_GROWTH_THRESHOLD:
-                    gaps.append(CapabilityGap(
-                        type='bottleneck',
-                        name=f'queue_growth_{queue_name}',
-                        category='queue_bottleneck',
-                        reason=f"Queue '{queue_name}' growing {second_half/first_half:.1f}x (from {first_half:.0f} to {second_half:.0f})",
-                        alignment_score=0.75,
-                        install_cost=0.35,
-                        metadata={
-                            'queue': queue_name,
-                            'growth_factor': second_half / first_half,
-                            'initial_depth': first_half,
-                            'current_depth': second_half
-                        }
-                    ))
-
-        return gaps
-
-    def _analyze_slow_operations(
-        self,
-        metrics: List[Dict[str, Any]]
-    ) -> List[CapabilityGap]:
-        """Detect consistently slow operations."""
-        gaps = []
-
-        by_operation = {}
-        for entry in metrics:
-            op_name = entry.get('operation', 'unknown')
-            if op_name not in by_operation:
-                by_operation[op_name] = []
-            by_operation[op_name].append(entry)
-
-        for op_name, op_data in by_operation.items():
-            if len(op_data) < self.MIN_SAMPLES:
-                continue
-
-            durations = [o['duration_ms'] for o in op_data if 'duration_ms' in o]
-            if len(durations) < self.MIN_SAMPLES:
-                continue
-
-            avg_duration = mean(durations)
-
-            if avg_duration > self.SLOW_OPERATION_MS:
-                gaps.append(CapabilityGap(
-                    type='bottleneck',
-                    name=f'slow_operation_{op_name}',
-                    category='operation_bottleneck',
-                    reason=f"Slow operation '{op_name}' averaging {avg_duration:.0f}ms (threshold: {self.SLOW_OPERATION_MS}ms)",
-                    alignment_score=0.7,
-                    install_cost=0.3,
-                    metadata={
-                        'operation': op_name,
-                        'avg_duration_ms': avg_duration,
-                        'threshold_ms': self.SLOW_OPERATION_MS,
-                        'sample_count': len(durations)
-                    }
-                ))
-
-        return gaps
