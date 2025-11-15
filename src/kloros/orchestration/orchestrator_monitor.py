@@ -50,6 +50,7 @@ class OrchestratorMonitor:
         self,
         promotions_dir: Path = DEFAULT_PROMOTIONS_DIR,
         check_interval_s: int = DEFAULT_CHECK_INTERVAL_S,
+        chem_pub: Optional[ChemPub] = None,
     ):
         """
         Initialize orchestrator monitor.
@@ -57,11 +58,14 @@ class OrchestratorMonitor:
         Args:
             promotions_dir: Directory containing D-REAM promotion files
             check_interval_s: Seconds between periodic checks
+            chem_pub: Optional ChemPub instance (for testing with mocks)
         """
         self.promotions_dir = Path(promotions_dir)
         self.check_interval_s = check_interval_s
 
-        self.chem_pub = ChemPub()
+        self.promotions_dir.mkdir(parents=True, exist_ok=True)
+
+        self.chem_pub = chem_pub if chem_pub is not None else ChemPub()
 
         logger.info(f"[orchestrator_monitor] Initialized")
         logger.info(f"[orchestrator_monitor] Promotions dir: {self.promotions_dir}")
@@ -89,7 +93,7 @@ class OrchestratorMonitor:
 
             promotion_files = [
                 f for f in self.promotions_dir.iterdir()
-                if f.is_file() and f.suffix == '.json' and 'acknowledged' not in str(f)
+                if f.is_file() and f.suffix == '.json' and f.parent.name != 'acknowledged'
             ]
 
             if not promotion_files:
@@ -155,13 +159,14 @@ class OrchestratorMonitor:
             facts: Signal facts dictionary with contextual information
         """
         try:
+            facts_with_source = {**facts, "source": "orchestrator_monitor"}
             self.chem_pub.emit(
                 signal=signal_type,
                 ecosystem="orchestration",
                 intensity=1.0,
-                facts=facts
+                facts=facts_with_source
             )
-            logger.info(f"[orchestrator_monitor] Emitted {signal_type} with facts: {facts}")
+            logger.info(f"[orchestrator_monitor] Emitted {signal_type} with facts: {facts_with_source}")
 
         except Exception as e:
             logger.error(f"[orchestrator_monitor] Failed to emit signal {signal_type}: {e}", exc_info=True)
@@ -176,8 +181,6 @@ class OrchestratorMonitor:
 
         while True:
             try:
-                await asyncio.sleep(self.check_interval_s)
-
                 promotion_facts = self._count_unacknowledged_promotions()
 
                 if promotion_facts['promotion_count'] > 0:
@@ -190,6 +193,8 @@ class OrchestratorMonitor:
                 health_issues = self._check_system_health()
                 for issue in health_issues:
                     self._emit_signal("Q_HEALTH_ALERT", issue)
+
+                await asyncio.sleep(self.check_interval_s)
 
             except asyncio.CancelledError:
                 logger.info("[orchestrator_monitor] Periodic checks cancelled")
