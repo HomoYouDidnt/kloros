@@ -78,6 +78,7 @@ class KLoROSPolicyEngine:
         self._processed_incidents: Set[str] = set()
         self._last_cleanup = time.time()
         self._cleanup_interval_s = 3600
+        self.loop = None
 
         self.chem_pub = chem_pub if chem_pub is not None else ChemPub()
 
@@ -155,7 +156,10 @@ class KLoROSPolicyEngine:
 
         self._cleanup_processed_incidents()
 
-        asyncio.create_task(self._process_advisory(msg))
+        if self.loop is not None:
+            asyncio.run_coroutine_threadsafe(self._process_advisory(msg), self.loop)
+        else:
+            asyncio.create_task(self._process_advisory(msg))
 
     async def _process_advisory(self, msg: Dict[str, Any]):
         """
@@ -210,8 +214,7 @@ class KLoROSPolicyEngine:
                 "topic": None,
                 "promotion_count": promotion_count,
                 "source": "kloros_policy_engine",
-                "oldest_promotion_age_hours": facts.get('oldest_promotion_age_hours'),
-                "decision_timestamp": datetime.now(timezone.utc).isoformat()
+                "oldest_promotion_age_hours": facts.get('oldest_promotion_age_hours')
             }
 
             self._emit_trigger("Q_DREAM_TRIGGER", trigger_facts)
@@ -248,6 +251,7 @@ class KLoROSPolicyEngine:
         Maintains the event loop to allow ChemSub callback processing.
         """
         logger.info("[kloros_policy] Starting policy engine daemon")
+        self.loop = asyncio.get_event_loop()
 
         try:
             while True:

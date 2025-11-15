@@ -215,7 +215,6 @@ async def test_process_advisory_handles_promotions_detected(temp_failed_signals_
     assert facts['reason'] == 'unacknowledged_promotions_detected'
     assert facts['promotion_count'] == 5
     assert facts['source'] == 'kloros_policy_engine'
-    assert 'decision_timestamp' in facts
 
 
 @pytest.mark.asyncio
