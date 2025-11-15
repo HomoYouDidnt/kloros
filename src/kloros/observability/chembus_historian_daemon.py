@@ -9,6 +9,7 @@ import sys
 import time
 import json
 import logging
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
@@ -41,19 +42,44 @@ class ChemBusHistorian:
         self.max_size_bytes = 500 * 1024 * 1024
         self.message_count = 0
         self.last_stats_ts = time.time()
+        self.max_retries = 10
+        self.max_backoff_s = 60
 
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.sub = ChemSub(
-            topic="",
-            on_json=self._on_message,
-            zooid_name="chembus_historian",
-            niche="observability"
-        )
+        if not self.history_file.exists():
+            self.history_file.touch()
+        os.chmod(self.history_file, 0o640)
+
+        self.sub = self._connect_with_retry()
 
         logger.info(f"ChemBus Historian Daemon initialized")
         logger.info(f"  History file: {self.history_file}")
         logger.info(f"  Max size: {self.max_size_bytes / 1024 / 1024:.0f} MB")
+
+    def _connect_with_retry(self):
+        """Connect to ChemBus with exponential backoff retry logic."""
+        for attempt in range(self.max_retries):
+            try:
+                sub = ChemSub(
+                    topic="",
+                    on_json=self._on_message,
+                    zooid_name="chembus_historian",
+                    niche="observability"
+                )
+                logger.info(f"ChemBus connection established on attempt {attempt + 1}")
+                return sub
+            except Exception as e:
+                backoff_s = min(2 ** attempt, self.max_backoff_s)
+                logger.warning(
+                    f"ChemBus connection attempt {attempt + 1}/{self.max_retries} failed: {e}. "
+                    f"Retrying in {backoff_s}s..."
+                )
+                if attempt < self.max_retries - 1:
+                    time.sleep(backoff_s)
+                else:
+                    logger.error(f"Failed to connect to ChemBus after {self.max_retries} attempts")
+                    raise
 
     def _on_message(self, msg: dict):
         """Callback invoked for each ChemBus message."""
@@ -63,8 +89,12 @@ class ChemBusHistorian:
         try:
             msg["_historian_ts"] = time.time()
 
+            file_existed = self.history_file.exists()
             with open(self.history_file, "a") as f:
                 f.write(json.dumps(msg, separators=(",", ":")) + "\n")
+
+            if not file_existed:
+                os.chmod(self.history_file, 0o640)
 
             self.message_count += 1
 
@@ -83,9 +113,22 @@ class ChemBusHistorian:
     def _emergency_rotate(self):
         """Emergency rotation if introspection hasn't pruned in time."""
         try:
+            file_size_mb = self.history_file.stat().st_size / 1024 / 1024
+            logger.warning(f"Emergency rotation triggered: {self.history_file} is {file_size_mb:.2f} MB")
+
             old_path = self.history_file.with_suffix(".jsonl.old")
+            if old_path.exists():
+                old_size_mb = old_path.stat().st_size / 1024 / 1024
+                logger.info(f"Deleting existing old file: {old_path} ({old_size_mb:.2f} MB)")
+                old_path.unlink()
+
             self.history_file.rename(old_path)
-            logger.warning(f"Emergency rotation: {self.history_file} exceeded 500MB")
+            os.chmod(old_path, 0o640)
+
+            self.history_file.touch()
+            os.chmod(self.history_file, 0o640)
+
+            logger.info(f"Emergency rotation complete: {self.history_file} rotated to {old_path}")
         except Exception as e:
             logger.error(f"Emergency rotation failed: {e}", exc_info=True)
 
