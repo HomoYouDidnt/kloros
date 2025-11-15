@@ -132,53 +132,53 @@ def test_daemon_emits_module_integrated_on_success(mock_zmq, temp_dirs):
 
 
 def test_daemon_emits_integration_failed_on_error(mock_zmq, temp_dirs):
-    with patch("kloros.orchestration.capability_integrator_daemon.wait_for_normal_mode"):
     """Verify daemon emits Q_INTEGRATION_FAILED on failures."""
-    investigation = {
-        "timestamp": "2025-11-14T10:00:00Z",
-        "capability": "broken_module",
-        "question": "What does broken_module do?",
-        "hypothesis": "UNDISCOVERED_MODULE_broken_module",
-        "evidence": [
-            "path:/home/kloros/src/broken_module",
-            "has_init:false",
-            "py_files:0"
-        ],
-        "probe_results": []
-    }
-
-    temp_dirs["investigations_log"].write_text(json.dumps(investigation) + "\n")
-
-    daemon = CapabilityIntegratorDaemon(
-        investigations_log=temp_dirs["investigations_log"],
-        capabilities_yaml=temp_dirs["capabilities_yaml"],
-        integrated_log=temp_dirs["integrated_log"],
-        last_processed_timestamp=temp_dirs["last_processed"],
-        failed_signals_log=temp_dirs["failed_signals"],
-    )
-
-    signal_msg = {
-        "signal": "Q_INVESTIGATION_COMPLETE",
-        "timestamp": "2025-11-14T10:00:00Z",
-        "source": "investigation_consumer",
-        "facts": {
-            "investigation_timestamp": "2025-11-14T10:00:00Z",
-            "question_id": "discover.module.broken_module",
+    with patch("kloros.orchestration.capability_integrator_daemon.wait_for_normal_mode"):
+        investigation = {
+            "timestamp": "2025-11-14T10:00:00Z",
+            "capability": "broken_module",
+            "question": "What does broken_module do?",
+            "hypothesis": "UNDISCOVERED_MODULE_broken_module",
+            "evidence": [
+                "path:/home/kloros/src/broken_module",
+                "has_init:false",
+                "py_files:0"
+            ],
+            "probe_results": []
         }
-    }
 
-    on_message_callback = mock_zmq["sub_class"].call_args[1]["on_message"]
-    on_message_callback("Q_INVESTIGATION_COMPLETE", json.dumps(signal_msg).encode())
+        temp_dirs["investigations_log"].write_text(json.dumps(investigation) + "\n")
 
-    time.sleep(0.1)
+        daemon = CapabilityIntegratorDaemon(
+            investigations_log=temp_dirs["investigations_log"],
+            capabilities_yaml=temp_dirs["capabilities_yaml"],
+            integrated_log=temp_dirs["integrated_log"],
+            last_processed_timestamp=temp_dirs["last_processed"],
+            failed_signals_log=temp_dirs["failed_signals"],
+        )
 
-    call_made = False
-    for call in mock_zmq["publisher"].emit.call_args_list:
-        if call[0][0] == "Q_INTEGRATION_FAILED":
-            call_made = True
-            break
+        signal_msg = {
+            "signal": "Q_INVESTIGATION_COMPLETE",
+            "timestamp": "2025-11-14T10:00:00Z",
+            "source": "investigation_consumer",
+            "facts": {
+                "investigation_timestamp": "2025-11-14T10:00:00Z",
+                "question_id": "discover.module.broken_module",
+            }
+        }
 
-    assert call_made or temp_dirs["failed_signals"].exists()
+        on_message_callback = mock_zmq["sub_class"].call_args[1]["on_message"]
+        on_message_callback("Q_INVESTIGATION_COMPLETE", json.dumps(signal_msg).encode())
+
+        time.sleep(0.1)
+
+        call_made = False
+        for call in mock_zmq["publisher"].emit.call_args_list:
+            if call[0][0] == "Q_INTEGRATION_FAILED":
+                call_made = True
+                break
+
+        assert call_made or temp_dirs["failed_signals"].exists()
 
 
 def test_daemon_handles_maintenance_mode(mock_zmq, temp_dirs):

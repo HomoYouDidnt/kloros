@@ -776,24 +776,28 @@ def tick() -> str:
         # NOTE: Capability integration now handled by kloros-capability-integrator.service daemon
         # This daemon subscribes to Q_INVESTIGATION_COMPLETE signals and integrates modules automatically.
         # Commented out during Phase 2 of event-driven orchestrator migration (2025-11-14).
+        # Legacy oneshot integration only runs if KLOROS_USE_LEGACY_ORCHESTRATOR=true to prevent duplicate processing.
         # from . import capability_integrator
-        # try:
-        #     integration_result = capability_integrator.integrate_capabilities(max_integrations=5)
-        #     if integration_result["integrated"] > 0:
-        #         logger.info(f"Capability integrator: integrated {integration_result['integrated']} new modules")
-        # except Exception as e:
-        #     logger.error(f"Capability integrator failed: {e}")
+        # if os.environ.get("KLOROS_USE_LEGACY_ORCHESTRATOR", "false").lower() == "true":
+        #     try:
+        #         integration_result = capability_integrator.integrate_capabilities(max_integrations=5)
+        #         if integration_result["integrated"] > 0:
+        #             logger.info(f"Capability integrator: integrated {integration_result['integrated']} new modules")
+        #     except Exception as e:
+        #         logger.error(f"Capability integrator failed: {e}")
 
         # NOTE: Winner deployment now handled by kloros-winner-deployer.service daemon
         # This daemon subscribes to Q_DREAM_COMPLETE signals and deploys winners automatically.
         # Commented out during Phase 2 of event-driven orchestrator migration (2025-11-14).
+        # Legacy oneshot deployment only runs if KLOROS_USE_LEGACY_ORCHESTRATOR=true to prevent duplicate processing.
         # from . import winner_deployer
-        # try:
-        #     deploy_result = winner_deployer.run_deployment_cycle()
-        #     if deploy_result["deployed"] > 0:
-        #         logger.info(f"Winner deployer: deployed {deploy_result['deployed']} new winners")
-        # except Exception as e:
-        #     logger.error(f"Winner deployer failed: {e}")
+        # if os.environ.get("KLOROS_USE_LEGACY_ORCHESTRATOR", "false").lower() == "true":
+        #     try:
+        #         deploy_result = winner_deployer.run_deployment_cycle()
+        #         if deploy_result["deployed"] > 0:
+        #             logger.info(f"Winner deployer: deployed {deploy_result['deployed']} new winners")
+        #     except Exception as e:
+        #         logger.error(f"Winner deployer failed: {e}")
 
         # Priority 1: PHASE window
         if _in_phase_window() and not _phase_done_today():
