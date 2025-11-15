@@ -11,9 +11,11 @@ import sys
 import time
 import threading
 import logging
+import json
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import List, Dict, Any
+from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
@@ -144,6 +146,9 @@ class IntrospectionDaemon:
 
         Each scanner runs in thread pool with timeout. Scanner failures are
         isolated and logged. All detected gaps are emitted immediately.
+
+        After scanning, triggers capability scanners via intents and consolidates
+        old ChemBus history to episodic memory.
         """
         try:
             logger.debug(f"Starting scan cycle #{self.scan_count + 1}")
@@ -174,6 +179,9 @@ class IntrospectionDaemon:
 
             self.scan_count += 1
             logger.info(f"Scan cycle #{self.scan_count} complete: {len(all_gaps)} gaps emitted")
+
+            self.trigger_scanners_via_intents()
+            self.consolidate_chembus_history()
 
         except Exception as e:
             logger.error(f"Scan cycle failed: {e}", exc_info=True)
@@ -223,13 +231,138 @@ class IntrospectionDaemon:
         except Exception as e:
             logger.error(f"Failed to emit gap: {e}", exc_info=True)
 
+    def trigger_scanners_via_intents(self) -> None:
+        """
+        Trigger all scanners via intent files for intent_router to process.
+
+        Creates intent files for each scanner that will be picked up by intent_router
+        and executed as separate processes.
+        """
+        scanners = [
+            "bottleneck_detector",
+            "inference_performance",
+            "context_utilization",
+            "resource_profiler",
+            "comparative_analyzer"
+        ]
+
+        intents_dir = Path.home() / ".kloros/intents"
+        intents_dir.mkdir(parents=True, exist_ok=True)
+
+        for scanner_name in scanners:
+            intent_file = intents_dir / f"run_scanner_{scanner_name}_{int(time.time())}.json"
+            intent_data = {
+                "type": "run_scanner",
+                "scanner": scanner_name,
+                "triggered_by": "introspection_cycle",
+                "timestamp": time.time()
+            }
+
+            intent_file.write_text(json.dumps(intent_data))
+            logger.info(f"[introspection] Triggered scanner: {scanner_name}")
+
+    def consolidate_chembus_history(self) -> None:
+        """
+        Consolidate old ChemBus history to episodic memory and prune.
+
+        Moves messages older than 24h to episodic memory with aggregated statistics
+        and preserves anomaly signals. Rewrites history file with only recent messages.
+        """
+        history_file = Path.home() / ".kloros/chembus_history.jsonl"
+
+        if not history_file.exists():
+            logger.debug("[introspection] No chembus_history.jsonl to consolidate")
+            return
+
+        cutoff_ts = time.time() - 86400
+
+        old_messages = []
+        recent_messages = []
+
+        with open(history_file, "r") as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)
+
+                    if msg.get("ts", 0) < cutoff_ts:
+                        old_messages.append(msg)
+                    else:
+                        recent_messages.append(msg)
+
+                except json.JSONDecodeError:
+                    continue
+
+        if not old_messages:
+            logger.info("[introspection] No old messages to consolidate")
+            return
+
+        consolidated = {
+            "consolidation_timestamp": time.time(),
+            "window_start": min(m.get("ts", 0) for m in old_messages),
+            "window_end": cutoff_ts,
+            "total_messages": len(old_messages),
+            "signals_by_type": defaultdict(int),
+            "daemons_active": set(),
+            "anomalies": []
+        }
+
+        for msg in old_messages:
+            signal = msg.get("signal")
+            consolidated["signals_by_type"][signal] += 1
+
+            daemon = msg.get("facts", {}).get("daemon")
+            if daemon:
+                consolidated["daemons_active"].add(daemon)
+
+            if signal in ["BOTTLENECK_DETECTED", "PERFORMANCE_DEGRADED", "CAPABILITY_GAP_FOUND"]:
+                consolidated["anomalies"].append({
+                    "signal": signal,
+                    "ts": msg.get("ts"),
+                    "facts": msg.get("facts")
+                })
+
+        consolidated["daemons_active"] = list(consolidated["daemons_active"])
+        consolidated["signals_by_type"] = dict(consolidated["signals_by_type"])
+
+        episodic_memory_file = Path.home() / ".kloros/episodic_memory/chembus_consolidated.jsonl"
+        episodic_memory_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(episodic_memory_file, "a") as f:
+            f.write(json.dumps(consolidated) + "\n")
+
+        logger.info(f"[introspection] Consolidated {len(old_messages)} old messages to episodic memory")
+
+        with open(history_file, "w") as f:
+            for msg in recent_messages:
+                f.write(json.dumps(msg, separators=(",", ":")) + "\n")
+
+        logger.info(f"[introspection] Pruned history file, kept {len(recent_messages)} recent messages")
+
     def run(self) -> None:
-        """Main daemon loop - keeps running while subscriber processes events."""
-        logger.info("Starting introspection daemon...")
+        """
+        Main daemon loop - proactive introspection with timer-based scanning.
+
+        Runs scans on scan_interval timer (default 5s) AND when observations arrive.
+        This makes KLoROS truly autonomous - actively examining the system rather
+        than waiting for incidents.
+        """
+        logger.info("Starting proactive introspection daemon...")
+        logger.info(f"Scan interval: {self.scan_interval}s")
 
         try:
             while self.running:
                 wait_for_normal_mode()
+
+                # Proactive scan on timer
+                now = time.time()
+                if now - self.last_scan_ts >= self.scan_interval:
+                    logger.debug(f"Proactive scan triggered (interval={self.scan_interval}s)")
+                    threading.Thread(
+                        target=self._run_scan_cycle,
+                        daemon=True
+                    ).start()
+                    self.last_scan_ts = now
+
                 time.sleep(1)
 
         except KeyboardInterrupt:

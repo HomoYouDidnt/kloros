@@ -21,6 +21,7 @@ this daemon becomes obsolete.
 import json
 import time
 import logging
+import subprocess
 from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime, timezone
@@ -62,19 +63,57 @@ class IntentRouter:
             intent_id = intent.get('id', 'unknown')
             intent_data = intent.get('data', {})
 
-            if intent_type in ['discover.module', 'reinvestigate']:
+            if intent_type in ['discover.module', 'reinvestigate', 'curiosity_investigate',
+                               'curiosity_propose_fix', 'curiosity_find_substitute', 'curiosity_explore']:
                 signal_type = "Q_CURIOSITY_INVESTIGATE"
                 facts = {
                     "question": intent_data.get('question', ''),
-                    "question_id": intent_id,
-                    "priority": intent_data.get('priority', 'normal'),
-                    "evidence": intent_data.get('evidence', [])
+                    "question_id": intent_data.get('question_id', intent_id),
+                    "priority": intent.get('priority', intent_data.get('priority', 'normal')),
+                    "evidence": intent_data.get('evidence', []),
+                    "hypothesis": intent_data.get('hypothesis', ''),
+                    "capability_key": intent_data.get('capability_key', ''),
+                    "action_class": intent_data.get('action_class', 'investigate')
                 }
 
                 self._emit_signal(signal_type, facts)
 
                 intent_file.unlink()
-                logger.info(f"[intent_router] Routed and deleted {intent_file.name}")
+                logger.info(f"[intent_router] Routed {intent_type} and deleted {intent_file.name}")
+                self.processed_count += 1
+
+            elif intent_type == "run_scanner":
+                scanner_name = intent.get("scanner")
+
+                if not scanner_name:
+                    logger.error(f"[intent_router] run_scanner intent missing scanner name")
+                    self._write_dead_letter(intent_file, "Missing scanner name")
+                    intent_file.unlink()
+                    return
+
+                logger.info(f"[intent_router] Running scanner: {scanner_name}")
+
+                try:
+                    result = subprocess.run(
+                        ["/home/kloros/.venv/bin/python3", "-m", f"src.registry.capability_scanners.{scanner_name}_scanner"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        cwd="/home/kloros"
+                    )
+
+                    if result.returncode != 0:
+                        logger.error(f"[intent_router] Scanner {scanner_name} failed: {result.stderr}")
+                    else:
+                        logger.info(f"[intent_router] Scanner {scanner_name} completed successfully")
+
+                except subprocess.TimeoutExpired:
+                    logger.error(f"[intent_router] Scanner {scanner_name} timed out after 60s")
+
+                except Exception as e:
+                    logger.error(f"[intent_router] Scanner {scanner_name} execution error: {e}")
+
+                intent_file.unlink()
                 self.processed_count += 1
 
             else:
@@ -141,16 +180,32 @@ class IntentRouter:
 
         self.intent_dir.mkdir(parents=True, exist_ok=True)
 
+        # Process any existing intent files first (backlog from before daemon started)
+        existing_intents = list(self.intent_dir.glob("*.json"))
+        if existing_intents:
+            logger.info(f"[intent_router] Found {len(existing_intents)} existing intent files, processing backlog...")
+            for intent_file in existing_intents:
+                logger.info(f"[intent_router] Processing existing file: {intent_file.name}")
+                self._route_intent(intent_file)
+            logger.info(f"[intent_router] Backlog processing complete")
+
         watcher = inotify.adapters.Inotify()
         watcher.add_watch(str(self.intent_dir))
 
-        logger.info("[intent_router] Watcher ready, waiting for intent files...")
+        logger.info("[intent_router] Watcher ready, waiting for new intent files...")
 
         try:
             for event in watcher.event_gen(yield_nones=False):
                 (_, type_names, path, filename) = event
 
                 if 'IN_CLOSE_WRITE' in type_names:
+                    # CRITICAL: Ignore .tmp files to avoid race condition
+                    # Observer writes to .tmp, closes it (triggers IN_CLOSE_WRITE),
+                    # then renames to .json. We only process .json files.
+                    if not filename.endswith('.json'):
+                        logger.debug(f"[intent_router] Ignoring non-json file: {filename}")
+                        continue
+
                     intent_file = Path(path) / filename
                     logger.debug(f"[intent_router] Detected new file: {filename}")
                     self._route_intent(intent_file)
