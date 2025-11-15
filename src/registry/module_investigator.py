@@ -45,7 +45,7 @@ class ModuleInvestigator:
     Uses LLM-powered analysis to understand what code does, not just what it exports.
     """
 
-    def __init__(self, ollama_host: Optional[str] = None, model: str = "deepseek-r1:14b"):
+    def __init__(self, ollama_host: Optional[str] = None, model: str = "qwen2.5-coder:7b"):
         """
         Initialize investigator.
 
@@ -127,13 +127,24 @@ class ModuleInvestigator:
                 investigation["callable_interface"] = llm_analysis.get("callable_interface", [])
                 investigation["success"] = True
 
+                # Propagate metrics to investigation dict
+                investigation["model_used"] = llm_analysis.get("model_used", "unknown")
+                investigation["tokens_used"] = llm_analysis.get("tokens_used", 0)
+                investigation["prompt_tokens"] = llm_analysis.get("prompt_tokens", 0)
+
                 logger.info(f"[module_investigator] ✓ Investigation complete: {len(investigation['capabilities'])} capabilities, {len(investigation['callable_interface'])} callable interfaces identified")
             else:
                 investigation["error"] = "LLM analysis failed"
+                investigation["model_used"] = "unknown"
+                investigation["tokens_used"] = 0
+                investigation["prompt_tokens"] = 0
                 logger.warning("[module_investigator] LLM analysis failed, using structural analysis only")
 
         except Exception as e:
             investigation["error"] = str(e)
+            investigation["model_used"] = "unknown"
+            investigation["tokens_used"] = 0
+            investigation["prompt_tokens"] = 0
             logger.error(f"[module_investigator] Investigation failed: {e}", exc_info=True)
 
         return investigation
@@ -273,6 +284,7 @@ class ModuleInvestigator:
 
         Returns:
             LLM analysis dict or None if failed
+            Includes model_used, tokens_used, and prompt_tokens fields
         """
         # Build comprehensive prompt with all code
         code_snippets = []
@@ -346,14 +358,19 @@ Output ONLY valid JSON, no markdown or explanations."""
 
             response = None
             last_error = None
+            selected_model = None
 
             for url in urls_to_try:
+                # Query API to select best available model for this endpoint
+                from config.models_config import select_best_model_for_task
+                model = select_best_model_for_task('code', url)
+                selected_model = model
                 try:
-                    logger.info(f"[module_investigator] Trying {url}")
+                    logger.info(f"[module_investigator] Trying {url} with {model}")
                     response = requests.post(
                         f"{url}/api/generate",
                         json={
-                            "model": self.model,
+                            "model": model,
                             "prompt": prompt,
                             "stream": True,
                             "options": {
@@ -375,15 +392,20 @@ Output ONLY valid JSON, no markdown or explanations."""
             if response is None:
                 raise last_error or Exception("All Ollama endpoints failed")
 
-            # Handle streaming response
+            # Handle streaming response and extract metrics
             import json
             llm_output = ""
+            eval_count = 0
+            prompt_eval_count = 0
+
             for line in response.iter_lines():
                 if line:
                     try:
                         chunk = json.loads(line)
                         llm_output += chunk.get("response", "")
                         if chunk.get("done", False):
+                            eval_count = chunk.get("eval_count", 0)
+                            prompt_eval_count = chunk.get("prompt_eval_count", 0)
                             break
                     except json.JSONDecodeError:
                         continue
@@ -405,7 +427,12 @@ Output ONLY valid JSON, no markdown or explanations."""
 
             analysis = json.loads(llm_output)
 
-            logger.info(f"[module_investigator] ✓ LLM analysis complete (confidence: {analysis.get('confidence', 0)})")
+            # Add metrics to analysis before returning
+            analysis["model_used"] = selected_model or "unknown"
+            analysis["tokens_used"] = eval_count
+            analysis["prompt_tokens"] = prompt_eval_count
+
+            logger.info(f"[module_investigator] ✓ LLM analysis complete (confidence: {analysis.get('confidence', 0)}, model: {selected_model}, tokens: {eval_count})")
 
             return analysis
 

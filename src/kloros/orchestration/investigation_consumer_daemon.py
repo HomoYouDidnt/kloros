@@ -122,6 +122,8 @@ class InvestigationConsumer:
                 with self.metrics_lock:
                     completed = self.metrics_investigations_completed
                     failed = self.metrics_investigations_failed
+                    self.metrics_investigations_completed = 0
+                    self.metrics_investigations_failed = 0
 
                 self.chem_pub.emit(
                     signal="METRICS_SUMMARY",
@@ -147,10 +149,6 @@ class InvestigationConsumer:
                             "threshold": 50
                         }
                     )
-
-                with self.metrics_lock:
-                    self.metrics_investigations_completed = 0
-                    self.metrics_investigations_failed = 0
 
             except Exception as e:
                 logger.error(f"[investigation_consumer] Metrics summary emission failed: {e}")
@@ -435,6 +433,13 @@ class InvestigationConsumer:
 
             # Emit Q_INVESTIGATION_COMPLETE signal with performance metrics
             try:
+                model_used = investigation.get("model_used", "unknown")
+                tokens_used = investigation.get("tokens_used", 0)
+
+                # Validation warning: check for missing metrics
+                if model_used == "unknown" or tokens_used == 0:
+                    logger.warning(f"[investigation_consumer] Investigation {question_id} has incomplete metrics: model_used={model_used}, tokens_used={tokens_used}")
+
                 self.chem_pub.emit(
                     signal="Q_INVESTIGATION_COMPLETE",
                     ecosystem="introspection",
@@ -445,8 +450,8 @@ class InvestigationConsumer:
                         "question_id": question_id,
                         "status": investigation.get("status"),
                         "duration_ms": investigation_duration_ms,
-                        "model_used": investigation.get("model_used", "unknown"),
-                        "tokens_used": investigation.get("tokens_used", 0),
+                        "model_used": model_used,
+                        "tokens_used": tokens_used,
                         "queue_wait_time_ms": queue_wait_time_ms
                     }
                 )
