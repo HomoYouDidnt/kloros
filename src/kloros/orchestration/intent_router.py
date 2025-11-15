@@ -58,7 +58,7 @@ class IntentRouter:
             with open(intent_file, 'r') as f:
                 intent = json.load(f)
 
-            intent_type = intent.get('type', '')
+            intent_type = intent.get('type') or intent.get('intent_type', '')
             intent_id = intent.get('id', 'unknown')
             intent_data = intent.get('data', {})
 
@@ -79,6 +79,8 @@ class IntentRouter:
 
             else:
                 logger.warning(f"[intent_router] Unknown intent type: {intent_type}")
+                self._write_dead_letter(intent_file, f"Unknown intent type: {intent_type}")
+                intent_file.unlink()
 
         except json.JSONDecodeError as e:
             logger.error(f"[intent_router] Failed to parse JSON from {intent_file}: {e}")
