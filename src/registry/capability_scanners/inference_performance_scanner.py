@@ -1,76 +1,101 @@
 """
-InferencePerformanceScanner - Monitors token generation performance.
+InferencePerformanceScanner - Monitors investigation inference performance.
 
-Tracks tokens/second, probability distributions, backtracking patterns
-to identify inference optimization opportunities.
+Analyzes Q_INVESTIGATION_COMPLETE events from ChemBus to track per-model
+performance, identify slow models, and detect performance degradation.
 """
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from statistics import mean, stdev
+from collections import defaultdict
+from datetime import datetime
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    logger = logging.getLogger(__name__)
+    logger.warning("NumPy not available, falling back to statistics module for inference performance analysis")
 
 from .base import CapabilityScanner, CapabilityGap, ScannerMetadata
+from kloros.orchestration.chem_bus_v2 import ChemPub
+from registry.scanner_deduplication import ScannerDeduplicator
 
 logger = logging.getLogger(__name__)
 
 
 class InferencePerformanceScanner(CapabilityScanner):
-    """Detects inference performance optimization opportunities."""
+    """Detects slow models and inference performance issues from investigation data."""
 
-    SLOW_TOKENS_PER_SEC = 10.0
-    SIGNIFICANT_VARIANCE = 0.3
+    SLOW_AVG_MS = 60000
+    CRITICAL_AVG_MS = 120000
+    SLOW_P95_MS = 120000
     MIN_SAMPLES = 3
+    HISTORY_WINDOW_HOURS = 6
 
-    def __init__(
-        self,
-        metrics_path: Path = None,
-        cache: 'ObservationCache' = None
-    ):
-        """
-        Initialize scanner with either file path (legacy) or cache (streaming).
-
-        Args:
-            metrics_path: Path to inference metrics JSONL (legacy mode)
-            cache: ObservationCache instance (streaming mode)
-        """
-        if cache is not None:
-            self.cache = cache
-            self.metrics_path = None
-        elif metrics_path is not None:
-            self.cache = None
-            self.metrics_path = metrics_path
-        else:
-            self.cache = None
-            self.metrics_path = Path("/home/kloros/.kloros/metrics/inference_metrics.jsonl")
+    def __init__(self):
+        """Initialize scanner."""
+        self.chem_pub = None
 
     def scan(self) -> List[CapabilityGap]:
-        """Scan inference metrics for performance optimization opportunities."""
+        """Scan for slow models using ChemBus investigation history."""
         gaps = []
 
         try:
-            if self.cache is not None:
-                metrics = self._load_from_cache()
-            else:
-                metrics = self._load_inference_metrics()
+            findings = self._scan_chembus_history()
+            dedup = ScannerDeduplicator("inference_performance")
 
-            if not metrics:
-                logger.debug("[inference_perf] No metrics available")
-                return gaps
+            if self.chem_pub is None:
+                try:
+                    self.chem_pub = ChemPub()
+                except Exception as e:
+                    logger.warning(f"[inference_perf] Failed to initialize ChemPub: {e}")
 
-            by_task = self._group_by_task_type(metrics)
+            for finding in findings:
+                gap = CapabilityGap(
+                    type='slow_inference',
+                    name=f"slow_model_{finding.get('model', 'unknown')}",
+                    category='inference_performance',
+                    reason=finding.get('recommendation', 'Slow inference detected'),
+                    alignment_score=0.65 if finding['severity'] in ['high', 'critical'] else 0.75,
+                    install_cost=0.4,
+                    metadata=finding
+                )
+                gaps.append(gap)
 
-            for task_type, task_metrics in by_task.items():
-                if len(task_metrics) < self.MIN_SAMPLES:
-                    continue
+                if dedup.should_report(finding):
+                    intensity = 2.0 if finding["severity"] == "critical" else 1.5
 
-                gap = self._analyze_task_performance(task_type, task_metrics)
-                if gap:
-                    gaps.append(gap)
+                    if self.chem_pub is not None:
+                        try:
+                            self.chem_pub.emit(
+                                signal="CAPABILITY_GAP_FOUND",
+                                ecosystem="introspection",
+                                intensity=intensity,
+                                facts={
+                                    "scanner": "inference_performance",
+                                    "finding": finding
+                                }
+                            )
+                            logger.info(f"[inference_perf] Emitted CAPABILITY_GAP_FOUND for {finding['model']}")
+                        except Exception as e:
+                            logger.warning(f"[inference_perf] Failed to emit signal: {e}")
 
-            logger.info(f"[inference_perf] Found {len(gaps)} performance gaps")
+                    kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+                    findings_dir = Path(kloros_home) / ".kloros/scanner_findings"
+                    findings_dir.mkdir(exist_ok=True)
+
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:21]
+                    findings_file = findings_dir / f"inference_{timestamp}.json"
+                    findings_file.write_text(json.dumps(finding, indent=2))
+
+            logger.info(f"[inference_perf] Found {len(gaps)} slow model issues")
 
         except Exception as e:
             logger.warning(f"[inference_perf] Scan failed: {e}")
@@ -87,112 +112,78 @@ class InferencePerformanceScanner(CapabilityScanner):
             schedule_weight=0.6
         )
 
-    def _load_inference_metrics(self) -> List[Dict[str, Any]]:
-        """Load inference metrics from disk (7-day window)."""
-        if not self.metrics_path.exists():
+    def _scan_chembus_history(self) -> List[Dict[str, Any]]:
+        """Scan ChemBus history for slow inference models."""
+        kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
+        history_file = Path(kloros_home) / ".kloros/chembus_history.jsonl"
+
+        if not history_file.exists():
+            logger.warning(f"chembus_history.jsonl not found at {history_file}")
             return []
 
-        metrics = []
-        cutoff = time.time() - (7 * 86400)
+        cutoff_ts = time.time() - (self.HISTORY_WINDOW_HOURS * 3600)
+        investigations = []
+        performance_degraded = []
 
-        try:
-            with open(self.metrics_path, 'r') as f:
-                for line in f:
-                    if not line.strip():
+        with open(history_file, "r") as f:
+            for line in f:
+                try:
+                    msg = json.loads(line)
+
+                    if msg.get("ts", 0) < cutoff_ts:
                         continue
-                    try:
-                        entry = json.loads(line)
-                        timestamp = entry.get('timestamp', 0)
-                        if timestamp >= cutoff:
-                            metrics.append(entry)
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.warning(f"[inference_perf] Failed to load metrics: {e}")
 
-        return metrics
+                    if msg.get("signal") == "Q_INVESTIGATION_COMPLETE":
+                        facts = msg.get("facts", {})
+                        if facts.get("status") == "completed":
+                            investigations.append(facts)
 
-    def _load_from_cache(self) -> List[Dict[str, Any]]:
-        """
-        Load inference metrics from observation cache.
+                    if msg.get("signal") == "PERFORMANCE_DEGRADED":
+                        performance_degraded.append(msg)
 
-        Returns:
-            List of inference metric dicts extracted from observation facts
-        """
-        observations = self.cache.get_recent(seconds=7 * 86400)
+                except json.JSONDecodeError:
+                    continue
 
-        metrics = []
-        for obs in observations:
-            facts = obs.get('facts', {})
+        findings = []
+        model_timings = defaultdict(list)
 
-            if 'task_type' in facts and 'tokens_per_sec' in facts:
-                metrics.append({
-                    'timestamp': facts.get('timestamp', obs.get('ts')),
-                    'task_type': facts['task_type'],
-                    'tokens_per_sec': facts['tokens_per_sec'],
-                    'zooid_name': obs.get('zooid_name')
-                })
+        for inv in investigations:
+            model = inv.get("model_used")
+            duration = inv.get("duration_ms")
 
-        return metrics
+            if model and duration and model != "unknown":
+                model_timings[model].append(duration)
 
-    def _group_by_task_type(
-        self,
-        metrics: List[Dict[str, Any]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Group metrics by task type."""
-        grouped = {}
-        for entry in metrics:
-            task_type = entry.get('task_type', 'unknown')
-            if task_type not in grouped:
-                grouped[task_type] = []
-            grouped[task_type].append(entry)
-        return grouped
+        for model, timings in model_timings.items():
+            if len(timings) < self.MIN_SAMPLES:
+                continue
 
-    def _analyze_task_performance(
-        self,
-        task_type: str,
-        metrics: List[Dict[str, Any]]
-    ) -> Optional[CapabilityGap]:
-        """Analyze performance for a specific task type."""
-        tokens_per_sec = [m['tokens_per_sec'] for m in metrics if 'tokens_per_sec' in m]
+            if HAS_NUMPY:
+                avg_ms = float(np.mean(timings))
+                p95_ms = float(np.percentile(timings, 95))
+            else:
+                avg_ms = mean(timings)
+                sorted_timings = sorted(timings)
+                p95_index = int(len(sorted_timings) * 0.95)
+                p95_ms = sorted_timings[p95_index] if p95_index < len(sorted_timings) else sorted_timings[-1]
 
-        if not tokens_per_sec:
-            return None
+            if avg_ms > self.SLOW_AVG_MS or p95_ms > self.SLOW_P95_MS:
+                severity = "critical" if avg_ms > self.CRITICAL_AVG_MS else "high"
 
-        avg_tps = mean(tokens_per_sec)
-
-        if avg_tps < self.SLOW_TOKENS_PER_SEC:
-            return CapabilityGap(
-                type='performance_optimization',
-                name=f'slow_inference_{task_type}',
-                category='inference_performance',
-                reason=f"Task type '{task_type}' averaging {avg_tps:.1f} tokens/sec (threshold: {self.SLOW_TOKENS_PER_SEC})",
-                alignment_score=0.75,
-                install_cost=0.4,
-                metadata={
-                    'task_type': task_type,
-                    'avg_tokens_per_sec': avg_tps,
-                    'sample_count': len(tokens_per_sec),
-                    'threshold': self.SLOW_TOKENS_PER_SEC
-                }
-            )
-
-        if len(tokens_per_sec) >= 3:
-            variance = stdev(tokens_per_sec) / avg_tps
-            if variance > self.SIGNIFICANT_VARIANCE:
-                return CapabilityGap(
-                    type='performance_optimization',
-                    name=f'unstable_inference_{task_type}',
-                    category='inference_performance',
-                    reason=f"Task type '{task_type}' has {variance*100:.1f}% variance in performance",
-                    alignment_score=0.65,
-                    install_cost=0.35,
-                    metadata={
-                        'task_type': task_type,
-                        'variance': variance,
-                        'avg_tokens_per_sec': avg_tps,
-                        'sample_count': len(tokens_per_sec)
-                    }
+                degraded_count = sum(
+                    1 for msg in performance_degraded
+                    if msg.get("facts", {}).get("model") == model
                 )
 
-        return None
+                findings.append({
+                    "type": "slow_inference",
+                    "model": model,
+                    "avg_duration_ms": avg_ms,
+                    "p95_duration_ms": p95_ms,
+                    "sample_size": len(timings),
+                    "severity": severity,
+                    "performance_degraded_count": degraded_count,
+                    "recommendation": f"Model {model} is slow (avg: {avg_ms/1000:.1f}s, p95: {p95_ms/1000:.1f}s). Consider switching to faster model or increasing timeout."
+                })
+
+        return findings

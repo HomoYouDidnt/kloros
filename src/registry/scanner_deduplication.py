@@ -34,7 +34,8 @@ class ScannerDeduplicator:
         """Generate fingerprint hash for a finding."""
         key_fields = {
             "type": finding.get("type"),
-            "daemon": finding.get("daemon")
+            "daemon": finding.get("daemon"),
+            "model": finding.get("model")
         }
 
         fingerprint_str = json.dumps(key_fields, sort_keys=True)
