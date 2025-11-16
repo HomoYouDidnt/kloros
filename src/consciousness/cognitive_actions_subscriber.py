@@ -216,7 +216,7 @@ class CognitiveActionHandler:
 
             event = Event(
                 timestamp=time.time(),
-                event_type=EventType.SYSTEM_NOTE,
+                event_type=EventType.EPISODE_CONDENSED,
                 content=f"Context archived: {summary_text[:200]}",
                 metadata=metadata,
                 conversation_id=None
