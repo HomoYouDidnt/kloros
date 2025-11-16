@@ -1,0 +1,18 @@
+[Unit]
+Description=KLoROS System Healing Subscriber (Tier 1 - HIGH_RAGE/ERRORS)
+After=network.target kloros-chem-proxy.service
+Requires=kloros-chem-proxy.service
+
+[Service]
+Type=simple
+User=kloros
+WorkingDirectory=/home/kloros/src
+Environment=PYTHONPATH=/home/kloros/src
+ExecStart=/home/kloros/.venv/bin/python -u consciousness/system_healing_subscriber.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
