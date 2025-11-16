@@ -128,7 +128,8 @@ class IntegratedConsciousness:
                  enable_phase1: bool = True,
                  enable_phase2: bool = True,
                  appraisal_config_path: Optional[Path] = None,
-                 state_file: Optional[Path] = None):
+                 state_file: Optional[Path] = None,
+                 chem_pub=None):
         """
         Initialize integrated consciousness.
 
@@ -137,6 +138,7 @@ class IntegratedConsciousness:
             enable_phase2: Enable Phase 2 (interoception/appraisal/modulation)
             appraisal_config_path: Optional path to appraisal weights YAML
             state_file: Optional path to state persistence file
+            chem_pub: Optional ChemPub instance for testing (defaults to auto-init)
         """
         # Phase 1: Affective core (Solms)
         self.phase1_enabled = enable_phase1
@@ -181,10 +183,13 @@ class IntegratedConsciousness:
 
         # Affective signal emitter (ChemBus integration)
         self.signal_emitter = None
+        self.chem_pub = chem_pub
         try:
-            from kloros.orchestration.chem_bus_v2 import ChemPub
-            chem_pub = ChemPub()
-            self.signal_emitter = AffectSignalEmitter(chem_pub)
+            if chem_pub is None:
+                from kloros.orchestration.chem_bus_v2 import ChemPub
+                chem_pub = ChemPub()
+                self.chem_pub = chem_pub
+            self.signal_emitter = AffectSignalEmitter(self.chem_pub)
             print("[consciousness] 📡 ChemBus signal emitter initialized")
         except Exception as e:
             print(f"[consciousness] ChemBus not available, affective actions disabled: {e}")
