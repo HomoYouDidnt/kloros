@@ -501,11 +501,15 @@ class CognitiveActionHandler:
 
     def analyze_failure_patterns(self, root_causes: List[str], actions: List[str]) -> bool:
         """
-        Analyze patterns in task failures.
+        Analyze patterns in task failures to identify systematic issues.
+
+        Triggered by AFFECT_TASK_FAILURE_PATTERN signals when task failures accumulate.
+        Examines recent error history to identify common failure modes and suggest
+        preventive measures for future improvement.
 
         Args:
-            root_causes: Root causes identified
-            actions: Suggested autonomous actions
+            root_causes: Root causes identified by affective introspection
+            actions: Suggested autonomous actions from introspection
 
         Returns:
             True if analysis succeeded
@@ -514,18 +518,210 @@ class CognitiveActionHandler:
         print(f"  Root causes: {root_causes}")
         print(f"  Suggested actions: {actions}")
 
-        # TODO: Implement actual failure pattern analysis
-        print("  → Would analyze recent error logs")
-        print("  → Would identify common failure modes")
-        print("  → Would suggest preventive measures")
+        try:
+            recent_failures = self._get_recent_failures(days=7)
 
-        # Log patterns found
-        for cause in root_causes:
-            if 'task_failures' in cause:
-                print(f"  ✓ Pattern detected: {cause}")
+            if not recent_failures:
+                print("  → No recent failures to analyze")
+                self.log_action('analyze_failures', 'No recent failures found')
+                return True
 
-        self.log_action('analyze_failures', f'Analyzed {len(root_causes)} root causes')
-        return True
+            patterns = self._identify_patterns(recent_failures)
+
+            insights = self._generate_insights(patterns, root_causes)
+
+            self._store_failure_analysis(insights, root_causes, actions)
+
+            print(f"  ✅ Analyzed {len(recent_failures)} failures, found {len(patterns.get('error_types', {}))} error types")
+            self.log_action('analyze_failures', f'{len(recent_failures)} failures analyzed')
+            return True
+
+        except Exception as e:
+            print(f"  ❌ Failed to analyze failure patterns: {e}")
+            import traceback
+            traceback.print_exc()
+            self.log_action('analyze_failures', f'Failed: {e}')
+            return False
+
+    def _get_recent_failures(self, days: int = 7) -> List[Dict[str, Any]]:
+        """
+        Retrieve recent failure events from episodic memory.
+
+        Args:
+            days: Number of days back to retrieve failures
+
+        Returns:
+            List of failure event dictionaries
+        """
+        try:
+            if not self.memory_store:
+                return []
+
+            cutoff_time = time.time() - (days * 24 * 3600)
+
+            conn = self.memory_store._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, timestamp, content, metadata
+                FROM events
+                WHERE event_type IN ('error_occurred', 'tool_execution')
+                AND timestamp >= ?
+                AND (
+                    event_type = 'error_occurred'
+                    OR metadata LIKE '%"success": false%'
+                    OR metadata LIKE '%"success":false%'
+                )
+                ORDER BY timestamp DESC
+                LIMIT 100
+            """, (cutoff_time,))
+
+            failures = []
+            for row in cursor.fetchall():
+                event_id, timestamp, content, metadata_json = row
+
+                try:
+                    metadata = json.loads(metadata_json) if metadata_json else {}
+                except:
+                    metadata = {}
+
+                failures.append({
+                    'id': event_id,
+                    'timestamp': timestamp,
+                    'content': content,
+                    'metadata': metadata,
+                    'occurred_at': datetime.fromtimestamp(timestamp).isoformat()
+                })
+
+            return failures
+
+        except Exception as e:
+            print(f"  Error retrieving failures: {e}")
+            return []
+
+    def _identify_patterns(self, failures: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Identify common patterns in failures.
+
+        Analyzes error types, timing, tools, and error messages to find patterns.
+
+        Args:
+            failures: List of failure event dictionaries
+
+        Returns:
+            Dictionary with identified patterns
+        """
+        patterns = {
+            'error_types': {},
+            'failure_times': [],
+            'common_tools': {},
+            'error_messages': {}
+        }
+
+        for failure in failures:
+            error_type = failure.get('metadata', {}).get('error_type', 'unknown')
+            patterns['error_types'][error_type] = patterns['error_types'].get(error_type, 0) + 1
+
+            patterns['failure_times'].append(failure['timestamp'])
+
+            tool = failure.get('metadata', {}).get('tool_name')
+            if tool:
+                patterns['common_tools'][tool] = patterns['common_tools'].get(tool, 0) + 1
+
+            content = failure.get('content', '')
+            if content:
+                short_msg = content[:100]
+                patterns['error_messages'][short_msg] = patterns['error_messages'].get(short_msg, 0) + 1
+
+        return patterns
+
+    def _generate_insights(self, patterns: Dict[str, Any], root_causes: List[str]) -> Dict[str, Any]:
+        """
+        Generate actionable insights from failure patterns.
+
+        Identifies top failure modes and generates recommendations.
+
+        Args:
+            patterns: Dictionary of identified patterns
+            root_causes: Root causes from affective introspection
+
+        Returns:
+            Dictionary with findings and recommendations
+        """
+        insights = {
+            'timestamp': datetime.now().isoformat(),
+            'root_causes': root_causes,
+            'findings': [],
+            'recommendations': []
+        }
+
+        if patterns['error_types']:
+            most_common = max(patterns['error_types'].items(), key=lambda x: x[1])
+            insights['findings'].append(f"Most common error: {most_common[0]} ({most_common[1]} occurrences)")
+            insights['recommendations'].append(f"Investigate root cause of {most_common[0]} errors")
+
+        if patterns['common_tools']:
+            failing_tools = sorted(patterns['common_tools'].items(), key=lambda x: x[1], reverse=True)[:3]
+            for tool, count in failing_tools:
+                insights['findings'].append(f"Tool '{tool}' failed {count} times")
+                insights['recommendations'].append(f"Review {tool} implementation or usage patterns")
+
+        if len(patterns['failure_times']) >= 3:
+            time_range = max(patterns['failure_times']) - min(patterns['failure_times'])
+            if time_range < 3600:
+                insights['findings'].append("Failures clustered in short time window")
+                insights['recommendations'].append("Investigate recent system changes or external dependencies")
+
+        return insights
+
+    def _store_failure_analysis(self, insights: Dict[str, Any], root_causes: List[str], actions: List[str]) -> bool:
+        """
+        Store failure analysis to episodic memory.
+
+        Persists analysis for future reference and learning.
+
+        Args:
+            insights: Analysis insights dictionary
+            root_causes: Original root causes
+            actions: Original suggested actions
+
+        Returns:
+            True if storage succeeded
+        """
+        try:
+            if not self.memory_store:
+                return False
+
+            try:
+                from kloros_memory.models import Event, EventType
+            except ImportError:
+                from src.kloros_memory.models import Event, EventType
+
+            findings_text = "; ".join(insights['findings'][:3])
+
+            metadata = {
+                'root_causes': root_causes,
+                'suggested_actions': actions,
+                'findings': insights['findings'],
+                'recommendations': insights['recommendations'],
+                'timestamp': insights['timestamp']
+            }
+
+            event = Event(
+                timestamp=time.time(),
+                event_type=EventType.SELF_REFLECTION,
+                content=f"Failure pattern analysis: {findings_text}",
+                metadata=metadata,
+                conversation_id=None
+            )
+
+            event_id = self.memory_store.store_event(event)
+            print(f"  Stored analysis to episodic memory (event_id: {event_id})")
+            return event_id is not None
+
+        except Exception as e:
+            print(f"  Failed to store analysis: {e}")
+            return False
 
     def request_context_expansion(self) -> bool:
         """
