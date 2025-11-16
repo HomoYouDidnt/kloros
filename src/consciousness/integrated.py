@@ -499,6 +499,46 @@ class IntegratedConsciousness:
 
         return report
 
+    def process_discovery(self,
+                         discovery_type: str,
+                         significance: float,
+                         context: Optional[str] = None) -> Optional[AffectiveReport]:
+        """
+        Process curiosity discovery event and trigger affective introspection.
+
+        Handles pattern discoveries, answered questions, and integrated learning.
+        Discovery events increase SEEKING (reward satisfaction) and may increase
+        PLAY (joy of discovery) for high-significance discoveries.
+
+        Args:
+            discovery_type: Type of discovery ("pattern", "question_answered", "learning_integrated")
+            significance: Significance level 0.0-1.0 of the discovery
+            context: Optional context string describing the discovery
+
+        Returns:
+            AffectiveReport if Phase 2 enabled, None otherwise
+        """
+        if not self.phase2_enabled or not self.monitor:
+            return None
+
+        self.monitor.record_task_outcome(success=True, retries=0)
+
+        if self.affective_core:
+            self.affective_core.emotions.SEEKING = min(
+                1.0,
+                self.affective_core.emotions.SEEKING + 0.08
+            )
+
+            if significance > 0.8:
+                self.affective_core.emotions.PLAY = min(
+                    1.0,
+                    self.affective_core.emotions.PLAY + 0.1
+                )
+
+        report = self.process_and_report()
+
+        return report
+
     def reset(self):
         """Reset all systems to baseline."""
         if self.phase1_enabled and self.affective_core:
