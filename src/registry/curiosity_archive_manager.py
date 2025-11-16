@@ -207,6 +207,10 @@ class ArchiveManager:
         allows re-examination of previously-skipped questions when higher-priority
         work has been completed.
 
+        IMPORTANT: Questions are REMOVED from the archive after rehydration to
+        prevent infinite loops. If they get re-archived, they won't be rehydrated
+        again unless new evidence appears.
+
         Args:
             main_feed_size: Number of questions currently in main queues
         """
@@ -225,7 +229,7 @@ class ArchiveManager:
         largest_category = max(archive_sizes, key=archive_sizes.get)
         largest_file = self.archives[largest_category]
 
-        questions = self._read_archive(largest_file, limit=3)
+        questions = self._read_and_remove_from_archive(largest_file, limit=3)
 
         for q in questions:
             self.chem_pub.emit("Q_CURIOSITY_LOW",
@@ -235,12 +239,50 @@ class ArchiveManager:
         logger.info(f"[archive_mgr] Rehydrated {len(questions)} questions from {largest_category} "
                    f"(idle-time opportunistic)")
 
+    def _read_and_remove_from_archive(self, archive_file: Path, limit: int = 3) -> List[Dict]:
+        """
+        Read first N questions from archive and REMOVE them from the file.
+
+        This prevents infinite rehydration loops where the same questions
+        get pulled repeatedly. Questions are permanently removed from the
+        archive after being emitted for reconsideration.
+
+        Args:
+            archive_file: Path to archive file
+            limit: Maximum number of questions to read and remove
+
+        Returns:
+            List of question dictionaries that were removed
+        """
+        questions = []
+        remaining = []
+
+        if not archive_file.exists():
+            return questions
+
+        # Read all entries, separate top N from rest
+        with open(archive_file, 'r') as f:
+            for i, line in enumerate(f):
+                if not line.strip():
+                    continue
+                if i < limit:
+                    questions.append(json.loads(line))
+                else:
+                    remaining.append(line)
+
+        # Rewrite file with only remaining entries
+        with open(archive_file, 'w') as f:
+            f.writelines(remaining)
+
+        logger.debug(f"[archive_mgr] Removed {len(questions)} questions from {archive_file.name}, {len(remaining)} remain")
+        return questions
+
     def _read_archive(self, archive_file: Path, limit: int = 3) -> List[Dict]:
         """
-        Read first N questions from archive.
+        Read first N questions from archive WITHOUT removing them.
 
-        Returns questions as dictionaries (not CuriosityQuestion objects)
-        for direct emission to chemical bus.
+        Use this for inspection/reporting. For rehydration, use
+        _read_and_remove_from_archive() to prevent infinite loops.
 
         Args:
             archive_file: Path to archive file
