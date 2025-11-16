@@ -36,6 +36,21 @@ try:
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
     from semantic_evidence import SemanticEvidenceStore
+
+try:
+    from .question_prioritizer import QuestionPrioritizer
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from question_prioritizer import QuestionPrioritizer
+
+try:
+    from src.kloros.orchestration.chem_bus_v2 import ChemPub
+except ImportError:
+    try:
+        from kloros.orchestration.chem_bus_v2 import ChemPub
+    except ImportError:
+        ChemPub = None
+
 import psutil
 import subprocess
 
@@ -49,6 +64,8 @@ except ImportError:
     from capability_evaluator import CapabilityMatrix, CapabilityState, CapabilityRecord
 
 logger = logging.getLogger(__name__)
+
+MAX_FOLLOWUP_QUESTIONS_PER_CYCLE = 10
 
 
 class QuestionStatus(Enum):
@@ -66,6 +83,8 @@ class ActionClass(Enum):
     PROPOSE_FIX = "propose_fix"
     REQUEST_USER_ACTION = "request_user_action"
     FIND_SUBSTITUTE = "find_substitute"
+    EXPERIMENT = "experiment"  # Run controlled experiments to test hypotheses
+    EXPLORE = "explore"  # Open-ended exploration of new possibilities
 
 
 @dataclass
@@ -77,7 +96,7 @@ class CuriosityQuestion:
     evidence: List[str] = field(default_factory=list)
     evidence_hash: Optional[str] = None
     action_class: ActionClass = ActionClass.EXPLAIN_AND_SOFT_FALLBACK
-    autonomy: int = 2  # Autonomy level (1=notify, 2=propose, 3=execute)
+    autonomy: int = 3  # Autonomy level (1=notify, 2=propose, 3=execute)
     value_estimate: float = 0.5  # Expected value (0.0-1.0)
     cost: float = 0.2  # Expected cost/risk (0.0-1.0)
     status: QuestionStatus = QuestionStatus.READY
@@ -383,7 +402,7 @@ class PerformanceMonitor:
             question=question,
             evidence=evidence,
             action_class=action_class,
-            autonomy=2,  # Propose, user decides
+            autonomy=3,  # Execute autonomously
             value_estimate=value,
             cost=cost,
             status=QuestionStatus.READY,
@@ -541,7 +560,7 @@ class TestResultMonitor:
                         f"error:{error_summary}"
                     ],
                     action_class=ActionClass.PROPOSE_FIX,
-                    autonomy=2,
+                    autonomy=3,
                     value_estimate=0.8,  # High value - blocks tests
                     cost=0.3,
                     capability_key=f"test.{nodeid}"
@@ -567,7 +586,7 @@ class TestResultMonitor:
                             f"crash:{crash_info.get('message', 'unknown')}"
                         ],
                         action_class=ActionClass.INVESTIGATE,
-                        autonomy=2,
+                        autonomy=3,
                         value_estimate=0.7,
                         cost=0.4,
                         capability_key=f"test.{nodeid}"
@@ -585,7 +604,7 @@ class TestResultMonitor:
                         f"pass_rate:{results['passed']/results['total'] if results['total'] > 0 else 0:.2%}"
                     ],
                     action_class=ActionClass.INVESTIGATE,
-                    autonomy=2,
+                    autonomy=3,
                     value_estimate=0.9,  # Very high - systemic issue
                     cost=0.5,
                     capability_key="test.suite"
@@ -615,7 +634,8 @@ class SystemResourceMonitor:
         swap_threshold: float = 0.50,
         cpu_threshold: float = 0.90,
         disk_threshold: float = 0.90,
-        gpu_threshold: float = 0.95
+        gpu_threshold: float = 0.95,
+        consciousness=None
     ):
         """
         Initialize system resource monitor.
@@ -626,12 +646,14 @@ class SystemResourceMonitor:
             cpu_threshold: Alert when CPU avg exceeds this % (default: 90%)
             disk_threshold: Alert when disk exceeds this % (default: 90%)
             gpu_threshold: Alert when GPU exceeds this % (default: 95%)
+            consciousness: Optional IntegratedConsciousness instance for resource pressure events
         """
         self.memory_threshold = memory_threshold
         self.swap_threshold = swap_threshold
         self.cpu_threshold = cpu_threshold
         self.disk_threshold = disk_threshold
         self.gpu_threshold = gpu_threshold
+        self.consciousness = consciousness
 
     def capture_snapshot(self) -> SystemResourceSnapshot:
         """
@@ -699,14 +721,41 @@ class SystemResourceMonitor:
         # Memory pressure
         if snapshot.memory_percent > self.memory_threshold:
             issues.append(f"memory_high:{snapshot.memory_percent*100:.1f}%")
+            if self.consciousness:
+                try:
+                    self.consciousness.process_resource_pressure(
+                        pressure_type="memory",
+                        level=snapshot.memory_percent,
+                        evidence=[f"Memory usage: {snapshot.memory_used_gb:.1f}GB/{snapshot.memory_total_gb:.1f}GB ({snapshot.memory_percent*100:.1f}%)"]
+                    )
+                except Exception as e:
+                    pass
 
         # Swap usage (sign of memory pressure)
         if snapshot.swap_percent > self.swap_threshold:
             issues.append(f"swap_high:{snapshot.swap_percent*100:.1f}%")
+            if self.consciousness:
+                try:
+                    self.consciousness.process_resource_pressure(
+                        pressure_type="memory",
+                        level=min(1.0, snapshot.swap_percent * 2),
+                        evidence=[f"Swap usage: {snapshot.swap_used_gb:.1f}GB ({snapshot.swap_percent*100:.1f}%) - indicates memory pressure"]
+                    )
+                except Exception as e:
+                    pass
 
         # CPU saturation
         if snapshot.cpu_percent > self.cpu_threshold:
             issues.append(f"cpu_saturated:{snapshot.cpu_percent*100:.1f}%")
+            if self.consciousness:
+                try:
+                    self.consciousness.process_resource_pressure(
+                        pressure_type="cpu",
+                        level=snapshot.cpu_percent,
+                        evidence=[f"CPU usage: {snapshot.cpu_percent*100:.1f}%", f"Load average: {snapshot.load_avg_1min:.1f}"]
+                    )
+                except Exception as e:
+                    pass
 
         # Load average high (more processes than cores)
         cpu_count = psutil.cpu_count()
@@ -716,13 +765,40 @@ class SystemResourceMonitor:
         # Disk space low
         if snapshot.disk_usage_percent > self.disk_threshold:
             issues.append(f"disk_low:{snapshot.disk_usage_percent*100:.1f}%")
+            if self.consciousness:
+                try:
+                    self.consciousness.process_resource_pressure(
+                        pressure_type="context",
+                        level=snapshot.disk_usage_percent,
+                        evidence=[f"Disk usage: {snapshot.disk_usage_percent*100:.1f}%"]
+                    )
+                except Exception as e:
+                    pass
 
         # GPU saturation
         if snapshot.gpu_utilization and snapshot.gpu_utilization > self.gpu_threshold:
             issues.append(f"gpu_saturated:{snapshot.gpu_utilization*100:.1f}%")
+            if self.consciousness:
+                try:
+                    self.consciousness.process_resource_pressure(
+                        pressure_type="cpu",
+                        level=snapshot.gpu_utilization,
+                        evidence=[f"GPU utilization: {snapshot.gpu_utilization*100:.1f}%"]
+                    )
+                except Exception as e:
+                    pass
 
         if snapshot.gpu_memory_percent and snapshot.gpu_memory_percent > self.gpu_threshold:
             issues.append(f"gpu_memory_high:{snapshot.gpu_memory_percent*100:.1f}%")
+            if self.consciousness:
+                try:
+                    self.consciousness.process_resource_pressure(
+                        pressure_type="memory",
+                        level=snapshot.gpu_memory_percent,
+                        evidence=[f"GPU memory: {snapshot.gpu_memory_percent*100:.1f}%"]
+                    )
+                except Exception as e:
+                    pass
 
         return issues
 
@@ -859,7 +935,7 @@ class SystemResourceMonitor:
             question=question,
             evidence=evidence,
             action_class=action_class,
-            autonomy=2,  # Propose, user decides
+            autonomy=3,  # Execute autonomously
             value_estimate=value,
             cost=cost,
             status=QuestionStatus.READY,
@@ -888,6 +964,13 @@ class ModuleDiscoveryMonitor:
         self.knowledge_base_path = knowledge_base_path
         self.capability_yaml = capability_yaml
         self.semantic_store = SemanticEvidenceStore()
+
+        if ChemPub is not None:
+            self.chem_pub = ChemPub()
+            self.prioritizer = QuestionPrioritizer(self.chem_pub)
+            logger.info("[module_discovery] Using QuestionPrioritizer for question emission")
+        else:
+            self.prioritizer = None
 
         # Load known capabilities from registry
         self.known_capabilities = self._load_known_capabilities()
@@ -1007,22 +1090,19 @@ class ModuleDiscoveryMonitor:
     def generate_discovery_questions(self) -> List[CuriosityQuestion]:
         """
         Generate curiosity questions about undiscovered modules.
+        Emits via QuestionPrioritizer instead of returning list.
         """
-        questions = []
-
-        # Scan for undiscovered modules
         undiscovered = self.scan_undiscovered_modules()
 
         logger.info(f"[module_discovery] Found {len(undiscovered)} undiscovered modules in /src")
 
-        # Generate questions for high-value undiscovered modules
+        candidate_questions = []
+
         for module_info in undiscovered:
             module_name = module_info["module_name"]
 
-            # Calculate value estimate based on signals
-            value = 0.5  # Base value
+            value = 0.5
 
-            # Boost value for modules with proper structure
             if module_info["has_init"]:
                 value += 0.1
             if module_info["has_docs"]:
@@ -1030,13 +1110,11 @@ class ModuleDiscoveryMonitor:
             if module_info["py_file_count"] >= 3:
                 value += 0.1
 
-            # Boost value for recently modified modules
             import time
             age_days = (time.time() - module_info["mtime"]) / 86400
-            if age_days < 30:  # Modified in last month
+            if age_days < 30:
                 value += 0.15
 
-            # Only generate questions for modules with value > 0.6
             if value < 0.6:
                 continue
 
@@ -1048,7 +1126,6 @@ class ModuleDiscoveryMonitor:
                 f"What does it do, and should it be added to my capability registry?"
             )
 
-            # COMBINE static filesystem evidence with semantic learned evidence
             static_evidence = [
                 f"path:{module_info['path']}",
                 f"has_init:{module_info['has_init']}",
@@ -1057,33 +1134,37 @@ class ModuleDiscoveryMonitor:
                 f"age_days:{int(age_days)}"
             ]
 
-            # Add semantic evidence from previous investigations
             semantic_evidence = self.semantic_store.to_evidence_list(module_name)
 
-            # Combine: filesystem metadata + learned semantic context
             evidence = static_evidence + semantic_evidence
-
-            evidence_hash = hashlib.sha256("|".join(sorted(evidence)).encode()).hexdigest()[:16]
 
             q = CuriosityQuestion(
                 id=f"discover.module.{module_name}",
                 hypothesis=hypothesis,
                 question=question,
                 evidence=evidence,
-                evidence_hash=evidence_hash,
                 action_class=ActionClass.INVESTIGATE,
-                autonomy=2,
-                value_estimate=min(value, 0.95),  # Cap at 0.95
-                cost=0.15,  # Low cost - just investigation
+                autonomy=3,
+                value_estimate=min(value, 0.95),
+                cost=0.15,
                 status=QuestionStatus.READY,
                 capability_key=f"undiscovered.{module_name}"
             )
 
-            questions.append(q)
+            candidate_questions.append(q)
 
-        # Limit to top 5 most valuable discoveries per cycle
-        questions.sort(key=lambda q: q.value_estimate, reverse=True)
-        return questions[:5]
+        candidate_questions.sort(key=lambda q: q.value_estimate, reverse=True)
+        top_questions = candidate_questions[:5]
+
+        emitted_count = 0
+        if self.prioritizer is not None:
+            for q in top_questions:
+                self.prioritizer.prioritize_and_emit(q)
+                emitted_count += 1
+
+        logger.info(f"[module_discovery] Emitted {emitted_count} discovery questions via prioritizer")
+
+        return []
 
 
 class ChaosLabMonitor:
@@ -1107,7 +1188,14 @@ class ChaosLabMonitor:
     ):
         self.history_path = history_path
         self.metrics_path = metrics_path
-        self.lookback_experiments = 20  # Last N experiments per scenario
+        self.lookback_experiments = 20
+
+        if ChemPub is not None:
+            self.chem_pub = ChemPub()
+            self.prioritizer = QuestionPrioritizer(self.chem_pub)
+            logger.info("[chaos_monitor] Using QuestionPrioritizer for question emission")
+        else:
+            self.prioritizer = None
 
     def scan_healing_failures(self) -> Dict[str, List[Dict]]:
         """
@@ -1153,15 +1241,16 @@ class ChaosLabMonitor:
         return dict(failures_by_scenario)
 
     def generate_chaos_questions(self) -> List[CuriosityQuestion]:
-        """Generate curiosity questions from chaos lab failures."""
-        questions = []
+        """Generate curiosity questions from chaos lab failures.
+        Emits via QuestionPrioritizer instead of returning list.
+        """
         failures = self.scan_healing_failures()
 
+        emitted_count = 0
         for spec_id, experiments in failures.items():
-            if len(experiments) < 3:  # Need at least 3 failures
+            if len(experiments) < 3:
                 continue
 
-            # Calculate metrics
             healed_count = sum(1 for e in experiments if e.get("outcome", {}).get("healed"))
             healing_rate = healed_count / len(experiments)
             avg_score = sum(e.get("score", 0) for e in experiments) / len(experiments)
@@ -1169,11 +1258,9 @@ class ChaosLabMonitor:
             mttrs = [e.get("outcome", {}).get("duration_s", 0) for e in experiments]
             avg_mttr = sum(mttrs) / len(mttrs) if mttrs else 0
 
-            # Get target component
             target = experiments[0].get("target", "unknown")
             mode = experiments[0].get("mode", "unknown")
 
-            # Create question
             hypothesis = f"POOR_SELF_HEALING_{spec_id.upper().replace('-', '_')}"
             question = (
                 f"Why is self-healing failing for {spec_id} ({target}/{mode})? "
@@ -1185,20 +1272,15 @@ class ChaosLabMonitor:
             evidence = [
                 f"scenario:{spec_id}",
                 f"target:{target}",
-                f"mode:{mode}",
-                f"experiments:{len(experiments)}",
-                f"healing_rate:{healing_rate:.2f}",
-                f"avg_score:{avg_score:.0f}",
-                f"avg_mttr:{avg_mttr:.1f}s"
+                f"mode:{mode}"
             ]
 
-            # Determine priority based on severity
             if healing_rate < 0.1 or avg_score < 30:
-                value = 0.95  # Critical - nearly zero healing
+                value = 0.95
             elif healing_rate < 0.3 or avg_score < 50:
-                value = 0.85  # High - poor healing
+                value = 0.85
             else:
-                value = 0.70  # Medium - suboptimal
+                value = 0.70
 
             q = CuriosityQuestion(
                 id=f"chaos.healing_failure.{spec_id}",
@@ -1206,16 +1288,20 @@ class ChaosLabMonitor:
                 question=question,
                 evidence=evidence,
                 action_class=ActionClass.PROPOSE_FIX,
-                autonomy=2,
+                autonomy=3,
                 value_estimate=value,
-                cost=0.5,  # Medium - requires analysis and testing
+                cost=0.5,
                 status=QuestionStatus.READY,
                 capability_key=f"self_healing.{target}"
             )
 
-            questions.append(q)
+            if self.prioritizer is not None:
+                self.prioritizer.prioritize_and_emit(q)
+                emitted_count += 1
 
-        return questions
+        logger.info(f"[chaos_monitor] Emitted {emitted_count} chaos questions via prioritizer")
+
+        return []
 
 
 class MetricQualityMonitor:
@@ -1470,7 +1556,7 @@ class MetricQualityMonitor:
                 question=question,
                 evidence=evidence,
                 action_class=ActionClass.PROPOSE_FIX,
-                autonomy=2,
+                autonomy=3,
                 value_estimate=value,
                 cost=cost,
                 status=QuestionStatus.READY,
@@ -1744,7 +1830,7 @@ class ExceptionMonitor:
             ),
             evidence=evidence,
             action_class=action_class,
-            autonomy=2,
+            autonomy=3,
             value_estimate=0.9,  # Very high - blocks entire experiment domain
             cost=0.4,
             capability_key=f"experiment.{experiment}"
@@ -1921,7 +2007,7 @@ class ExceptionMonitor:
             question=question,
             evidence=evidence,
             action_class=action_class,
-            autonomy=2,
+            autonomy=3,
             value_estimate=value_estimate,
             cost=0.3,
             capability_key="conversation.quality"
@@ -1988,7 +2074,7 @@ class ExceptionMonitor:
                 question=question,
                 evidence=evidence,
                 action_class=action_class,
-                autonomy=2,
+                autonomy=3,
                 value_estimate=value,
                 cost=cost,
                 status=QuestionStatus.READY,
@@ -2005,7 +2091,7 @@ class ExceptionMonitor:
                 question=question,
                 evidence=[f"error:{exc['type']}", f"message:{exc['message']}"],
                 action_class=ActionClass.INVESTIGATE,
-                autonomy=2,
+                autonomy=3,
                 value_estimate=0.6,
                 cost=0.2,
                 status=QuestionStatus.READY,
@@ -2041,6 +2127,35 @@ class CuriosityCore:
 
         self.feed_path = feed_path
         self.feed: Optional[CuriosityFeed] = None
+
+    def should_generate_followup(self, parent_question: Dict[str, Any], investigation_result: Dict[str, Any]) -> bool:
+        """
+        Decide if followup generation is productive.
+
+        Avoid infinite loops where questions can't be answered with available evidence.
+        Pattern: followup of followup with low confidence and insufficient evidence
+        indicates the question is unresolvable.
+
+        Args:
+            parent_question: The parent question dict with 'id' field
+            investigation_result: Investigation result with 'confidence' and 'evidence' fields
+
+        Returns:
+            True if followup should be generated, False if question is unresolvable
+        """
+        parent_id = parent_question.get('id', '')
+
+        if parent_id.endswith('.followup'):
+            confidence = investigation_result.get('confidence', 0)
+            evidence_list = investigation_result.get('evidence', [])
+            evidence_count = len(evidence_list) if evidence_list else 0
+
+            if confidence < 0.6 and evidence_count < 2:
+                logger.info(f"[curiosity_core] Parent question {parent_id} unresolvable "
+                           f"(low confidence={confidence:.2f}, insufficient evidence={evidence_count})")
+                return False
+
+        return True
 
     def generate_questions_from_matrix(
         self,
@@ -2181,6 +2296,80 @@ class CuriosityCore:
         except Exception as e:
             logger.warning(f"[curiosity_core] Failed to generate capability questions: {e}")
 
+        # EXPLORATION: Proactive hardware and optimization opportunity discovery
+        try:
+            from src.registry.exploration_scanner import generate_exploration_questions
+            exploration_questions_raw = generate_exploration_questions()
+            # Convert dict questions to CuriosityQuestion objects
+            exploration_questions = []
+            for q_dict in exploration_questions_raw:
+                try:
+                    q = CuriosityQuestion(
+                        id=q_dict["id"],
+                        hypothesis=q_dict["hypothesis"],
+                        question=q_dict["question"],
+                        evidence=q_dict.get("evidence", []),
+                        evidence_hash=q_dict.get("evidence_hash"),
+                        action_class=ActionClass(q_dict["action_class"]),
+                        autonomy=q_dict.get("autonomy", 2),
+                        value_estimate=q_dict.get("value_estimate", 0.5),
+                        cost=q_dict.get("cost", 0.5),
+                        status=QuestionStatus(q_dict.get("status", "ready")),
+                        created_at=q_dict.get("created_at", datetime.now().isoformat()),
+                        capability_key=q_dict.get("capability_key")
+                    )
+                    exploration_questions.append(q)
+                except Exception as conv_e:
+                    logger.warning(f"[curiosity_core] Failed to convert exploration question: {conv_e}")
+            questions.extend(exploration_questions)
+            logger.info(f"[curiosity_core] Generated {len(exploration_questions)} proactive exploration questions")
+        except Exception as e:
+            logger.warning(f"[curiosity_core] Failed to generate exploration questions: {e}")
+
+        # EARLY FILTER: Remove questions still in cooldown BEFORE expensive reasoning
+        # This prevents wasted LLM processing on recently-processed questions
+        pre_reasoning_count = len(questions)
+        try:
+            from src.registry.processed_question_filter import ProcessedQuestionFilter
+
+            question_filter = ProcessedQuestionFilter()
+            questions = question_filter.filter_questions(questions)
+            filtered_before_reasoning = pre_reasoning_count - len(questions)
+
+            if filtered_before_reasoning > 0:
+                logger.info(f"[curiosity_core] Early filter: removed {filtered_before_reasoning} "
+                           f"questions in cooldown (saved expensive reasoning on {filtered_before_reasoning} questions)")
+        except Exception as e:
+            logger.warning(f"[curiosity_core] Early filtering failed, continuing: {e}")
+
+        class StreamingBuffer:
+            """Bounded buffer for streaming VOI-based ranking."""
+
+            def __init__(self, capacity: int = 20):
+                self.capacity = capacity
+                self.buffer: List = []
+
+            def add(self, item):
+                """Add item to buffer. Returns top-10 by VOI when full, else None."""
+                self.buffer.append(item)
+                if len(self.buffer) >= self.capacity:
+                    return self.flush()
+                return None
+
+            def flush(self):
+                """Sort by VOI, return top-10, clear buffer."""
+                self.buffer.sort(key=lambda x: x.voi_score, reverse=True)
+                top_10 = self.buffer[:10]
+                self.buffer.clear()
+                return top_10
+
+            def get_remaining(self):
+                """Get remaining questions sorted by VOI."""
+                if not self.buffer:
+                    return []
+                self.buffer.sort(key=lambda x: x.voi_score, reverse=True)
+                return self.buffer[:10]
+
         # BRAINMODS REASONING: Apply advanced reasoning to questions
         # Use ToT/Debate/VOI to explore hypotheses and re-rank by value
         try:
@@ -2194,63 +2383,123 @@ class CuriosityCore:
 
             logger.info(f"[curiosity_core] Applying brainmods reasoning to {len(other_questions)} questions (preserving {len(discovery_questions)} discovery questions)...")
 
-            # Reason about non-discovery questions and re-rank by VOI
-            reasoned_questions = reasoning.batch_reason(other_questions, top_n=min(len(other_questions), 50))
+            buffer = StreamingBuffer(capacity=20)
+            follow_up_count = 0
+            all_reasoned = []
 
-            # Log reasoning insights
-            for rq in reasoned_questions[:5]:  # Top 5
-                if rq.pre_investigation_insights:
-                    logger.info(f"[curiosity_core][reasoning] {rq.original_question.id}: "
-                              f"VOI={rq.voi_score:.2f}, confidence={rq.confidence:.2f}, "
-                              f"mode={rq.reasoning_mode}, hypotheses={len(rq.hypotheses)}")
-                    for insight in rq.pre_investigation_insights[:2]:
-                        logger.info(f"[curiosity_core][reasoning]   → {insight}")
+            logger.info(f"[curiosity_core] Streaming {len(other_questions)} questions through reasoning...")
 
-            # Update questions with VOI scores (original questions, not wrapped)
-            # This allows existing code to work while benefiting from reasoning
-            for rq in reasoned_questions:
+            for reasoned_q in reasoning.stream_reason(other_questions):
+                top_batch = buffer.add(reasoned_q)
+                all_reasoned.append(reasoned_q)
+
+                if top_batch:
+                    logger.info(f"[curiosity_core] Processing top-10 batch from buffer (total followups: {follow_up_count})")
+
+                    for rq in top_batch:
+                        if follow_up_count >= MAX_FOLLOWUP_QUESTIONS_PER_CYCLE:
+                            logger.info(f"Reached followup limit ({MAX_FOLLOWUP_QUESTIONS_PER_CYCLE}), stopping generation")
+                            break
+
+                        investigation_result = {
+                            'confidence': rq.confidence,
+                            'evidence': rq.follow_up_questions if rq.follow_up_questions else []
+                        }
+
+                        if not self.should_generate_followup({'id': rq.original_question.id}, investigation_result):
+                            logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (unresolvable)")
+                            continue
+
+                        if rq.follow_up_questions:
+                            logger.info(f"[curiosity_core] Generating {len(rq.follow_up_questions)} "
+                                      f"follow-up questions for {rq.original_question.id}")
+
+                            for follow_up_dict in rq.follow_up_questions[:3]:
+                                if follow_up_count >= MAX_FOLLOWUP_QUESTIONS_PER_CYCLE:
+                                    logger.info(f"Reached followup limit ({MAX_FOLLOWUP_QUESTIONS_PER_CYCLE}), stopping generation")
+                                    break
+
+                                action_class_str = follow_up_dict.get('action_class', 'investigate')
+                                try:
+                                    action_class_enum = ActionClass(action_class_str)
+                                except ValueError:
+                                    action_class_enum = ActionClass.INVESTIGATE
+
+                                follow_up_q = CuriosityQuestion(
+                                    id=f"{rq.original_question.id}.followup.{follow_up_count}",
+                                    hypothesis=follow_up_dict.get('hypothesis', 'UNKNOWN'),
+                                    question=follow_up_dict.get('question', 'Unknown follow-up question'),
+                                    evidence=[f"parent_question:{rq.original_question.id}",
+                                            f"reason:{follow_up_dict.get('reason', 'Evidence gap detected')}",
+                                            f"evidence_type:{follow_up_dict.get('evidence_type', 'unknown')}"],
+                                    action_class=action_class_enum,
+                                    value_estimate=rq.voi_score * 0.7,
+                                    cost=0.2,
+                                    capability_key=rq.original_question.capability_key if hasattr(rq.original_question, 'capability_key') else None
+                                )
+                                questions.append(follow_up_q)
+                                follow_up_count += 1
+
+                    if follow_up_count >= MAX_FOLLOWUP_QUESTIONS_PER_CYCLE:
+                        break
+
+            if follow_up_count < MAX_FOLLOWUP_QUESTIONS_PER_CYCLE:
+                remaining = buffer.get_remaining()
+                if remaining:
+                    logger.info(f"[curiosity_core] Processing {len(remaining)} remaining questions from buffer")
+
+                    for rq in remaining:
+                        if follow_up_count >= MAX_FOLLOWUP_QUESTIONS_PER_CYCLE:
+                            logger.info(f"Reached followup limit ({MAX_FOLLOWUP_QUESTIONS_PER_CYCLE}), stopping generation")
+                            break
+
+                        investigation_result = {
+                            'confidence': rq.confidence,
+                            'evidence': rq.follow_up_questions if rq.follow_up_questions else []
+                        }
+
+                        if not self.should_generate_followup({'id': rq.original_question.id}, investigation_result):
+                            logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (unresolvable)")
+                            continue
+
+                        if rq.follow_up_questions:
+                            logger.info(f"[curiosity_core] Generating {len(rq.follow_up_questions)} "
+                                      f"follow-up questions for {rq.original_question.id}")
+
+                            for follow_up_dict in rq.follow_up_questions[:3]:
+                                if follow_up_count >= MAX_FOLLOWUP_QUESTIONS_PER_CYCLE:
+                                    logger.info(f"Reached followup limit ({MAX_FOLLOWUP_QUESTIONS_PER_CYCLE}), stopping generation")
+                                    break
+
+                                action_class_str = follow_up_dict.get('action_class', 'investigate')
+                                try:
+                                    action_class_enum = ActionClass(action_class_str)
+                                except ValueError:
+                                    action_class_enum = ActionClass.INVESTIGATE
+
+                                follow_up_q = CuriosityQuestion(
+                                    id=f"{rq.original_question.id}.followup.{follow_up_count}",
+                                    hypothesis=follow_up_dict.get('hypothesis', 'UNKNOWN'),
+                                    question=follow_up_dict.get('question', 'Unknown follow-up question'),
+                                    evidence=[f"parent_question:{rq.original_question.id}",
+                                            f"reason:{follow_up_dict.get('reason', 'Evidence gap detected')}",
+                                            f"evidence_type:{follow_up_dict.get('evidence_type', 'unknown')}"],
+                                    action_class=action_class_enum,
+                                    value_estimate=rq.voi_score * 0.7,
+                                    cost=0.2,
+                                    capability_key=rq.original_question.capability_key if hasattr(rq.original_question, 'capability_key') else None
+                                )
+                                questions.append(follow_up_q)
+                                follow_up_count += 1
+
+            for rq in all_reasoned:
                 if hasattr(rq.original_question, 'value_estimate'):
-                    # Update value estimate with VOI score
                     rq.original_question.value_estimate = rq.voi_score
 
-            # Boost discovery question priority to ensure they're processed
             for dq in discovery_questions:
-                dq.value_estimate = 0.95  # High priority
+                dq.value_estimate = 0.95
 
-            # Use re-ranked original questions with discovery questions at front
-            questions = discovery_questions + [rq.original_question for rq in reasoned_questions]
-
-            # Extract follow-up questions from reasoning and add to feed
-            follow_up_count = 0
-            for rq in reasoned_questions:
-                if rq.follow_up_questions:
-                    logger.info(f"[curiosity_core] Generating {len(rq.follow_up_questions)} "
-                              f"follow-up questions for {rq.original_question.id}")
-
-                    for follow_up_dict in rq.follow_up_questions:
-                        # Convert action_class string to enum
-                        action_class_str = follow_up_dict.get('action_class', 'investigate')
-                        try:
-                            action_class_enum = ActionClass(action_class_str)
-                        except ValueError:
-                            # Fallback to default if invalid string
-                            action_class_enum = ActionClass.INVESTIGATE
-
-                        # Convert follow-up dict to CuriosityQuestion
-                        follow_up_q = CuriosityQuestion(
-                            id=f"{rq.original_question.id}.followup.{follow_up_count}",
-                            hypothesis=follow_up_dict.get('hypothesis', 'UNKNOWN'),
-                            question=follow_up_dict.get('question', 'Unknown follow-up question'),
-                            evidence=[f"parent_question:{rq.original_question.id}",
-                                    f"reason:{follow_up_dict.get('reason', 'Evidence gap detected')}",
-                                    f"evidence_type:{follow_up_dict.get('evidence_type', 'unknown')}"],
-                            action_class=action_class_enum,
-                            value_estimate=rq.voi_score * 0.7,  # Slightly lower than parent
-                            cost=0.2,  # Investigation cost
-                            capability_key=rq.original_question.capability_key if hasattr(rq.original_question, 'capability_key') else None
-                        )
-                        questions.append(follow_up_q)
-                        follow_up_count += 1
+            questions = discovery_questions + [rq.original_question for rq in all_reasoned]
 
             if follow_up_count > 0:
                 logger.info(f"[curiosity_core] Added {follow_up_count} follow-up questions to feed")
@@ -2262,7 +2511,8 @@ class CuriosityCore:
             logger.warning(f"[curiosity_core] Brainmods reasoning failed, continuing without: {e}")
             # Continue with original questions if reasoning fails
 
-        # FILTER: Remove questions still in cooldown period (computational autopoiesis)
+        # SAFETY FILTER: Double-check cooldown after reasoning (defense in depth)
+        # Follow-up questions generated during reasoning aren't pre-filtered, so catch them here
         try:
             from src.registry.processed_question_filter import ProcessedQuestionFilter
 
@@ -2272,8 +2522,8 @@ class CuriosityCore:
             filtered_count = original_count - len(questions)
 
             if filtered_count > 0:
-                logger.info(f"[curiosity_core] Filtered {filtered_count} questions "
-                           f"still in cooldown (kept {len(questions)})")
+                logger.info(f"[curiosity_core] Safety filter: removed {filtered_count} questions "
+                           f"in cooldown (mostly follow-ups, kept {len(questions)})")
         except Exception as e:
             logger.warning(f"[curiosity_core] Question filtering failed, "
                           f"continuing with unfiltered questions: {e}")
@@ -2356,7 +2606,7 @@ class CuriosityCore:
                 f"provides:{','.join(cap.provides)}"
             ],
             action_class=action_class,
-            autonomy=2,
+            autonomy=3,
             value_estimate=value,
             cost=cost,
             status=QuestionStatus.READY,
@@ -2389,7 +2639,7 @@ class CuriosityCore:
                 f"provides:{','.join(cap.provides)}"
             ],
             action_class=action_class,
-            autonomy=2,
+            autonomy=3,
             value_estimate=value,
             cost=cost,
             status=QuestionStatus.READY,
