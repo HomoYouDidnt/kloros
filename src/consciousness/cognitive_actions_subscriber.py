@@ -34,16 +34,20 @@ class CognitiveActionHandler:
 
         self.memory_store = None
         self.conversation_logger = None
-        self._initialize_memory_systems()
+        self._memory_systems_initialized = False
 
     def _initialize_memory_systems(self) -> None:
-        """Initialize episodic memory and conversation logging systems."""
+        """Initialize episodic memory and conversation logging systems (lazy-loaded)."""
+        if self._memory_systems_initialized:
+            return
+
+        self._memory_systems_initialized = True
         try:
             from kloros_memory.storage import MemoryStore
             from kloros_memory.models import EpisodeSummary
 
             self.memory_store = MemoryStore()
-            print("[cognitive_actions] Initialized MemoryStore for episodic memory")
+            print("[cognitive_actions] Initialized MemoryStore for episodic memory (lazy-loaded)")
         except ImportError:
             try:
                 from src.kloros_memory.storage import MemoryStore
@@ -435,6 +439,10 @@ class CognitiveActionHandler:
         """
         self._log_operation_start('summarize_context', {'evidence': evidence})
 
+        # Lazy-load memory systems only when actually needed
+        if not self._memory_systems_initialized:
+            self._initialize_memory_systems()
+
         try:
             recent = self._get_recent_conversation_turns(limit=10)
             older = self._get_older_conversation_turns(offset=10, limit=50)
@@ -511,6 +519,10 @@ class CognitiveActionHandler:
             True if action succeeded with verification
         """
         self._log_operation_start('archive_completed_tasks', {'evidence': evidence})
+
+        # Lazy-load memory systems only when actually needed
+        if not self._memory_systems_initialized:
+            self._initialize_memory_systems()
 
         try:
             completed = self._get_completed_tasks(days=7)
@@ -718,6 +730,10 @@ class CognitiveActionHandler:
             True if analysis succeeded and verified
         """
         self._log_operation_start('analyze_failure_patterns', {'root_causes': root_causes, 'actions': actions})
+
+        # Lazy-load memory systems only when actually needed
+        if not self._memory_systems_initialized:
+            self._initialize_memory_systems()
 
         try:
             recent_failures = self._get_recent_failures(days=7)

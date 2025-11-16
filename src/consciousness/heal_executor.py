@@ -45,7 +45,7 @@ class HealExecutor:
         self.cooldown_seconds = 60
 
         self.memory_store = None
-        self._initialize_memory_store()
+        self._memory_store_initialized = False
 
         if self.dry_run:
             print("[heal_executor] 🔬 DRY-RUN MODE ENABLED - No destructive operations will be performed")
@@ -135,16 +135,20 @@ class HealExecutor:
             traceback.print_exc()
 
     def _initialize_memory_store(self) -> None:
-        """Initialize MemoryStore for querying error patterns."""
+        """Initialize MemoryStore for querying error patterns (lazy-loaded)."""
+        if self._memory_store_initialized:
+            return
+
+        self._memory_store_initialized = True
         try:
             from kloros_memory.storage import MemoryStore
             self.memory_store = MemoryStore()
-            print("[heal_executor] Initialized MemoryStore")
+            print("[heal_executor] Initialized MemoryStore (lazy-loaded)")
         except ImportError:
             try:
                 from src.kloros_memory.storage import MemoryStore
                 self.memory_store = MemoryStore()
-                print("[heal_executor] Initialized MemoryStore")
+                print("[heal_executor] Initialized MemoryStore (lazy-loaded)")
             except Exception as e:
                 print(f"[heal_executor] Warning: Could not initialize MemoryStore: {e}")
                 self.memory_store = None
@@ -196,6 +200,10 @@ class HealExecutor:
         """
         print("  [playbook] Analyzing error patterns...")
         print(f"    Context: {context}")
+
+        # Lazy-load MemoryStore only when actually needed
+        if not self._memory_store_initialized:
+            self._initialize_memory_store()
 
         if not self.memory_store:
             print("    Error: MemoryStore not available")
