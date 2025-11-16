@@ -539,6 +539,52 @@ class IntegratedConsciousness:
 
         return report
 
+    def process_resource_pressure(self,
+                                  pressure_type: str,
+                                  level: float,
+                                  evidence: Optional[List[str]] = None) -> Optional[AffectiveReport]:
+        """
+        Process resource pressure event and trigger affective introspection.
+
+        Handles system health events including memory pressure, CPU strain, context
+        overflow, and error patterns. Resource pressure triggers threat awareness
+        (FEAR) and may trigger crisis state (PANIC) for critical pressure, or
+        problem-solving activation (SEEKING) for moderate pressure.
+
+        Args:
+            pressure_type: Type of pressure ("memory", "cpu", "context", "errors")
+            level: Pressure level 0.0-1.0 (1.0 = critical)
+            evidence: Optional list of evidence strings describing the pressure
+
+        Returns:
+            AffectiveReport if Phase 2 enabled, None otherwise
+        """
+        if not self.phase2_enabled or not self.monitor:
+            return None
+
+        self.monitor.record_task_outcome(success=False, retries=0)
+
+        if self.affective_core:
+            self.affective_core.emotions.FEAR = min(
+                1.0,
+                self.affective_core.emotions.FEAR + (0.10 * level)
+            )
+
+            if level > 0.9:
+                self.affective_core.emotions.PANIC = min(
+                    1.0,
+                    self.affective_core.emotions.PANIC + 0.15
+                )
+            elif level > 0.7:
+                self.affective_core.emotions.SEEKING = min(
+                    1.0,
+                    self.affective_core.emotions.SEEKING + 0.08
+                )
+
+        report = self.process_and_report()
+
+        return report
+
     def reset(self):
         """Reset all systems to baseline."""
         if self.phase1_enabled and self.affective_core:
