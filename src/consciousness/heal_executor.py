@@ -30,6 +30,9 @@ class HealExecutor:
 
     def __init__(self):
         """Initialize healing executor with playbook registry."""
+        import os
+        self.dry_run = os.environ.get('KLR_HEAL_DRY_RUN', '0') == '1'
+
         self.playbooks: Dict[str, Callable] = {
             'analyze_error_pattern': self.analyze_errors,
             'restart_stuck_service': self.restart_service,
@@ -43,6 +46,9 @@ class HealExecutor:
 
         self.memory_store = None
         self._initialize_memory_store()
+
+        if self.dry_run:
+            print("[heal_executor] 🔬 DRY-RUN MODE ENABLED - No destructive operations will be performed")
 
     def can_execute(self, strategy: str) -> bool:
         """
@@ -289,15 +295,22 @@ class HealExecutor:
                 for pycache_dir in Path('/home/kloros/src').rglob('__pycache__'):
                     if pycache_dir.is_dir():
                         try:
-                            print(f"    Removing: {pycache_dir}")
-                            shutil.rmtree(pycache_dir)
-                            cleared_count += 1
+                            if self.dry_run:
+                                print(f"    [DRY-RUN] Would remove: {pycache_dir}")
+                                cleared_count += 1
+                            else:
+                                print(f"    Removing: {pycache_dir}")
+                                shutil.rmtree(pycache_dir)
+                                cleared_count += 1
                         except PermissionError:
                             print(f"    Skipping (permission denied): {pycache_dir}")
                         except Exception as e:
                             print(f"    Skipping (error): {pycache_dir} - {e}")
 
-                print(f"    Cleared {cleared_count} __pycache__ directories")
+                if self.dry_run:
+                    print(f"    [DRY-RUN] Would clear {cleared_count} __pycache__ directories")
+                else:
+                    print(f"    Cleared {cleared_count} __pycache__ directories")
                 return True
             except Exception as e:
                 print(f"    Warning: {e}")
@@ -312,15 +325,22 @@ class HealExecutor:
                 for tmp_file in tmp_path.glob('kloros_*'):
                     try:
                         if tmp_file.stat().st_mtime < cutoff_time:
-                            print(f"    Removing old file: {tmp_file.name}")
-                            tmp_file.unlink()
-                            cleared_count += 1
+                            if self.dry_run:
+                                print(f"    [DRY-RUN] Would remove old file: {tmp_file.name}")
+                                cleared_count += 1
+                            else:
+                                print(f"    Removing old file: {tmp_file.name}")
+                                tmp_file.unlink()
+                                cleared_count += 1
                     except PermissionError:
                         print(f"    Skipping (permission denied): {tmp_file.name}")
                     except Exception as e:
                         print(f"    Skipping (error): {tmp_file.name} - {e}")
 
-                print(f"    Cleared {cleared_count} old temporary files")
+                if self.dry_run:
+                    print(f"    [DRY-RUN] Would clear {cleared_count} old temporary files")
+                else:
+                    print(f"    Cleared {cleared_count} old temporary files")
                 return True
             except Exception as e:
                 print(f"    Warning: {e}")

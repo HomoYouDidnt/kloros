@@ -421,6 +421,86 @@ class TestPlaybookRegistry:
         assert expected.issubset(set(executor.playbooks.keys()))
 
 
+class TestDryRunMode:
+    """Test dry-run mode safety feature."""
+
+    def test_dry_run_mode_enabled_via_env_var(self):
+        """Test dry-run mode can be enabled via KLR_HEAL_DRY_RUN env var."""
+        import os
+        os.environ['KLR_HEAL_DRY_RUN'] = '1'
+
+        try:
+            executor = HealExecutor()
+            assert executor.dry_run is True
+        finally:
+            del os.environ['KLR_HEAL_DRY_RUN']
+
+    def test_dry_run_mode_disabled_by_default(self):
+        """Test dry-run mode is disabled by default."""
+        import os
+        if 'KLR_HEAL_DRY_RUN' in os.environ:
+            del os.environ['KLR_HEAL_DRY_RUN']
+
+        executor = HealExecutor()
+        assert executor.dry_run is False
+
+    def test_dry_run_clear_caches_does_not_delete(self):
+        """Test clear_caches in dry-run mode does not delete files."""
+        import os
+        os.environ['KLR_HEAL_DRY_RUN'] = '1'
+
+        try:
+            executor = HealExecutor()
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                test_file = Path(tmpdir) / '__pycache__'
+                test_file.mkdir()
+                assert test_file.exists()
+
+                with patch('consciousness.heal_executor.Path') as mock_path_class:
+                    mock_path_class.return_value.rglob.return_value = [test_file]
+
+                    result = executor.clear_caches({'scope': 'python_cache'})
+
+                    assert result is True
+                    assert test_file.exists()  # File should NOT be deleted in dry-run
+        finally:
+            del os.environ['KLR_HEAL_DRY_RUN']
+
+    def test_dry_run_analyze_errors_queries_but_no_action(self):
+        """Test analyze_errors in dry-run mode queries but takes no action."""
+        import os
+        os.environ['KLR_HEAL_DRY_RUN'] = '1'
+
+        try:
+            executor = HealExecutor()
+
+            error_events = [
+                {'id': 1, 'content': 'TestError', 'timestamp': time.time()},
+            ]
+
+            with patch.object(executor, '_query_error_events', return_value=error_events):
+                result = executor.analyze_errors({'days': 7})
+
+                assert result is True
+        finally:
+            del os.environ['KLR_HEAL_DRY_RUN']
+
+    def test_dry_run_logs_clearly_indicate_mode(self, capsys):
+        """Test dry-run mode logs clearly indicate simulated execution."""
+        import os
+        os.environ['KLR_HEAL_DRY_RUN'] = '1'
+
+        try:
+            executor = HealExecutor()
+            executor.clear_caches({'scope': 'python_cache'})
+
+            captured = capsys.readouterr()
+            assert 'DRY-RUN' in captured.out or 'dry-run' in captured.out or 'Would' in captured.out
+        finally:
+            del os.environ['KLR_HEAL_DRY_RUN']
+
+
 class TestRealPlaybookImplementations:
     """Test real playbook implementations with actual logic."""
 
