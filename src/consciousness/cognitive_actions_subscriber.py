@@ -13,7 +13,7 @@ import time
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def check_emergency_brake() -> bool:
@@ -38,24 +38,47 @@ class CognitiveActionHandler:
     def _initialize_memory_systems(self) -> None:
         """Initialize episodic memory and conversation logging systems."""
         try:
-            from src.kloros_memory.storage import MemoryStore
-            from src.kloros_memory.models import EpisodeSummary
+            from kloros_memory.storage import MemoryStore
+            from kloros_memory.models import EpisodeSummary
 
             self.memory_store = MemoryStore()
             print("[cognitive_actions] Initialized MemoryStore for episodic memory")
+        except ImportError:
+            try:
+                from src.kloros_memory.storage import MemoryStore
+                from src.kloros_memory.models import EpisodeSummary
+
+                self.memory_store = MemoryStore()
+                print("[cognitive_actions] Initialized MemoryStore for episodic memory")
+            except Exception as e:
+                print(f"[cognitive_actions] Warning: Could not initialize MemoryStore: {e}")
+                self.memory_store = None
         except Exception as e:
             print(f"[cognitive_actions] Warning: Could not initialize MemoryStore: {e}")
             self.memory_store = None
 
         try:
-            from src.memory.chroma_client import get_client, init_collections, get_embedder
-            from src.memory.conversation_logger import ConversationLogger
+            from memory.chroma_client import get_client, init_collections, get_embedder
+            from memory.conversation_logger import ConversationLogger
 
             client = get_client()
             embedder = get_embedder()
             collections = init_collections(client, embedder)
             self.conversation_logger = ConversationLogger(client, collections)
             print("[cognitive_actions] Initialized ConversationLogger for ChromaDB")
+        except ImportError:
+            try:
+                from src.memory.chroma_client import get_client, init_collections, get_embedder
+                from src.memory.conversation_logger import ConversationLogger
+
+                client = get_client()
+                embedder = get_embedder()
+                collections = init_collections(client, embedder)
+                self.conversation_logger = ConversationLogger(client, collections)
+                print("[cognitive_actions] Initialized ConversationLogger for ChromaDB")
+            except Exception as e:
+                print(f"[cognitive_actions] Warning: Could not initialize ConversationLogger: {e}")
+                self.conversation_logger = None
         except Exception as e:
             print(f"[cognitive_actions] Warning: Could not initialize ConversationLogger: {e}")
             self.conversation_logger = None
@@ -199,8 +222,10 @@ class CognitiveActionHandler:
             return False
 
         try:
-            from src.kloros_memory.models import EpisodeSummary, EventType
-            from src.kloros_memory.models import Event
+            try:
+                from kloros_memory.models import EpisodeSummary, EventType, Event
+            except ImportError:
+                from src.kloros_memory.models import EpisodeSummary, EventType, Event
             import json
 
             summary_text = summary_record.get('summary', 'Context archived')
@@ -294,7 +319,11 @@ class CognitiveActionHandler:
 
     def archive_completed_tasks(self, evidence: List[str]) -> bool:
         """
-        Archive completed tasks to free up working memory.
+        Archive completed tasks to episodic memory.
+
+        Triggered by AFFECT_MEMORY_PRESSURE signals when working memory is full.
+        Identifies completed tasks from consciousness history and moves them to
+        episodic memory for long-term storage while freeing working memory.
 
         Args:
             evidence: Evidence about memory pressure
@@ -305,13 +334,170 @@ class CognitiveActionHandler:
         print("\n[cognitive_actions] 📦 Executing: Archive Completed Tasks")
         print(f"  Evidence: {evidence}")
 
-        # TODO: Implement actual task archiving
-        print("  → Would identify completed tasks from todo history")
-        print("  → Would move them to long-term task archive")
-        print("  → Would compress their context for future retrieval")
+        try:
+            completed = self._get_completed_tasks(days=7)
 
-        self.log_action('archive_tasks', 'Logged intent (implementation pending)')
-        return True
+            if not completed:
+                print("  No completed tasks to archive")
+                self.log_action('archive_tasks', 'No completed tasks found')
+                return True
+
+            archived_count = 0
+            for task in completed:
+                if self._archive_single_task(task, evidence):
+                    archived_count += 1
+
+            if archived_count > 0:
+                print(f"  ✅ Archived {archived_count}/{len(completed)} completed tasks")
+                self.log_action('archive_tasks', f'Archived {archived_count} completed tasks')
+                return True
+            else:
+                print(f"  ⚠️ Created summaries for {len(completed)} tasks but storage had issues")
+                self.log_action('archive_tasks', f'Summarized {len(completed)} tasks, storage incomplete')
+                return False
+
+        except Exception as e:
+            print(f"  ❌ Failed to archive tasks: {e}")
+            import traceback
+            traceback.print_exc()
+            self.log_action('archive_tasks', f'Failed: {e}')
+            return False
+
+    def _get_completed_tasks(self, days: int = 7) -> List[Dict[str, Any]]:
+        """
+        Retrieve completed tasks from consciousness history.
+
+        Since KLoROS tracks tasks through process_task_outcome(), this method
+        reconstructs completed task records from episodic memory events.
+
+        Args:
+            days: Number of days back to retrieve completed tasks
+
+        Returns:
+            List of completed task dictionaries with metadata
+        """
+        try:
+            if not self.memory_store:
+                return []
+
+            cutoff_time = time.time() - (days * 24 * 3600)
+
+            conn = self.memory_store._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, timestamp, content, metadata
+                FROM events
+                WHERE event_type IN ('TOOL_EXECUTION', 'REASONING_TRACE')
+                AND timestamp >= ?
+                AND metadata LIKE '%"success": true%'
+                ORDER BY timestamp DESC
+                LIMIT 50
+            """, (cutoff_time,))
+
+            completed_tasks = []
+            for row in cursor.fetchall():
+                event_id, timestamp, content, metadata_json = row
+
+                try:
+                    metadata = json.loads(metadata_json) if metadata_json else {}
+                except:
+                    metadata = {}
+
+                if metadata.get('success') or 'success": true' in (metadata_json or ''):
+                    completed_tasks.append({
+                        'id': event_id,
+                        'timestamp': timestamp,
+                        'content': content,
+                        'metadata': metadata,
+                        'completed_at': datetime.fromtimestamp(timestamp).isoformat()
+                    })
+
+            return completed_tasks
+
+        except Exception as e:
+            print(f"  Error retrieving completed tasks: {e}")
+            return []
+
+    def _archive_single_task(self, task: Dict[str, Any], evidence: List[str]) -> bool:
+        """
+        Archive a single completed task to episodic memory.
+
+        Creates a summary of the task and stores it as a memory housekeeping event.
+
+        Args:
+            task: Task dictionary from _get_completed_tasks
+            evidence: Evidence context from memory pressure signal
+
+        Returns:
+            True if archival succeeded
+        """
+        try:
+            if not self.memory_store:
+                return False
+
+            summary_text = self._summarize_task(task)
+
+            metadata = {
+                'task_id': task.get('id'),
+                'completed_at': task.get('completed_at'),
+                'original_timestamp': task.get('timestamp'),
+                'evidence': evidence,
+                'reason': 'memory_pressure'
+            }
+
+            try:
+                from kloros_memory.models import Event, EventType
+            except ImportError:
+                from src.kloros_memory.models import Event, EventType
+
+            event = Event(
+                timestamp=time.time(),
+                event_type=EventType.MEMORY_HOUSEKEEPING,
+                content=f"Task archived: {summary_text}",
+                metadata=metadata,
+                conversation_id=None
+            )
+
+            event_id = self.memory_store.store_event(event)
+            return event_id is not None
+
+        except Exception as e:
+            print(f"  Failed to archive task {task.get('id')}: {e}")
+            return False
+
+    def _summarize_task(self, task: Dict[str, Any]) -> str:
+        """
+        Create a summary text for an archived task.
+
+        Extracts key information from task metadata for efficient retrieval.
+
+        Args:
+            task: Task dictionary from _get_completed_tasks
+
+        Returns:
+            Summary text for the task
+        """
+        task_id = task.get('id', 'unknown')
+        content = task.get('content', '')
+        metadata = task.get('metadata', {})
+
+        metadata_desc = metadata.get('description', metadata.get('tool_name', ''))
+
+        summary_parts = [f"[{task_id}]"]
+
+        if metadata_desc:
+            summary_parts.append(metadata_desc)
+        elif content:
+            if len(content) > 100:
+                summary_parts.append(content[:97] + "...")
+            else:
+                summary_parts.append(content)
+
+        if metadata.get('duration'):
+            summary_parts.append(f"({metadata['duration']:.2f}s)")
+
+        return " ".join(summary_parts)
 
     def analyze_failure_patterns(self, root_causes: List[str], actions: List[str]) -> bool:
         """
