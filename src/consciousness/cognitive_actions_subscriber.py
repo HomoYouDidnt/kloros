@@ -11,6 +11,7 @@ Maps affective states → cognitive actions (memory, analysis, integration).
 import json
 import time
 import sys
+import traceback
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
@@ -82,6 +83,167 @@ class CognitiveActionHandler:
         except Exception as e:
             print(f"[cognitive_actions] Warning: Could not initialize ConversationLogger: {e}")
             self.conversation_logger = None
+
+    def _verify_episodic_storage(self, event_id: Optional[int], operation: str) -> bool:
+        """
+        Verify event was successfully stored to episodic memory.
+
+        Checks that the event exists in the database after storage attempt.
+
+        Args:
+            event_id: Event ID returned from store_event()
+            operation: Operation name for logging
+
+        Returns:
+            True if event verified in database, False otherwise
+        """
+        if event_id is None:
+            print(f"  Warning {operation}: Storage returned None event_id")
+            return False
+
+        if not self.memory_store:
+            print(f"  Warning {operation}: Memory store unavailable")
+            return False
+
+        try:
+            conn = self.memory_store._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM events WHERE id = ?", (event_id,))
+            result = cursor.fetchone()
+
+            if result:
+                print(f"  Verified {operation}: Event {event_id} exists in episodic memory")
+                return True
+            else:
+                print(f"  Warning {operation}: Event {event_id} not found in database after storage")
+                return False
+
+        except Exception as e:
+            print(f"  Warning {operation}: Verification failed: {e}")
+            return False
+
+    def _check_state_consistency(self) -> Dict[str, Any]:
+        """
+        Check for state inconsistencies in episodic memory.
+
+        Performs database integrity checks including orphaned metadata,
+        missing timestamps, and valid event types.
+
+        Returns:
+            Dict with consistency check results including passed/failed checks
+        """
+        results = {
+            'timestamp': datetime.now().isoformat(),
+            'checks_passed': [],
+            'checks_failed': [],
+            'warnings': []
+        }
+
+        if not self.memory_store:
+            results['warnings'].append("Memory store unavailable")
+            return results
+
+        try:
+            conn = self.memory_store._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT COUNT(*) FROM events")
+            total_events = cursor.fetchone()[0]
+            results['checks_passed'].append(f"Database accessible ({total_events} total events)")
+
+            cursor.execute("""
+                SELECT COUNT(*) FROM events
+                WHERE metadata IS NOT NULL
+                AND metadata NOT LIKE '{%'
+            """)
+            orphaned = cursor.fetchone()[0]
+            if orphaned == 0:
+                results['checks_passed'].append("No orphaned metadata")
+            else:
+                results['checks_failed'].append(f"{orphaned} events with invalid metadata")
+
+            cursor.execute("""
+                SELECT COUNT(*) FROM events
+                WHERE timestamp IS NULL OR timestamp = 0
+            """)
+            missing_ts = cursor.fetchone()[0]
+            if missing_ts == 0:
+                results['checks_passed'].append("All events have timestamps")
+            else:
+                results['checks_failed'].append(f"{missing_ts} events missing timestamps")
+
+            try:
+                from kloros_memory.models import EventType
+            except ImportError:
+                try:
+                    from src.kloros_memory.models import EventType
+                except ImportError:
+                    results['warnings'].append("Could not validate event types (EventType unavailable)")
+                    return results
+
+            cursor.execute("""
+                SELECT DISTINCT event_type FROM events
+            """)
+            event_types = [row[0] for row in cursor.fetchall()]
+
+            valid_types = [e.value for e in EventType]
+            invalid = [et for et in event_types if et not in valid_types]
+
+            if not invalid:
+                results['checks_passed'].append("All event types valid")
+            else:
+                results['checks_failed'].append(f"Invalid event types found: {invalid}")
+
+            return results
+
+        except Exception as e:
+            results['warnings'].append(f"Consistency check failed: {e}")
+            return results
+
+    def _log_operation_start(self, operation: str, context: Dict[str, Any]) -> None:
+        """
+        Log operation start for debugging and auditing.
+
+        Records operation start in both console and log file.
+
+        Args:
+            operation: Operation name
+            context: Context dictionary (evidence, parameters, etc)
+        """
+        timestamp = datetime.now().isoformat()
+        log_entry = f"[{timestamp}] START {operation}: {json.dumps(context)}"
+
+        print(f"  -> Starting: {operation}")
+
+        try:
+            with open(self.action_log_path, 'a') as f:
+                f.write(log_entry + "\n")
+        except Exception as e:
+            print(f"  Warning: Could not write to action log: {e}")
+
+    def _log_operation_end(self, operation: str, success: bool, details: str = "") -> None:
+        """
+        Log operation completion with status and details.
+
+        Records operation outcome in both console and log file.
+
+        Args:
+            operation: Operation name
+            success: Whether operation succeeded
+            details: Additional details about the operation
+        """
+        timestamp = datetime.now().isoformat()
+        status = "SUCCESS" if success else "FAILED"
+        log_entry = f"[{timestamp}] {status} {operation}: {details}"
+
+        symbol = "✓" if success else "✗"
+        print(f"  {symbol} {operation}: {status}")
+
+        try:
+            with open(self.action_log_path, 'a') as f:
+                f.write(log_entry + "\n")
+        except Exception as e:
+            print(f"  Warning: Could not write to action log: {e}")
 
     def can_execute_action(self, action_type: str) -> bool:
         """
@@ -207,7 +369,7 @@ class CognitiveActionHandler:
             print(f"  Error creating summary: {e}")
             return f"Error summarizing content: {e}"
 
-    def _store_summary_to_episodic_memory(self, summary_record: Dict[str, Any]) -> bool:
+    def _store_summary_to_episodic_memory(self, summary_record: Dict[str, Any]) -> Any:
         """
         Store a summary to episodic memory system.
 
@@ -215,7 +377,7 @@ class CognitiveActionHandler:
             summary_record: Dictionary with summary data
 
         Returns:
-            True if storage succeeded
+            Event ID if storage succeeded, False if failed
         """
         if not self.memory_store:
             print("  Memory store not available, skipping episodic storage")
@@ -226,7 +388,6 @@ class CognitiveActionHandler:
                 from kloros_memory.models import EpisodeSummary, EventType, Event
             except ImportError:
                 from src.kloros_memory.models import EpisodeSummary, EventType, Event
-            import json
 
             summary_text = summary_record.get('summary', 'Context archived')
             evidence = summary_record.get('evidence', [])
@@ -249,7 +410,7 @@ class CognitiveActionHandler:
 
             event_id = self.memory_store.store_event(event)
             print(f"  Stored summary to episodic memory (event_id: {event_id})")
-            return event_id is not None
+            return event_id if event_id is not None else False
 
         except Exception as e:
             print(f"  Error storing summary to episodic memory: {e}")
@@ -263,14 +424,16 @@ class CognitiveActionHandler:
         Compresses older conversation turns to free up working memory while
         preserving information in episodic memory for future retrieval.
 
+        Includes verification to ensure storage succeeded and consistency checks
+        to prevent state corruption.
+
         Args:
             evidence: Evidence about memory pressure
 
         Returns:
-            True if action succeeded
+            True if action succeeded and verified
         """
-        print("\n[cognitive_actions] Executing: Summarize Context")
-        print(f"  Evidence: {evidence}")
+        self._log_operation_start('summarize_context', {'evidence': evidence})
 
         try:
             recent = self._get_recent_conversation_turns(limit=10)
@@ -278,6 +441,7 @@ class CognitiveActionHandler:
 
             if not older:
                 print("  No older context to summarize")
+                self._log_operation_end('summarize_context', True, 'No older context to archive')
                 self.log_action('summarize_context', 'No older context to archive')
                 return True
 
@@ -293,27 +457,39 @@ class CognitiveActionHandler:
                 'summary': summary_text
             }
 
-            success = self._store_summary_to_episodic_memory(summary_record)
+            event_id = self._store_summary_to_episodic_memory(summary_record)
 
-            if success:
-                print(f"  Successfully archived {len(older)} turns, retained {len(recent)} recent")
-                self.log_action(
-                    'summarize_context',
-                    f'Compressed {len(older)} turns, kept {len(recent)} recent'
-                )
-                return True
+            if event_id is False:
+                print(f"  Storage failed, no event_id returned")
+                self._log_operation_end('summarize_context', False, 'Storage failed')
+                self.log_action('summarize_context', 'Storage failed')
+                return False
+
+            if not isinstance(event_id, bool) and event_id is not None:
+                verified = self._verify_episodic_storage(event_id, 'summarize_context')
+                if verified:
+                    print(f"  Successfully archived {len(older)} turns, retained {len(recent)} recent")
+                    self._log_operation_end('summarize_context', True, f'Event {event_id} verified')
+                    self.log_action(
+                        'summarize_context',
+                        f'Compressed {len(older)} turns, kept {len(recent)} recent'
+                    )
+                    return True
+                else:
+                    print(f"  Verification failed: event stored but not found in database")
+                    self._log_operation_end('summarize_context', False, 'Verification failed')
+                    self.log_action('summarize_context', 'Verification failed after storage')
+                    return False
             else:
-                print(f"  Partial completion: created summary but storage failed")
-                self.log_action(
-                    'summarize_context',
-                    f'Summary created for {len(older)} turns but storage failed'
-                )
+                print(f"  Partial completion: created summary but storage returned invalid event_id")
+                self._log_operation_end('summarize_context', False, 'Invalid event_id from storage')
+                self.log_action('summarize_context', 'Storage returned invalid event_id')
                 return False
 
         except Exception as e:
             print(f"  Error during context summarization: {e}")
-            import traceback
             traceback.print_exc()
+            self._log_operation_end('summarize_context', False, str(e))
             self.log_action('summarize_context', f'Failed: {e}')
             return False
 
@@ -325,41 +501,66 @@ class CognitiveActionHandler:
         Identifies completed tasks from consciousness history and moves them to
         episodic memory for long-term storage while freeing working memory.
 
+        Includes verification of individual task archival and consistency checks
+        to ensure partial failures don't corrupt state.
+
         Args:
             evidence: Evidence about memory pressure
 
         Returns:
-            True if action succeeded
+            True if action succeeded with verification
         """
-        print("\n[cognitive_actions] 📦 Executing: Archive Completed Tasks")
-        print(f"  Evidence: {evidence}")
+        self._log_operation_start('archive_completed_tasks', {'evidence': evidence})
 
         try:
             completed = self._get_completed_tasks(days=7)
 
             if not completed:
                 print("  No completed tasks to archive")
+                self._log_operation_end('archive_completed_tasks', True, 'No tasks found')
                 self.log_action('archive_tasks', 'No completed tasks found')
                 return True
 
             archived_count = 0
-            for task in completed:
-                if self._archive_single_task(task, evidence):
-                    archived_count += 1
+            failed_tasks = []
+            verified_count = 0
 
-            if archived_count > 0:
-                print(f"  ✅ Archived {archived_count}/{len(completed)} completed tasks")
-                self.log_action('archive_tasks', f'Archived {archived_count} completed tasks')
-                return True
+            for task in completed:
+                task_id = task.get('id', 'unknown')
+                event_id = self._archive_single_task(task, evidence)
+
+                if event_id and not isinstance(event_id, bool):
+                    archived_count += 1
+                    if self._verify_episodic_storage(event_id, f'archive_task_{task_id}'):
+                        verified_count += 1
+                    else:
+                        failed_tasks.append(task_id)
+                elif event_id is True:
+                    archived_count += 1
+                else:
+                    failed_tasks.append(task_id)
+
+            if verified_count > 0:
+                print(f"  Archived {archived_count}/{len(completed)} tasks, {verified_count} verified")
+                if failed_tasks:
+                    print(f"  Warning: {len(failed_tasks)} tasks failed verification: {failed_tasks}")
+                    self._log_operation_end('archive_completed_tasks', False, f'{verified_count} verified, {len(failed_tasks)} failed')
+                    self.log_action('archive_tasks', f'Archived {archived_count}, {len(failed_tasks)} verification failures')
+                    return False
+                else:
+                    self._log_operation_end('archive_completed_tasks', True, f'{verified_count} verified')
+                    self.log_action('archive_tasks', f'Archived {archived_count} completed tasks')
+                    return True
             else:
-                print(f"  ⚠️ Created summaries for {len(completed)} tasks but storage had issues")
-                self.log_action('archive_tasks', f'Summarized {len(completed)} tasks, storage incomplete')
+                print(f"  All tasks failed archival or verification")
+                self._log_operation_end('archive_completed_tasks', False, 'No tasks verified')
+                self.log_action('archive_tasks', 'All tasks failed archival')
                 return False
 
         except Exception as e:
-            print(f"  ❌ Failed to archive tasks: {e}")
-            import traceback
+            print(f"  Failed to archive tasks: {e}")
             traceback.print_exc()
+            self._log_operation_end('archive_completed_tasks', False, str(e))
             self.log_action('archive_tasks', f'Failed: {e}')
             return False
 
@@ -419,7 +620,7 @@ class CognitiveActionHandler:
             print(f"  Error retrieving completed tasks: {e}")
             return []
 
-    def _archive_single_task(self, task: Dict[str, Any], evidence: List[str]) -> bool:
+    def _archive_single_task(self, task: Dict[str, Any], evidence: List[str]) -> Any:
         """
         Archive a single completed task to episodic memory.
 
@@ -430,7 +631,7 @@ class CognitiveActionHandler:
             evidence: Evidence context from memory pressure signal
 
         Returns:
-            True if archival succeeded
+            Event ID if successful, False if failed
         """
         try:
             if not self.memory_store:
@@ -460,7 +661,7 @@ class CognitiveActionHandler:
             )
 
             event_id = self.memory_store.store_event(event)
-            return event_id is not None
+            return event_id if event_id is not None else False
 
         except Exception as e:
             print(f"  Failed to archive task {task.get('id')}: {e}")
@@ -507,39 +708,57 @@ class CognitiveActionHandler:
         Examines recent error history to identify common failure modes and suggest
         preventive measures for future improvement.
 
+        Includes verification to ensure analysis results are persisted correctly.
+
         Args:
             root_causes: Root causes identified by affective introspection
             actions: Suggested autonomous actions from introspection
 
         Returns:
-            True if analysis succeeded
+            True if analysis succeeded and verified
         """
-        print("\n[cognitive_actions] 🔍 Executing: Analyze Failure Patterns")
-        print(f"  Root causes: {root_causes}")
-        print(f"  Suggested actions: {actions}")
+        self._log_operation_start('analyze_failure_patterns', {'root_causes': root_causes, 'actions': actions})
 
         try:
             recent_failures = self._get_recent_failures(days=7)
 
             if not recent_failures:
-                print("  → No recent failures to analyze")
+                print("  No recent failures to analyze")
+                self._log_operation_end('analyze_failure_patterns', True, 'No failures found')
                 self.log_action('analyze_failures', 'No recent failures found')
                 return True
 
             patterns = self._identify_patterns(recent_failures)
-
             insights = self._generate_insights(patterns, root_causes)
+            event_id = self._store_failure_analysis(insights, root_causes, actions)
 
-            self._store_failure_analysis(insights, root_causes, actions)
-
-            print(f"  ✅ Analyzed {len(recent_failures)} failures, found {len(patterns.get('error_types', {}))} error types")
-            self.log_action('analyze_failures', f'{len(recent_failures)} failures analyzed')
-            return True
+            if event_id and not isinstance(event_id, bool):
+                verified = self._verify_episodic_storage(event_id, 'analyze_failure_patterns')
+                if verified:
+                    print(f"  Analyzed {len(recent_failures)} failures, found {len(patterns.get('error_types', {}))} error types")
+                    self._log_operation_end('analyze_failure_patterns', True, f'Event {event_id} verified')
+                    self.log_action('analyze_failures', f'{len(recent_failures)} failures analyzed')
+                    return True
+                else:
+                    print(f"  Analysis stored but verification failed")
+                    self._log_operation_end('analyze_failure_patterns', False, 'Verification failed')
+                    self.log_action('analyze_failures', 'Storage verification failed')
+                    return False
+            elif event_id is True:
+                print(f"  Analyzed {len(recent_failures)} failures, found {len(patterns.get('error_types', {}))} error types")
+                self._log_operation_end('analyze_failure_patterns', True, 'Analysis stored')
+                self.log_action('analyze_failures', f'{len(recent_failures)} failures analyzed')
+                return True
+            else:
+                print(f"  Analysis failed to store")
+                self._log_operation_end('analyze_failure_patterns', False, 'Storage failed')
+                self.log_action('analyze_failures', 'Storage failed')
+                return False
 
         except Exception as e:
-            print(f"  ❌ Failed to analyze failure patterns: {e}")
-            import traceback
+            print(f"  Failed to analyze failure patterns: {e}")
             traceback.print_exc()
+            self._log_operation_end('analyze_failure_patterns', False, str(e))
             self.log_action('analyze_failures', f'Failed: {e}')
             return False
 
@@ -674,7 +893,7 @@ class CognitiveActionHandler:
 
         return insights
 
-    def _store_failure_analysis(self, insights: Dict[str, Any], root_causes: List[str], actions: List[str]) -> bool:
+    def _store_failure_analysis(self, insights: Dict[str, Any], root_causes: List[str], actions: List[str]) -> Any:
         """
         Store failure analysis to episodic memory.
 
@@ -686,7 +905,7 @@ class CognitiveActionHandler:
             actions: Original suggested actions
 
         Returns:
-            True if storage succeeded
+            Event ID if storage succeeded, False if failed
         """
         try:
             if not self.memory_store:
@@ -717,7 +936,7 @@ class CognitiveActionHandler:
 
             event_id = self.memory_store.store_event(event)
             print(f"  Stored analysis to episodic memory (event_id: {event_id})")
-            return event_id is not None
+            return event_id if event_id is not None else False
 
         except Exception as e:
             print(f"  Failed to store analysis: {e}")
@@ -740,6 +959,61 @@ class CognitiveActionHandler:
 
         self.log_action('request_context_expansion', 'Request logged')
         return True
+
+    def perform_consistency_check(self) -> bool:
+        """
+        Perform state consistency check and log results.
+
+        Can be called periodically or after major operations to detect
+        state corruption or data integrity issues.
+
+        Returns:
+            True if all consistency checks passed, False otherwise
+        """
+        print("\n[cognitive_actions] Performing state consistency check...")
+
+        results = self._check_state_consistency()
+
+        print(f"  Checks passed: {len(results['checks_passed'])}")
+        print(f"  Checks failed: {len(results['checks_failed'])}")
+        print(f"  Warnings: {len(results['warnings'])}")
+
+        for check in results['checks_passed']:
+            print(f"  ✓ {check}")
+
+        for check in results['checks_failed']:
+            print(f"  ✗ {check}")
+
+        for warning in results['warnings']:
+            print(f"  Warning: {warning}")
+
+        if not self.memory_store:
+            return False
+
+        try:
+            from kloros_memory.models import Event, EventType
+        except ImportError:
+            try:
+                from src.kloros_memory.models import Event, EventType
+            except ImportError:
+                return len(results['checks_failed']) == 0
+
+        try:
+            event = Event(
+                timestamp=time.time(),
+                event_type=EventType.MEMORY_HOUSEKEEPING,
+                content=f"Consistency check: {len(results['checks_passed'])} passed, {len(results['checks_failed'])} failed",
+                metadata=results,
+                conversation_id=None
+            )
+
+            event_id = self.memory_store.store_event(event)
+            if event_id:
+                print(f"  Logged consistency check to episodic memory (event_id: {event_id})")
+        except Exception as e:
+            print(f"  Warning: Could not log consistency check: {e}")
+
+        return len(results['checks_failed']) == 0
 
 
 # Global handler instance
