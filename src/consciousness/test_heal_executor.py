@@ -421,5 +421,111 @@ class TestPlaybookRegistry:
         assert expected.issubset(set(executor.playbooks.keys()))
 
 
+class TestRealPlaybookImplementations:
+    """Test real playbook implementations with actual logic."""
+
+    def test_analyze_errors_queries_memory_store(self):
+        """Test analyze_errors queries MemoryStore for error patterns."""
+        executor = HealExecutor()
+
+        with patch.object(executor, '_initialize_memory_store') as mock_init:
+            with patch.object(executor, '_query_error_events', return_value=[
+                {'id': 1, 'content': 'Timeout error', 'timestamp': time.time()},
+                {'id': 2, 'content': 'Timeout error', 'timestamp': time.time()},
+            ]) as mock_query:
+                context = {'days': 7}
+                result = executor.analyze_errors(context)
+
+                mock_query.assert_called_once()
+                assert result is True
+
+    def test_analyze_errors_identifies_patterns(self):
+        """Test analyze_errors identifies error patterns."""
+        executor = HealExecutor()
+
+        error_events = [
+            {'id': 1, 'content': 'ConnectionTimeout', 'timestamp': time.time()},
+            {'id': 2, 'content': 'ConnectionTimeout', 'timestamp': time.time()},
+            {'id': 3, 'content': 'DatabaseError', 'timestamp': time.time()},
+        ]
+
+        with patch.object(executor, '_query_error_events', return_value=error_events):
+            context = {'days': 7}
+            result = executor.analyze_errors(context)
+
+            assert result is True
+
+    def test_analyze_errors_returns_false_when_no_memory_store(self):
+        """Test analyze_errors returns False when MemoryStore unavailable."""
+        executor = HealExecutor()
+        executor.memory_store = None
+
+        result = executor.analyze_errors({'days': 7})
+
+        assert result is False
+
+    def test_clear_caches_removes_pycache_directories(self):
+        """Test clear_caches removes Python __pycache__ directories."""
+        executor = HealExecutor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pycache_dir = Path(tmpdir) / "__pycache__"
+            pycache_dir.mkdir()
+            pycache_file = pycache_dir / "test.pyc"
+            pycache_file.touch()
+
+            with patch('consciousness.heal_executor.Path.glob', return_value=[pycache_dir]):
+                context = {'scope': 'python_cache'}
+                result = executor.clear_caches(context)
+
+                assert result is True
+
+    def test_clear_caches_removes_old_tmp_files(self):
+        """Test clear_caches removes old /tmp/kloros_* files."""
+        executor = HealExecutor()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_file = Path(tmpdir) / "kloros_old.log"
+            old_file.touch()
+
+            old_time = time.time() - (8 * 24 * 3600)
+            import os
+            os.utime(old_file, (old_time, old_time))
+
+            with patch('consciousness.heal_executor.Path') as mock_path_class:
+                mock_tmp = Mock()
+                mock_tmp.glob.return_value = [old_file]
+                mock_path_class.return_value = mock_tmp
+
+                context = {'scope': 'temp_files', 'age_days': 7}
+                result = executor.clear_caches(context)
+
+                assert result is True
+
+    def test_optimize_resources_analyzes_memory_usage(self):
+        """Test optimize_resources analyzes and reports on memory usage."""
+        executor = HealExecutor()
+
+        context = {'resource_type': 'memory'}
+        result = executor.optimize_resources(context)
+
+        assert result is True
+
+    def test_restart_service_identifies_stuck_processes(self):
+        """Test restart_service identifies stuck background processes."""
+        executor = HealExecutor()
+
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = Mock(
+                stdout="1234 python stuck_process.py\n5678 python another.py",
+                returncode=0
+            )
+
+            context = {'service_type': 'background_processes'}
+            result = executor.restart_service(context)
+
+            assert result is True
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

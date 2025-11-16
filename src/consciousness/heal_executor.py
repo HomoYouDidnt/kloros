@@ -41,6 +41,9 @@ class HealExecutor:
         self.last_execution = {}
         self.cooldown_seconds = 60
 
+        self.memory_store = None
+        self._initialize_memory_store()
+
     def can_execute(self, strategy: str) -> bool:
         """
         Check if strategy can be executed (cooldown check).
@@ -125,22 +128,95 @@ class HealExecutor:
             import traceback
             traceback.print_exc()
 
+    def _initialize_memory_store(self) -> None:
+        """Initialize MemoryStore for querying error patterns."""
+        try:
+            from kloros_memory.storage import MemoryStore
+            self.memory_store = MemoryStore()
+            print("[heal_executor] Initialized MemoryStore")
+        except ImportError:
+            try:
+                from src.kloros_memory.storage import MemoryStore
+                self.memory_store = MemoryStore()
+                print("[heal_executor] Initialized MemoryStore")
+            except Exception as e:
+                print(f"[heal_executor] Warning: Could not initialize MemoryStore: {e}")
+                self.memory_store = None
+        except Exception as e:
+            print(f"[heal_executor] Warning: Could not initialize MemoryStore: {e}")
+            self.memory_store = None
+
+    def _query_error_events(self, days: int = 7) -> list:
+        """Query recent error events from MemoryStore."""
+        if not self.memory_store:
+            return []
+
+        try:
+            cutoff_time = time.time() - (days * 24 * 3600)
+            conn = self.memory_store._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT id, timestamp, content, metadata
+                FROM events
+                WHERE event_type = 'error_occurred'
+                AND timestamp >= ?
+                ORDER BY timestamp DESC
+            """, (cutoff_time,))
+
+            rows = cursor.fetchall()
+            return [
+                {
+                    'id': row[0],
+                    'timestamp': row[1],
+                    'content': row[2],
+                    'metadata': row[3]
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"    Warning: Error querying events: {e}")
+            return []
+
     def analyze_errors(self, context: Dict[str, Any]) -> bool:
         """
         Analyze error patterns.
 
         Args:
-            context: Error context
+            context: Error context (with optional 'days' parameter)
 
         Returns:
-            True if successful
+            True if successful, False if failed
         """
         print("  [playbook] Analyzing error patterns...")
         print(f"    Context: {context}")
 
-        print("    Would query recent errors")
-        print("    Would identify common patterns")
-        print("    Would suggest fixes")
+        if not self.memory_store:
+            print("    Error: MemoryStore not available")
+            return False
+
+        days = context.get('days', 7)
+        error_events = self._query_error_events(days)
+
+        if not error_events:
+            print(f"    No error events found in last {days} days")
+            return True
+
+        print(f"    Found {len(error_events)} error events")
+
+        error_types = {}
+        for event in error_events:
+            error_content = event.get('content', 'unknown')
+            error_types[error_content] = error_types.get(error_content, 0) + 1
+
+        print("    Error pattern analysis:")
+        for error_type, count in sorted(error_types.items(), key=lambda x: x[1], reverse=True)[:5]:
+            print(f"      - {error_type}: {count} occurrences")
+
+        if error_types:
+            most_common = max(error_types.items(), key=lambda x: x[1])
+            if most_common[1] >= 3:
+                print(f"    ⚠️  High-frequency error detected: {most_common[0]} ({most_common[1]}x)")
 
         return True
 
@@ -154,14 +230,42 @@ class HealExecutor:
         Returns:
             True if successful
         """
-        print("  [playbook] Restarting stuck service...")
+        print("  [playbook] Checking for stuck services...")
         print(f"    Context: {context}")
 
-        print("    Would identify stuck service")
-        print("    Would attempt graceful restart")
-        print("    Would verify service health")
+        service_type = context.get('service_type', 'background_processes')
 
-        return True
+        if service_type == 'background_processes':
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ['ps', 'aux'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                lines = result.stdout.splitlines()
+                python_processes = [l for l in lines if 'python' in l.lower()]
+
+                print(f"    Found {len(python_processes)} Python processes")
+
+                if python_processes:
+                    print("    Active processes (showing first 5):")
+                    for proc in python_processes[:5]:
+                        parts = proc.split()
+                        if len(parts) >= 11:
+                            pid = parts[1]
+                            cmd = ' '.join(parts[10:])
+                            print(f"      PID {pid}: {cmd[:80]}")
+
+                return True
+            except Exception as e:
+                print(f"    Error checking processes: {e}")
+                return False
+        else:
+            print(f"    Service type '{service_type}' not supported yet")
+            return True
 
     def clear_caches(self, context: Dict[str, Any]) -> bool:
         """
@@ -176,11 +280,55 @@ class HealExecutor:
         print("  [playbook] Clearing caches...")
         print(f"    Context: {context}")
 
-        print("    Would identify cache locations")
-        print("    Would clear stale entries")
-        print("    Would verify memory freed")
+        scope = context.get('scope', 'python_cache')
+        cleared_count = 0
 
-        return True
+        if scope == 'python_cache':
+            try:
+                import shutil
+                for pycache_dir in Path('/home/kloros/src').rglob('__pycache__'):
+                    if pycache_dir.is_dir():
+                        try:
+                            print(f"    Removing: {pycache_dir}")
+                            shutil.rmtree(pycache_dir)
+                            cleared_count += 1
+                        except PermissionError:
+                            print(f"    Skipping (permission denied): {pycache_dir}")
+                        except Exception as e:
+                            print(f"    Skipping (error): {pycache_dir} - {e}")
+
+                print(f"    Cleared {cleared_count} __pycache__ directories")
+                return True
+            except Exception as e:
+                print(f"    Warning: {e}")
+                return True
+
+        elif scope == 'temp_files':
+            try:
+                age_days = context.get('age_days', 7)
+                cutoff_time = time.time() - (age_days * 24 * 3600)
+
+                tmp_path = Path('/tmp')
+                for tmp_file in tmp_path.glob('kloros_*'):
+                    try:
+                        if tmp_file.stat().st_mtime < cutoff_time:
+                            print(f"    Removing old file: {tmp_file.name}")
+                            tmp_file.unlink()
+                            cleared_count += 1
+                    except PermissionError:
+                        print(f"    Skipping (permission denied): {tmp_file.name}")
+                    except Exception as e:
+                        print(f"    Skipping (error): {tmp_file.name} - {e}")
+
+                print(f"    Cleared {cleared_count} old temporary files")
+                return True
+            except Exception as e:
+                print(f"    Warning: {e}")
+                return True
+
+        else:
+            print(f"    Unknown scope: {scope}")
+            return True
 
     def optimize_resources(self, context: Dict[str, Any]) -> bool:
         """
@@ -192,14 +340,55 @@ class HealExecutor:
         Returns:
             True if successful
         """
-        print("  [playbook] Optimizing resources...")
+        print("  [playbook] Analyzing resource usage...")
         print(f"    Context: {context}")
 
-        print("    Would analyze resource usage")
-        print("    Would apply optimizations")
-        print("    Would verify improvements")
+        resource_type = context.get('resource_type', 'memory')
 
-        return True
+        if resource_type == 'memory':
+            try:
+                import psutil
+                mem = psutil.virtual_memory()
+
+                print(f"    Memory usage: {mem.percent}%")
+                print(f"    Available: {mem.available / (1024**3):.2f} GB")
+                print(f"    Used: {mem.used / (1024**3):.2f} GB")
+
+                if mem.percent > 80:
+                    print("    ⚠️  High memory usage detected")
+                    print("    Recommendation: Consider triggering cognitive_actions MEMORY_PRESSURE")
+                elif mem.percent > 90:
+                    print("    🚨 Critical memory usage!")
+                    print("    Recommendation: Immediate memory cleanup needed")
+
+                return True
+            except ImportError:
+                print("    Warning: psutil not available, using basic analysis")
+                return True
+            except Exception as e:
+                print(f"    Error analyzing memory: {e}")
+                return False
+
+        elif resource_type == 'disk':
+            try:
+                import shutil
+                total, used, free = shutil.disk_usage('/')
+
+                usage_percent = (used / total) * 100
+                print(f"    Disk usage: {usage_percent:.1f}%")
+                print(f"    Free: {free / (1024**3):.2f} GB")
+
+                if usage_percent > 90:
+                    print("    ⚠️  High disk usage detected")
+
+                return True
+            except Exception as e:
+                print(f"    Error analyzing disk: {e}")
+                return False
+
+        else:
+            print(f"    Resource type '{resource_type}' analysis not implemented yet")
+            return True
 
 
 def run_daemon():
