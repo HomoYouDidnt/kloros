@@ -92,6 +92,39 @@ class InvestigationConsumer:
         )
         self._metrics_thread.start()
 
+    def _is_meta_question(self, question_id: str) -> bool:
+        """
+        Detect meta-questions that would cause infinite recursion.
+
+        Meta-questions are questions about the curiosity/investigation system itself.
+        Investigating these creates loops where we investigate why we're investigating.
+
+        Examples of meta-questions to skip:
+        - pattern.archive.* → Questions about why questions are being archived
+        - meta.* → Explicitly meta questions
+        - investigation.* → Questions about the investigation process itself
+        - curiosity.processor.* → Questions about curiosity processor internals
+
+        Args:
+            question_id: The question identifier
+
+        Returns:
+            True if this is a meta-question that should be skipped
+        """
+        meta_prefixes = [
+            "pattern.archive.",  # Archive system meta-questions
+            "meta.",             # Explicitly meta questions
+            "investigation.",    # Investigation system questions
+            "curiosity.processor.",  # Curiosity processor internals
+            "archive.system.",   # Archive system questions
+        ]
+
+        for prefix in meta_prefixes:
+            if question_id.startswith(prefix):
+                return True
+
+        return False
+
     def _get_host_indicator(self) -> str:
         """Get current Ollama host indicator for logging."""
         ollama_url = get_ollama_url()
@@ -163,6 +196,14 @@ class InvestigationConsumer:
             incident_id = msg.get("incident_id", "")
 
             if signal == "Q_CURIOSITY_INVESTIGATE":
+                # META-LOOP PREVENTION: Skip questions about the investigation/archive system itself
+                # These create infinite recursion where we investigate why we're investigating
+                question_id = facts.get("question_id", "unknown")
+                if self._is_meta_question(question_id):
+                    logger.info(f"[investigation_consumer] Skipping meta-question (prevents infinite recursion): {question_id}")
+                    self._mark_question_processed(question_id, intent_sha="meta_skipped", evidence=facts.get("evidence"))
+                    return
+
                 logger.info(f"[investigation_consumer] Received {signal} (incident={incident_id})")
 
                 # Check priority (critical/high errors bypass limits)
