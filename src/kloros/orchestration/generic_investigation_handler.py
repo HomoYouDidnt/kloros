@@ -753,7 +753,7 @@ Output ONLY valid JSON."""
                 return llm_output.strip()
 
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as e:
-                logger.warning(f"[generic_investigation] Failed to connect to {url}: {e}")
+                logger.debug(f"[generic_investigation] Failed to connect to {url}: {e}")
                 last_error = e
                 continue
 
