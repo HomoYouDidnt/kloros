@@ -72,20 +72,24 @@ class CuriosityCoreConsumerDaemon:
             self.capability_matrix = None
             self.curiosity_core = None
 
+        # Always initialize ChemPub for SYSTEM_HEALTH monitoring
+        try:
+            self.chem_pub = ChemPub()
+        except Exception as e:
+            logger.warning(f"[curiosity_core_consumer] Could not initialize ChemPub: {e}")
+            self.chem_pub = None
+
         # Initialize QuestionPrioritizer for priority queue mode
         USE_PRIORITY_QUEUES = os.getenv('KLR_USE_PRIORITY_QUEUES', '0') == '1'
         if USE_PRIORITY_QUEUES:
             try:
-                self.chem_pub = ChemPub()
                 self.prioritizer = QuestionPrioritizer(self.chem_pub)
                 logger.info("[curiosity_core_consumer] QuestionPrioritizer initialized (priority queue mode)")
             except Exception as e:
                 logger.warning(f"[curiosity_core_consumer] Could not initialize prioritizer: {e}")
                 self.prioritizer = None
-                self.chem_pub = None
         else:
             self.prioritizer = None
-            self.chem_pub = None
 
         # Subscribe to capability gap signals
         self.chem_sub = ChemSub(

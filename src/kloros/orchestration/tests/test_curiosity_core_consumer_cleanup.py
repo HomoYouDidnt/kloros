@@ -151,6 +151,36 @@ class TestMemoryCleanup(unittest.TestCase):
         self.assertEqual(call_args[0][1]["status"], "memory_critical")
         self.assertIn("memory_mb", call_args[0][1])
 
+    @patch.dict(os.environ, {'KLR_USE_PRIORITY_QUEUES': '0'})
+    @patch('kloros.orchestration.curiosity_core_consumer_daemon.CURIOSITY_FEED')
+    @patch('kloros.orchestration.curiosity_core_consumer_daemon.ChemPub')
+    def test_emergency_cleanup_emits_signal_in_legacy_mode(self, mock_chem_pub_class, mock_feed_path):
+        """Test that emergency cleanup emits SYSTEM_HEALTH signal in legacy mode (KLR_USE_PRIORITY_QUEUES=0)."""
+        mock_feed_path.exists.return_value = True
+        self._create_test_feed(50)
+
+        mock_pub_instance = Mock()
+        mock_chem_pub_class.return_value = mock_pub_instance
+
+        with patch('kloros.orchestration.curiosity_core_consumer_daemon.CapabilityEvaluator'):
+            with patch('kloros.orchestration.curiosity_core_consumer_daemon.CuriosityCore'):
+                with patch('kloros.orchestration.curiosity_core_consumer_daemon.ChemSub'):
+                    daemon = CuriosityCoreConsumerDaemon()
+
+        self.assertIsNotNone(daemon.chem_pub, "ChemPub should be initialized in legacy mode")
+        self.assertIsNone(daemon.prioritizer, "QuestionPrioritizer should NOT be initialized in legacy mode")
+
+        with patch('kloros.orchestration.curiosity_core_consumer_daemon.CURIOSITY_FEED', self.test_feed_path):
+            daemon._emergency_cleanup()
+
+        mock_pub_instance.emit.assert_called_once()
+        call_args = mock_pub_instance.emit.call_args
+
+        self.assertEqual(call_args[0][0], "SYSTEM_HEALTH")
+        self.assertEqual(call_args[0][1]["component"], "curiosity_core_consumer")
+        self.assertEqual(call_args[0][1]["status"], "memory_critical")
+        self.assertIn("memory_mb", call_args[0][1])
+
     @patch('psutil.Process')
     def test_check_memory_usage_triggers_proactive_at_90_percent(self, mock_process):
         """Test that _check_memory_usage triggers proactive cleanup at 90% (900MB)."""
