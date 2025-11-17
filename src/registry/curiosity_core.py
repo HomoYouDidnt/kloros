@@ -2326,6 +2326,36 @@ class CuriosityCore:
         except Exception as e:
             logger.warning(f"[curiosity_core] Failed to generate exploration questions: {e}")
 
+        # KNOWLEDGE DISCOVERY: Scan filesystem for unindexed/stale documentation and source code
+        try:
+            from kloros.introspection.scanners.unindexed_knowledge_scanner import scan_for_unindexed_knowledge
+            knowledge_questions_raw, _ = scan_for_unindexed_knowledge()
+            # Convert dict questions to CuriosityQuestion objects
+            knowledge_questions = []
+            for q_dict in knowledge_questions_raw:
+                try:
+                    q = CuriosityQuestion(
+                        id=q_dict["id"],
+                        hypothesis=q_dict["hypothesis"],
+                        question=q_dict["question"],
+                        evidence=q_dict.get("evidence", []),
+                        evidence_hash=q_dict.get("evidence_hash"),
+                        action_class=ActionClass(q_dict["action_class"]),
+                        autonomy=q_dict.get("autonomy", 3),
+                        value_estimate=q_dict.get("value_estimate", 0.5),
+                        cost=q_dict.get("cost", 0.3),
+                        status=QuestionStatus(q_dict.get("status", "ready")),
+                        created_at=q_dict.get("created_at", datetime.now().isoformat()),
+                        capability_key=q_dict.get("capability_key")
+                    )
+                    knowledge_questions.append(q)
+                except Exception as conv_e:
+                    logger.warning(f"[curiosity_core] Failed to convert knowledge question: {conv_e}")
+            questions.extend(knowledge_questions)
+            logger.info(f"[curiosity_core] Generated {len(knowledge_questions)} knowledge discovery questions")
+        except Exception as e:
+            logger.warning(f"[curiosity_core] Failed to generate knowledge questions: {e}")
+
         # EARLY FILTER: Remove questions still in cooldown BEFORE expensive reasoning
         # This prevents wasted LLM processing on recently-processed questions
         pre_reasoning_count = len(questions)
