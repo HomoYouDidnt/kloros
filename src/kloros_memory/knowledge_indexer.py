@@ -26,7 +26,6 @@ try:
         Filter,
         FieldCondition,
         MatchValue,
-        ScrollRequest,
     )
     HAS_QDRANT = True
 except ImportError:
@@ -36,6 +35,14 @@ except ImportError:
 from .embeddings import get_embedding_engine
 
 logger = logging.getLogger(__name__)
+
+LLM_TIMEOUT_SECONDS = 60
+LLM_RETRY_TIMEOUT_SECONDS = 120
+MAX_LINES_BEFORE_TRUNCATE = 10000
+TRUNCATE_HEAD_LINES = 5000
+TRUNCATE_TAIL_LINES = 1000
+SCROLL_BATCH_SIZE = 100
+MAX_FILE_SIZE_MB = 100
 
 
 class KnowledgeIndexer:
@@ -120,7 +127,7 @@ class KnowledgeIndexer:
 
         return type_map.get(suffix, 'unknown')
 
-    def _read_file_content(self, file_path: Path, max_lines: int = 10000) -> tuple[str, bool]:
+    def _read_file_content(self, file_path: Path, max_lines: int = MAX_LINES_BEFORE_TRUNCATE) -> tuple[str, bool]:
         """
         Read file content with error handling.
 
@@ -134,14 +141,24 @@ class KnowledgeIndexer:
         Raises:
             IOError: If file cannot be read
             UnicodeDecodeError: If file encoding is unsupported
+            ValueError: If file size exceeds MAX_FILE_SIZE_MB
         """
+        file_size_bytes = file_path.stat().st_size
+        max_file_size_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
+
+        if file_size_bytes > max_file_size_bytes:
+            raise ValueError(
+                f"File size ({file_size_bytes / 1024 / 1024:.2f}MB) exceeds "
+                f"maximum allowed size ({MAX_FILE_SIZE_MB}MB)"
+            )
+
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
 
             truncated = False
             if len(lines) > max_lines:
-                content = ''.join(lines[:5000] + ['...\n[TRUNCATED]\n...'] + lines[-1000:])
+                content = ''.join(lines[:TRUNCATE_HEAD_LINES] + ['...\n[TRUNCATED]\n...'] + lines[-TRUNCATE_TAIL_LINES:])
                 truncated = True
             else:
                 content = ''.join(lines)
@@ -183,7 +200,7 @@ class KnowledgeIndexer:
                     },
                     "stream": False,
                 },
-                timeout=60,
+                timeout=LLM_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
             summary = response.json().get("response", "").strip()
@@ -208,7 +225,7 @@ class KnowledgeIndexer:
                         },
                         "stream": False,
                     },
-                    timeout=120,
+                    timeout=LLM_RETRY_TIMEOUT_SECONDS,
                 )
                 response.raise_for_status()
                 return response.json().get("response", "[Summary generation failed: timeout]").strip()
@@ -248,7 +265,7 @@ Be specific and factual. 3-6 sentences. {hint}
 
 File: {file_path}
 Content:
-{content[:4000]}"""
+{content}"""
 
     def _create_doc_id(self, file_path: Path) -> str:
         """
@@ -383,7 +400,7 @@ Content:
             while True:
                 scroll_result = self.client.scroll(
                     collection_name=self.collection_name,
-                    limit=100,
+                    limit=SCROLL_BATCH_SIZE,
                     offset=offset,
                     with_payload=True,
                     with_vectors=False,
