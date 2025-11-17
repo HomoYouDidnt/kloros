@@ -102,6 +102,7 @@ class CuriosityQuestion:
     status: QuestionStatus = QuestionStatus.READY
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     capability_key: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -117,7 +118,8 @@ class CuriosityQuestion:
             "cost": self.cost,
             "status": self.status.value,
             "created_at": self.created_at,
-            "capability_key": self.capability_key
+            "capability_key": self.capability_key,
+            "metadata": self.metadata
         }
 
 
