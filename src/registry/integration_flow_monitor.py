@@ -123,7 +123,13 @@ class IntegrationFlowMonitor:
             "fitness_scores",
             "evolution_stats",
             "convergence_history",
-            "diversity_metrics"
+            "diversity_metrics",
+            "evolution_history",
+            "bracket_history",
+            "buffer",
+            "regimes",
+            "safety_violations",
+            "violations"
         }
 
         if queue_name in DREAM_QUEUES:

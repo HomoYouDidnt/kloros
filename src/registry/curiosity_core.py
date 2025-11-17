@@ -2374,6 +2374,19 @@ class CuriosityCore:
         except Exception as e:
             logger.warning(f"[curiosity_core] Early filtering failed, continuing: {e}")
 
+        # FILTER: Skip questions for intentionally disabled services/components
+        pre_disabled_filter_count = len(questions)
+        filtered_questions = []
+        for q in questions:
+            if q.metadata.get("intentionally_disabled"):
+                logger.debug(f"[curiosity_core] Skipping intentionally disabled: {q.id}")
+                continue
+            filtered_questions.append(q)
+        questions = filtered_questions
+        filtered_disabled = pre_disabled_filter_count - len(questions)
+        if filtered_disabled > 0:
+            logger.info(f"[curiosity_core] Filtered {filtered_disabled} questions for intentionally disabled services")
+
         class StreamingBuffer:
             """Bounded buffer for streaming VOI-based ranking."""
 
