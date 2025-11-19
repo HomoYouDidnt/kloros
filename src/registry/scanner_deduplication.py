@@ -5,10 +5,13 @@ Prevents scanners from repeatedly reporting the same issue.
 """
 import hashlib
 import json
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ScannerDeduplicator:
@@ -20,9 +23,23 @@ class ScannerDeduplicator:
         self._load_state()
 
     def _load_state(self):
-        """Load previously reported issue hashes."""
+        """Load previously reported issue hashes with error recovery."""
         if self.state_file.exists():
-            self.reported = json.loads(self.state_file.read_text())
+            try:
+                self.reported = json.loads(self.state_file.read_text())
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"[{self.scanner_name}] Corrupted state file detected: {e}. "
+                    f"Backing up and resetting state."
+                )
+                backup_path = self.state_file.with_suffix('.json.corrupt')
+                self.state_file.rename(backup_path)
+                self.reported = {}
+            except Exception as e:
+                logger.error(
+                    f"[{self.scanner_name}] Failed to load state file: {e}. Resetting state."
+                )
+                self.reported = {}
         else:
             self.reported = {}
 
