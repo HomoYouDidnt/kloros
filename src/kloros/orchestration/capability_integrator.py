@@ -26,6 +26,12 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
+try:
+    from registry.semantic_analysis import ArchitecturalReasoner, ArchitecturalPattern
+    SEMANTIC_ANALYSIS_AVAILABLE = True
+except ImportError:
+    SEMANTIC_ANALYSIS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 INVESTIGATIONS_LOG = Path("/home/kloros/.kloros/curiosity_investigations.jsonl")
@@ -41,6 +47,13 @@ class CapabilityIntegrator:
         """Initialize integrator."""
         self.integrated_ids = self._load_integrated_ids()
         self.last_processed_timestamp = self._load_last_processed_timestamp()
+
+        if SEMANTIC_ANALYSIS_AVAILABLE:
+            self.semantic_reasoner = ArchitecturalReasoner(base_path="/home/kloros/src")
+            logger.info("[integrator] Semantic analysis enabled for phantom detection")
+        else:
+            self.semantic_reasoner = None
+            logger.warning("[integrator] Semantic analysis not available, using filesystem validation only")
 
     def _load_integrated_ids(self) -> set:
         """Load set of already integrated investigation IDs."""
@@ -239,6 +252,75 @@ class CapabilityIntegrator:
             logger.error(f"[integrator] Filesystem validation error for {module_path}: {e}")
             return False, f"filesystem_check_failed_{e.__class__.__name__}"
 
+    def _validate_semantic_pattern(self, capability_key: str, module_info: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Validate module using semantic analysis to detect phantoms and distributed patterns.
+
+        Returns:
+            (is_valid: bool, reason: str)
+            - (True, "semantic_validated") if module represents real gap
+            - (False, "phantom_distributed_pattern") if functionality is distributed
+            - (False, "phantom_no_evidence") if only mentioned in comments/strings
+        """
+        if not self.semantic_reasoner:
+            return True, "semantic_analysis_unavailable"
+
+        module_name = capability_key.replace("module.", "")
+
+        try:
+            analysis = self.semantic_reasoner.analyze_gap_hypothesis(
+                term=module_name,
+                max_files=50
+            )
+
+            logger.info(
+                f"[integrator] Semantic analysis for {capability_key}: "
+                f"pattern={analysis.pattern.value}, "
+                f"is_real_gap={analysis.is_real_gap}, "
+                f"confidence={analysis.confidence}"
+            )
+
+            if analysis.is_real_gap:
+                logger.info(
+                    f"[integrator] ✓ Semantic validation passed for {capability_key}: "
+                    f"{analysis.explanation}"
+                )
+                return True, "semantic_validated_real_gap"
+
+            if analysis.pattern == ArchitecturalPattern.DISTRIBUTED_PATTERN:
+                logger.warning(
+                    f"[integrator] ✗ Semantic validation failed for {capability_key}: "
+                    f"{analysis.explanation}. "
+                    f"Rejecting phantom - functionality is intentionally distributed."
+                )
+                return False, f"phantom_distributed_pattern_{len(analysis.implementing_files)}_files"
+
+            if analysis.pattern == ArchitecturalPattern.PHANTOM:
+                logger.warning(
+                    f"[integrator] ✗ Semantic validation failed for {capability_key}: "
+                    f"{analysis.explanation}. "
+                    f"Rejecting phantom - only mentioned in comments/strings, not actual dependency."
+                )
+                return False, "phantom_no_evidence"
+
+            if analysis.pattern == ArchitecturalPattern.UNIFIED_MODULE:
+                logger.info(
+                    f"[integrator] ✓ Semantic validation passed for {capability_key}: "
+                    f"Unified implementation found"
+                )
+                return True, "semantic_validated_unified"
+
+            logger.warning(
+                f"[integrator] ✗ Semantic validation uncertain for {capability_key}: "
+                f"{analysis.explanation}. "
+                f"Rejecting out of caution (confidence={analysis.confidence})."
+            )
+            return False, f"phantom_uncertain_confidence_{int(analysis.confidence*100)}"
+
+        except Exception as e:
+            logger.error(f"[integrator] Semantic validation error for {capability_key}: {e}")
+            return True, f"semantic_check_failed_{e.__class__.__name__}"
+
     def _should_integrate(self, investigation: Dict[str, Any]) -> Tuple[bool, str]:
         """
         Determine if a module should be integrated based on investigation results.
@@ -282,6 +364,18 @@ class CapabilityIntegrator:
                 f"Module directory does not exist or has no code (phantom discovery)."
             )
             return False, fs_reason
+
+        # SEMANTIC VALIDATION: Analyze architectural patterns to detect phantoms
+        # Even if filesystem checks pass, module might be phantom if:
+        # - Functionality is intentionally distributed across existing modules
+        # - Only mentioned in comments/strings, not actual dependency
+        semantic_valid, semantic_reason = self._validate_semantic_pattern(capability_key, module_info)
+        if not semantic_valid:
+            logger.warning(
+                f"[integrator] Rejecting {capability_key}: {semantic_reason}. "
+                f"Semantic analysis indicates phantom module."
+            )
+            return False, semantic_reason
 
         return True, "integration_criteria_met"
 
