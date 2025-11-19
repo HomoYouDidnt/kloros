@@ -44,12 +44,13 @@ except ImportError:
     from question_prioritizer import QuestionPrioritizer
 
 try:
-    from src.kloros.orchestration.chem_bus_v2 import ChemPub
+    from src.kloros.orchestration.chem_bus_v2 import ChemPub, ChemSub
 except ImportError:
     try:
-        from kloros.orchestration.chem_bus_v2 import ChemPub
+        from kloros.orchestration.chem_bus_v2 import ChemPub, ChemSub
     except ImportError:
         ChemPub = None
+        ChemSub = None
 
 import psutil
 import subprocess
@@ -1191,6 +1192,7 @@ class ChaosLabMonitor:
         self.history_path = history_path
         self.metrics_path = metrics_path
         self.lookback_experiments = 20
+        self.signals_skipped_disabled = 0
 
         if ChemPub is not None:
             self.chem_pub = ChemPub()
@@ -1198,6 +1200,28 @@ class ChaosLabMonitor:
             logger.info("[chaos_monitor] Using QuestionPrioritizer for question emission")
         else:
             self.prioritizer = None
+
+    def _is_target_disabled(self, target: str) -> bool:
+        """
+        Check if a chaos scenario target is for a disabled system.
+
+        Args:
+            target: Target system (e.g., "rag.synthesis", "dream.domain:cpu", "tts")
+
+        Returns:
+            True if target system is disabled, False otherwise
+        """
+        import os
+
+        if any(keyword in target.lower() for keyword in ['dream', 'rag']):
+            dream_enabled = os.getenv('KLR_ENABLE_DREAM_EVOLUTION', '1') == '1'
+            if not dream_enabled:
+                return True
+
+        if any(keyword in target.lower() for keyword in ['tts', 'audio']):
+            return True
+
+        return False
 
     def scan_healing_failures(self) -> Dict[str, List[Dict]]:
         """
@@ -1262,6 +1286,14 @@ class ChaosLabMonitor:
 
             target = experiments[0].get("target", "unknown")
             mode = experiments[0].get("mode", "unknown")
+
+            if self._is_target_disabled(target):
+                logger.info(
+                    f"[chaos_monitor] Healing failure expected for disabled system: "
+                    f"{spec_id} (target={target}, rate={healing_rate:.1%}, score={avg_score:.1f})"
+                )
+                self.signals_skipped_disabled += 1
+                continue
 
             hypothesis = f"POOR_SELF_HEALING_{spec_id.upper().replace('-', '_')}"
             question = (
@@ -2130,6 +2162,16 @@ class CuriosityCore:
         self.feed_path = feed_path
         self.feed: Optional[CuriosityFeed] = None
 
+        self.semantic_store: Optional[SemanticEvidenceStore] = None
+        try:
+            self.semantic_store = SemanticEvidenceStore()
+            logger.debug("[curiosity_core] Initialized SemanticEvidenceStore for suppression tracking")
+        except Exception as e:
+            logger.warning(f"[curiosity_core] Failed to initialize SemanticEvidenceStore: {e}, suppression checks disabled")
+
+        self.daemon_questions: List[CuriosityQuestion] = []
+        self.chem_sub: Optional[Any] = None
+
     def should_generate_followup(self, parent_question: Dict[str, Any], investigation_result: Dict[str, Any]) -> bool:
         """
         Decide if followup generation is productive.
@@ -2158,6 +2200,120 @@ class CuriosityCore:
                 return False
 
         return True
+
+    def _convert_daemon_message_to_questions(self, message: Dict[str, Any]) -> List[CuriosityQuestion]:
+        """
+        Convert a ChemBus daemon message to CuriosityQuestion objects.
+
+        Parameters:
+            message: ChemBus message payload with facts containing question data
+
+        Returns:
+            List of CuriosityQuestion objects (empty if message is malformed)
+        """
+        questions = []
+
+        try:
+            facts = message.get('facts', {})
+
+            question_id = facts.get('question_id')
+            question_text = facts.get('question')
+            hypothesis = facts.get('hypothesis')
+
+            if not question_id or not question_text:
+                logger.warning("[curiosity_core] Daemon message missing required fields (question_id, question)")
+                return questions
+
+            evidence = facts.get('evidence', [])
+            severity = facts.get('severity', 'medium')
+            source = facts.get('source', 'daemon')
+
+            evidence_hash = None
+            if evidence:
+                evidence_str = '|'.join(sorted(evidence))
+                evidence_hash = hashlib.sha256(evidence_str.encode()).hexdigest()[:16]
+
+            action_class = ActionClass.INVESTIGATE
+            if severity == 'critical':
+                action_class = ActionClass.PROPOSE_FIX
+            elif severity == 'high':
+                action_class = ActionClass.INVESTIGATE
+
+            metadata = {
+                'severity': severity,
+                'source': source,
+            }
+            if 'metadata' in facts:
+                metadata.update(facts['metadata'])
+
+            q = CuriosityQuestion(
+                id=question_id,
+                hypothesis=hypothesis or question_text,
+                question=question_text,
+                evidence=evidence,
+                evidence_hash=evidence_hash,
+                action_class=action_class,
+                autonomy=2,
+                value_estimate=0.8 if severity in ['critical', 'high'] else 0.6,
+                cost=0.5,
+                status=QuestionStatus.READY,
+                created_at=datetime.now().isoformat(),
+                metadata=metadata
+            )
+
+            questions.append(q)
+            logger.info(f"[curiosity_core] Received 1 integration question from daemon: {question_id}")
+
+        except Exception as e:
+            logger.warning(f"[curiosity_core] Failed to convert daemon message: {e}")
+
+        return questions
+
+    def _on_daemon_question(self, message: Dict[str, Any]):
+        """
+        ChemBus callback for daemon question messages.
+
+        Parameters:
+            message: ChemBus message payload
+        """
+        new_questions = self._convert_daemon_message_to_questions(message)
+        self.daemon_questions.extend(new_questions)
+
+    def subscribe_to_daemon_questions(self):
+        """
+        Subscribe to daemon question streams via ChemBus.
+
+        Sets up subscription to curiosity.integration_question signal.
+        """
+        if ChemSub is None:
+            logger.warning("[curiosity_core] ChemSub not available, daemon subscription disabled")
+            return
+
+        try:
+            self.chem_sub = ChemSub(
+                topic="curiosity.integration_question",
+                on_json=self._on_daemon_question,
+                zooid_name="curiosity_core",
+                niche="curiosity"
+            )
+            logger.info("[curiosity_core] Subscribed to curiosity.integration_question")
+        except Exception as e:
+            logger.warning(f"[curiosity_core] Failed to subscribe to daemon questions: {e}")
+
+    def _get_daemon_questions(self) -> List[CuriosityQuestion]:
+        """
+        Retrieve and clear accumulated daemon questions.
+
+        Returns:
+            List of CuriosityQuestion objects from daemon subscriptions
+        """
+        questions = self.daemon_questions.copy()
+        self.daemon_questions.clear()
+
+        if questions:
+            logger.info(f"[curiosity_core] Retrieved {len(questions)} integration questions from daemon")
+
+        return questions
 
     def generate_questions_from_matrix(
         self,
@@ -2252,13 +2408,17 @@ class CuriosityCore:
             logger.warning(f"[curiosity_core] Failed to generate test questions: {e}")
 
         # PROACTIVE MODULE DISCOVERY - Scan /src for undiscovered capabilities
-        try:
-            discovery_monitor = ModuleDiscoveryMonitor()
-            discovery_questions = discovery_monitor.generate_discovery_questions()
-            questions.extend(discovery_questions)
-            logger.info(f"[curiosity_core] Generated {len(discovery_questions)} module discovery questions")
-        except Exception as e:
-            logger.warning(f"[curiosity_core] Failed to generate discovery questions: {e}")
+        # TEMPORARILY DISABLED: Causes OOM (scans entire /src every 60s)
+        # TODO: Replace with module-discovery-daemon (streaming, inotify-based)
+        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
+        # try:
+        #     discovery_monitor = ModuleDiscoveryMonitor()
+        #     discovery_questions = discovery_monitor.generate_discovery_questions()
+        #     questions.extend(discovery_questions)
+        #     logger.info(f"[curiosity_core] Generated {len(discovery_questions)} module discovery questions")
+        # except Exception as e:
+        #     logger.warning(f"[curiosity_core] Failed to generate discovery questions: {e}")
+        logger.info("[curiosity_core] ModuleDiscoveryMonitor DISABLED (memory leak mitigation)")
 
         # META-COGNITION: Check if my own investigations are producing meaningful results
         try:
@@ -2279,84 +2439,111 @@ class CuriosityCore:
             logger.warning(f"[curiosity_core] Failed to generate chaos questions: {e}")
 
         # INTEGRATION ANALYSIS: Detect broken component wiring and architectural gaps
-        try:
-            from src.registry.integration_flow_monitor import IntegrationFlowMonitor
-            integration_monitor = IntegrationFlowMonitor()
-            integration_questions = integration_monitor.generate_integration_questions()
-            questions.extend(integration_questions)
-            logger.info(f"[curiosity_core] Generated {len(integration_questions)} integration questions")
-        except Exception as e:
-            logger.warning(f"[curiosity_core] Failed to generate integration questions: {e}")
+        # TEMPORARILY DISABLED: PRIMARY CULPRIT (parses 500+ files into AST every 60s = 150MB/min growth)
+        # TODO: Replace with integration-monitor-daemon (streaming, inotify-based incremental analysis)
+        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
+        # try:
+        #     from src.registry.integration_flow_monitor import IntegrationFlowMonitor
+        #     integration_monitor = IntegrationFlowMonitor()
+        #     integration_questions = integration_monitor.generate_integration_questions()
+        #     questions.extend(integration_questions)
+        #     logger.info(f"[curiosity_core] Generated {len(integration_questions)} integration questions")
+        # except Exception as e:
+        #     logger.warning(f"[curiosity_core] Failed to generate integration questions: {e}")
+        logger.info("[curiosity_core] IntegrationFlowMonitor DISABLED (memory leak mitigation - PRIMARY CULPRIT)")
 
         # CAPABILITY DISCOVERY: Detect missing tools, skills, patterns
-        try:
-            from src.registry.capability_discovery_monitor import CapabilityDiscoveryMonitor
-            capability_monitor = CapabilityDiscoveryMonitor()
-            capability_questions = capability_monitor.generate_capability_questions()
-            questions.extend(capability_questions)
-            logger.info(f"[curiosity_core] Generated {len(capability_questions)} capability gap questions")
-        except Exception as e:
-            logger.warning(f"[curiosity_core] Failed to generate capability questions: {e}")
+        # TEMPORARILY DISABLED: Heavy filesystem scanning every 60s
+        # TODO: Replace with capability-discovery-daemon (streaming)
+        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
+        # try:
+        #     from src.registry.capability_discovery_monitor import CapabilityDiscoveryMonitor
+        #     capability_monitor = CapabilityDiscoveryMonitor()
+        #     capability_questions = capability_monitor.generate_capability_questions()
+        #     questions.extend(capability_questions)
+        #     logger.info(f"[curiosity_core] Generated {len(capability_questions)} capability gap questions")
+        # except Exception as e:
+        #     logger.warning(f"[curiosity_core] Failed to generate capability questions: {e}")
+        logger.info("[curiosity_core] CapabilityDiscoveryMonitor DISABLED (memory leak mitigation)")
 
         # EXPLORATION: Proactive hardware and optimization opportunity discovery
-        try:
-            from src.registry.exploration_scanner import generate_exploration_questions
-            exploration_questions_raw = generate_exploration_questions()
-            # Convert dict questions to CuriosityQuestion objects
-            exploration_questions = []
-            for q_dict in exploration_questions_raw:
-                try:
-                    q = CuriosityQuestion(
-                        id=q_dict["id"],
-                        hypothesis=q_dict["hypothesis"],
-                        question=q_dict["question"],
-                        evidence=q_dict.get("evidence", []),
-                        evidence_hash=q_dict.get("evidence_hash"),
-                        action_class=ActionClass(q_dict["action_class"]),
-                        autonomy=q_dict.get("autonomy", 2),
-                        value_estimate=q_dict.get("value_estimate", 0.5),
-                        cost=q_dict.get("cost", 0.5),
-                        status=QuestionStatus(q_dict.get("status", "ready")),
-                        created_at=q_dict.get("created_at", datetime.now().isoformat()),
-                        capability_key=q_dict.get("capability_key")
-                    )
-                    exploration_questions.append(q)
-                except Exception as conv_e:
-                    logger.warning(f"[curiosity_core] Failed to convert exploration question: {conv_e}")
-            questions.extend(exploration_questions)
-            logger.info(f"[curiosity_core] Generated {len(exploration_questions)} proactive exploration questions")
-        except Exception as e:
-            logger.warning(f"[curiosity_core] Failed to generate exploration questions: {e}")
+        # TEMPORARILY DISABLED: Heavy system scanning every 60s
+        # TODO: Replace with exploration-daemon (streaming, periodic GPU/hardware checks)
+        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
+        # try:
+        #     from src.registry.exploration_scanner import generate_exploration_questions
+        #     exploration_questions_raw = generate_exploration_questions()
+        #     # Convert dict questions to CuriosityQuestion objects
+        #     exploration_questions = []
+        #     for q_dict in exploration_questions_raw:
+        #         try:
+        #             q = CuriosityQuestion(
+        #                 id=q_dict["id"],
+        #                 hypothesis=q_dict["hypothesis"],
+        #                 question=q_dict["question"],
+        #                 evidence=q_dict.get("evidence", []),
+        #                 evidence_hash=q_dict.get("evidence_hash"),
+        #                 action_class=ActionClass(q_dict["action_class"]),
+        #                 autonomy=q_dict.get("autonomy", 2),
+        #                 value_estimate=q_dict.get("value_estimate", 0.5),
+        #                 cost=q_dict.get("cost", 0.5),
+        #                 status=QuestionStatus(q_dict.get("status", "ready")),
+        #                 created_at=q_dict.get("created_at", datetime.now().isoformat()),
+        #                 capability_key=q_dict.get("capability_key"),
+        #                 metadata=q_dict.get("metadata", {})
+        #             )
+        #             exploration_questions.append(q)
+        #         except Exception as conv_e:
+        #             logger.warning(f"[curiosity_core] Failed to convert exploration question: {conv_e}")
+        #     questions.extend(exploration_questions)
+        #     logger.info(f"[curiosity_core] Generated {len(exploration_questions)} proactive exploration questions")
+        # except Exception as e:
+        #     logger.warning(f"[curiosity_core] Failed to generate exploration questions: {e}")
+        logger.info("[curiosity_core] ExplorationScanner DISABLED (memory leak mitigation)")
 
         # KNOWLEDGE DISCOVERY: Scan filesystem for unindexed/stale documentation and source code
+        # TEMPORARILY DISABLED: Filesystem scanning causing memory accumulation
+        # TODO: Replace with knowledge-discovery-daemon (streaming, inotify-based)
+        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
+        # try:
+        #     from kloros.introspection.scanners.unindexed_knowledge_scanner import scan_for_unindexed_knowledge
+        #     knowledge_questions_raw, _ = scan_for_unindexed_knowledge()
+        #     # Convert dict questions to CuriosityQuestion objects
+        #     knowledge_questions = []
+        #     for q_dict in knowledge_questions_raw:
+        #         try:
+        #             q = CuriosityQuestion(
+        #                 id=q_dict["id"],
+        #                 hypothesis=q_dict["hypothesis"],
+        #                 question=q_dict["question"],
+        #                 evidence=q_dict.get("evidence", []),
+        #                 evidence_hash=q_dict.get("evidence_hash"),
+        #                 action_class=ActionClass(q_dict["action_class"]),
+        #                 autonomy=q_dict.get("autonomy", 3),
+        #                 value_estimate=q_dict.get("value_estimate", 0.5),
+        #                 cost=q_dict.get("cost", 0.3),
+        #                 status=QuestionStatus(q_dict.get("status", "ready")),
+        #                 created_at=q_dict.get("created_at", datetime.now().isoformat()),
+        #                 capability_key=q_dict.get("capability_key"),
+        #                 metadata=q_dict.get("metadata", {})
+        #             )
+        #             knowledge_questions.append(q)
+        #         except Exception as conv_e:
+        #             logger.warning(f"[curiosity_core] Failed to convert knowledge question: {conv_e}")
+        #     questions.extend(knowledge_questions)
+        #     logger.info(f"[curiosity_core] Generated {len(knowledge_questions)} knowledge discovery questions")
+        # except Exception as e:
+        #     logger.warning(f"[curiosity_core] Failed to generate knowledge questions: {e}")
+        logger.info("[curiosity_core] KnowledgeDiscoveryScanner DISABLED (memory leak mitigation)")
+
+        # STREAMING DAEMON QUESTIONS: Receive questions from event-driven daemons
         try:
-            from kloros.introspection.scanners.unindexed_knowledge_scanner import scan_for_unindexed_knowledge
-            knowledge_questions_raw, _ = scan_for_unindexed_knowledge()
-            # Convert dict questions to CuriosityQuestion objects
-            knowledge_questions = []
-            for q_dict in knowledge_questions_raw:
-                try:
-                    q = CuriosityQuestion(
-                        id=q_dict["id"],
-                        hypothesis=q_dict["hypothesis"],
-                        question=q_dict["question"],
-                        evidence=q_dict.get("evidence", []),
-                        evidence_hash=q_dict.get("evidence_hash"),
-                        action_class=ActionClass(q_dict["action_class"]),
-                        autonomy=q_dict.get("autonomy", 3),
-                        value_estimate=q_dict.get("value_estimate", 0.5),
-                        cost=q_dict.get("cost", 0.3),
-                        status=QuestionStatus(q_dict.get("status", "ready")),
-                        created_at=q_dict.get("created_at", datetime.now().isoformat()),
-                        capability_key=q_dict.get("capability_key")
-                    )
-                    knowledge_questions.append(q)
-                except Exception as conv_e:
-                    logger.warning(f"[curiosity_core] Failed to convert knowledge question: {conv_e}")
-            questions.extend(knowledge_questions)
-            logger.info(f"[curiosity_core] Generated {len(knowledge_questions)} knowledge discovery questions")
+            daemon_questions = self._get_daemon_questions()
+            questions.extend(daemon_questions)
+            if daemon_questions:
+                logger.info(f"[curiosity_core] Received {len(daemon_questions)} integration questions from daemon")
         except Exception as e:
-            logger.warning(f"[curiosity_core] Failed to generate knowledge questions: {e}")
+            logger.warning(f"[curiosity_core] Failed to retrieve daemon questions: {e}")
 
         # EARLY FILTER: Remove questions still in cooldown BEFORE expensive reasoning
         # This prevents wasted LLM processing on recently-processed questions
@@ -2374,7 +2561,7 @@ class CuriosityCore:
         except Exception as e:
             logger.warning(f"[curiosity_core] Early filtering failed, continuing: {e}")
 
-        # FILTER: Skip questions for intentionally disabled services/components
+        # FILTER: Skip questions for intentionally disabled services/components (Layer 1)
         pre_disabled_filter_count = len(questions)
         filtered_questions = []
         for q in questions:
@@ -2386,6 +2573,27 @@ class CuriosityCore:
         filtered_disabled = pre_disabled_filter_count - len(questions)
         if filtered_disabled > 0:
             logger.info(f"[curiosity_core] Filtered {filtered_disabled} questions for intentionally disabled services")
+
+        # FILTER: Skip questions for suppressed capabilities from evidence learning (Layer 2)
+        pre_suppression_filter_count = len(questions)
+        filtered_questions = []
+        suppressed_count = 0
+        for q in questions:
+            capability_key = q.capability_key
+            if capability_key and self.semantic_store:
+                try:
+                    if self.semantic_store.is_suppressed(capability_key):
+                        suppression_info = self.semantic_store.get_suppression_info(capability_key)
+                        reason = suppression_info.get("reason", "unknown reason")
+                        logger.debug(f"[curiosity_core] Skipping suppressed capability: {capability_key} ({reason})")
+                        suppressed_count += 1
+                        continue
+                except Exception as e:
+                    logger.error(f"[curiosity_core] Error checking suppression for {capability_key}: {e}, assuming not suppressed")
+            filtered_questions.append(q)
+        questions = filtered_questions
+        if suppressed_count > 0:
+            logger.info(f"[curiosity_core] Filtered {suppressed_count} questions for suppressed capabilities")
 
         class StreamingBuffer:
             """Bounded buffer for streaming VOI-based ranking."""
@@ -2455,6 +2663,30 @@ class CuriosityCore:
                             logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (unresolvable)")
                             continue
 
+                        # Check metadata flag
+                        if hasattr(rq.original_question, 'metadata') and rq.original_question.metadata.get('intentionally_disabled'):
+                            logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (intentionally disabled)")
+                            continue
+
+                        # Check if original question's capability is suppressed
+                        if hasattr(rq.original_question, 'capability_key') and rq.original_question.capability_key:
+                            if self.semantic_store:
+                                try:
+                                    if self.semantic_store.is_suppressed(rq.original_question.capability_key):
+                                        suppression_info = self.semantic_store.get_suppression_info(rq.original_question.capability_key)
+                                        reason = suppression_info.get("reason", "unknown reason")
+                                        logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (capability suppressed: {rq.original_question.capability_key}, {reason})")
+                                        continue
+                                except Exception as e:
+                                    logger.error(f"[curiosity_core] Error checking suppression for {rq.original_question.capability_key}: {e}, proceeding with followup")
+
+                        # Fallback: Check if question ID contains orphaned_queue and service is disabled
+                        if 'orphaned_queue' in rq.original_question.id:
+                            from registry.systemd_helpers import is_service_intentionally_disabled
+                            if is_service_intentionally_disabled('kloros-dream.service'):
+                                logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (D-REAM disabled)")
+                                continue
+
                         if rq.follow_up_questions:
                             logger.info(f"[curiosity_core] Generating {len(rq.follow_up_questions)} "
                                       f"follow-up questions for {rq.original_question.id}")
@@ -2506,6 +2738,30 @@ class CuriosityCore:
                         if not self.should_generate_followup({'id': rq.original_question.id}, investigation_result):
                             logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (unresolvable)")
                             continue
+
+                        # Check metadata flag
+                        if hasattr(rq.original_question, 'metadata') and rq.original_question.metadata.get('intentionally_disabled'):
+                            logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (intentionally disabled)")
+                            continue
+
+                        # Check if original question's capability is suppressed
+                        if hasattr(rq.original_question, 'capability_key') and rq.original_question.capability_key:
+                            if self.semantic_store:
+                                try:
+                                    if self.semantic_store.is_suppressed(rq.original_question.capability_key):
+                                        suppression_info = self.semantic_store.get_suppression_info(rq.original_question.capability_key)
+                                        reason = suppression_info.get("reason", "unknown reason")
+                                        logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (capability suppressed: {rq.original_question.capability_key}, {reason})")
+                                        continue
+                                except Exception as e:
+                                    logger.error(f"[curiosity_core] Error checking suppression for {rq.original_question.capability_key}: {e}, proceeding with followup")
+
+                        # Fallback: Check if question ID contains orphaned_queue and service is disabled
+                        if 'orphaned_queue' in rq.original_question.id:
+                            from registry.systemd_helpers import is_service_intentionally_disabled
+                            if is_service_intentionally_disabled('kloros-dream.service'):
+                                logger.debug(f"[curiosity_core] Skipping followup generation for {rq.original_question.id} (D-REAM disabled)")
+                                continue
 
                         if rq.follow_up_questions:
                             logger.info(f"[curiosity_core] Generating {len(rq.follow_up_questions)} "
