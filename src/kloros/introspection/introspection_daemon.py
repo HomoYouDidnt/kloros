@@ -77,11 +77,11 @@ class IntrospectionDaemon:
         self.cache = ObservationCache(window_seconds=cache_window_seconds)
 
         self.scanners = [
-            InferencePerformanceScanner(cache=self.cache),
-            ContextUtilizationScanner(cache=self.cache),
-            ResourceProfilerScanner(cache=self.cache),
-            BottleneckDetectorScanner(cache=self.cache),
-            ComparativeAnalyzerScanner(cache=self.cache)
+            InferencePerformanceScanner(),
+            ContextUtilizationScanner(),
+            ResourceProfilerScanner(),
+            BottleneckDetectorScanner(),
+            ComparativeAnalyzerScanner()
         ]
 
         self.executor = ThreadPoolExecutor(
@@ -246,27 +246,28 @@ class IntrospectionDaemon:
             "comparative_analyzer"
         ]
 
-        intents_dir = Path.home() / ".kloros/intents"
-        intents_dir.mkdir(parents=True, exist_ok=True)
-
         for scanner_name in scanners:
-            intent_file = intents_dir / f"run_scanner_{scanner_name}_{int(time.time())}.json"
-            intent_data = {
-                "type": "run_scanner",
-                "scanner": scanner_name,
-                "triggered_by": "introspection_cycle",
-                "timestamp": time.time()
-            }
-
-            intent_file.write_text(json.dumps(intent_data))
-            logger.info(f"[introspection] Triggered scanner: {scanner_name}")
+            self.pub.emit(
+                signal="Q_RUN_SCANNER",
+                ecosystem="introspection",
+                intensity=1.0,
+                facts={
+                    "scanner": scanner_name,
+                    "triggered_by": "introspection_cycle",
+                    "timestamp": time.time()
+                }
+            )
+            logger.info(f"[introspection] Emitted Q_RUN_SCANNER signal for: {scanner_name}")
 
     def consolidate_chembus_history(self) -> None:
         """
         Consolidate old ChemBus history to episodic memory and prune.
 
-        Moves messages older than 24h to episodic memory with aggregated statistics
+        Moves messages older than 6h to episodic memory with aggregated statistics
         and preserves anomaly signals. Rewrites history file with only recent messages.
+
+        MEMORY OPTIMIZATION: Only consolidates if file > 100MB to avoid loading
+        entire file into memory every 5 seconds.
         """
         history_file = Path.home() / ".kloros/chembus_history.jsonl"
 
@@ -274,7 +275,15 @@ class IntrospectionDaemon:
             logger.debug("[introspection] No chembus_history.jsonl to consolidate")
             return
 
-        cutoff_ts = time.time() - 86400
+        # MEMORY FIX: Check file size before loading
+        file_size_mb = history_file.stat().st_size / (1024 * 1024)
+        if file_size_mb < 100:
+            logger.debug(f"[introspection] chembus_history.jsonl only {file_size_mb:.1f}MB, skipping consolidation")
+            return
+
+        logger.info(f"[introspection] chembus_history.jsonl is {file_size_mb:.1f}MB, consolidating...")
+
+        cutoff_ts = time.time() - 21600
 
         old_messages = []
         recent_messages = []

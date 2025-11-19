@@ -146,10 +146,11 @@ class TestMemoryCleanup(unittest.TestCase):
         self.daemon.chem_pub.emit.assert_called_once()
         call_args = self.daemon.chem_pub.emit.call_args
 
-        self.assertEqual(call_args[0][0], "SYSTEM_HEALTH")
-        self.assertEqual(call_args[0][1]["component"], "curiosity_core_consumer")
-        self.assertEqual(call_args[0][1]["status"], "memory_critical")
-        self.assertIn("memory_mb", call_args[0][1])
+        self.assertEqual(call_args.kwargs['signal'], "SYSTEM_HEALTH")
+        self.assertEqual(call_args.kwargs['ecosystem'], "orchestration")
+        self.assertEqual(call_args.kwargs['facts']['component'], "curiosity_core_consumer")
+        self.assertEqual(call_args.kwargs['facts']['status'], "memory_critical")
+        self.assertIn("memory_mb", call_args.kwargs['facts'])
 
     @patch.dict(os.environ, {'KLR_USE_PRIORITY_QUEUES': '0'})
     @patch('kloros.orchestration.curiosity_core_consumer_daemon.CURIOSITY_FEED')
@@ -176,16 +177,17 @@ class TestMemoryCleanup(unittest.TestCase):
         mock_pub_instance.emit.assert_called_once()
         call_args = mock_pub_instance.emit.call_args
 
-        self.assertEqual(call_args[0][0], "SYSTEM_HEALTH")
-        self.assertEqual(call_args[0][1]["component"], "curiosity_core_consumer")
-        self.assertEqual(call_args[0][1]["status"], "memory_critical")
-        self.assertIn("memory_mb", call_args[0][1])
+        self.assertEqual(call_args.kwargs['signal'], "SYSTEM_HEALTH")
+        self.assertEqual(call_args.kwargs['ecosystem'], "orchestration")
+        self.assertEqual(call_args.kwargs['facts']['component'], "curiosity_core_consumer")
+        self.assertEqual(call_args.kwargs['facts']['status'], "memory_critical")
+        self.assertIn("memory_mb", call_args.kwargs['facts'])
 
     @patch('psutil.Process')
     def test_check_memory_usage_triggers_proactive_at_90_percent(self, mock_process):
-        """Test that _check_memory_usage triggers proactive cleanup at 90% (900MB)."""
+        """Test that _check_memory_usage triggers proactive cleanup at 4500MB."""
         mock_mem_info = Mock()
-        mock_mem_info.rss = 920 * 1024 * 1024
+        mock_mem_info.rss = 4600 * 1024 * 1024
         mock_process.return_value.memory_info.return_value = mock_mem_info
 
         self.daemon._proactive_cleanup = Mock()
@@ -198,9 +200,9 @@ class TestMemoryCleanup(unittest.TestCase):
 
     @patch('psutil.Process')
     def test_check_memory_usage_triggers_emergency_at_95_percent(self, mock_process):
-        """Test that _check_memory_usage triggers emergency cleanup at 95% (950MB)."""
+        """Test that _check_memory_usage triggers emergency cleanup at 5000MB."""
         mock_mem_info = Mock()
-        mock_mem_info.rss = 960 * 1024 * 1024
+        mock_mem_info.rss = 5100 * 1024 * 1024
         mock_process.return_value.memory_info.return_value = mock_mem_info
 
         self.daemon._proactive_cleanup = Mock()

@@ -254,16 +254,17 @@ class CuriosityCoreConsumerDaemon:
         """
         Check memory and trigger cleanup if needed.
 
-        Triggers proactive cleanup at 90% (900MB) and emergency cleanup at 95% (950MB).
+        Triggers proactive cleanup at 4500MB and emergency cleanup at 5000MB.
+        These thresholds scale appropriately for the 62GB system RAM.
         """
         try:
             mem_info = psutil.Process().memory_info()
             mem_mb = mem_info.rss / 1024 / 1024
 
-            if mem_mb > 950:
+            if mem_mb > 5000:
                 logger.error(f"[curiosity_core_consumer] Memory critical: {mem_mb:.1f}MB, triggering emergency cleanup")
                 self._emergency_cleanup()
-            elif mem_mb > 900:
+            elif mem_mb > 4500:
                 logger.warning(f"[curiosity_core_consumer] Memory high: {mem_mb:.1f}MB, triggering proactive cleanup")
                 self._proactive_cleanup()
         except Exception as e:
@@ -322,11 +323,16 @@ class CuriosityCoreConsumerDaemon:
             gc.collect()
 
             if hasattr(self, 'chem_pub') and self.chem_pub:
-                self.chem_pub.emit("SYSTEM_HEALTH", {
-                    "component": "curiosity_core_consumer",
-                    "status": "memory_critical",
-                    "memory_mb": psutil.Process().memory_info().rss / 1024 / 1024
-                })
+                mem_mb = psutil.Process().memory_info().rss / 1024 / 1024
+                self.chem_pub.emit(
+                    signal="SYSTEM_HEALTH",
+                    ecosystem="orchestration",
+                    facts={
+                        "component": "curiosity_core_consumer",
+                        "status": "memory_critical",
+                        "memory_mb": mem_mb
+                    }
+                )
 
             logger.warning("[curiosity_core_consumer] Emergency cleanup completed")
         except Exception as e:
