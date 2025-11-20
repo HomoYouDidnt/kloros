@@ -12,6 +12,7 @@ KLoROS voice loop: Vosk (offline STT) + Piper (TTS) + Ollama (LLM)
 
 import collections
 import json
+import logging
 import os
 import platform
 import queue
@@ -630,6 +631,26 @@ class KLoROS:
         from src.consciousness.integration import integrate_consciousness
         integrate_consciousness(self, cooldown=5.0, max_expressions=10)
 
+        # Initialize goal system with persistent memory and consciousness integration
+        try:
+            from src.goal_system import GoalManager, integrate_goals_with_consciousness
+            goal_persistence_path = Path.home() / ".kloros" / "goals.json"
+            goal_persistence_path.parent.mkdir(parents=True, exist_ok=True)
+
+            self.goal_manager = GoalManager(persistence_path=goal_persistence_path)
+            self.goal_integrator = integrate_goals_with_consciousness(self.consciousness, self.goal_manager)
+
+            logger = logging.getLogger(__name__)
+            logger.info(f"Goal system initialized with persistence at {goal_persistence_path}")
+        except ImportError as e:
+            print(f"[goal_system] Failed to initialize goal system: {e}")
+            self.goal_manager = None
+            self.goal_integrator = None
+        except Exception as e:
+            print(f"[goal_system] Error during goal system initialization: {e}")
+            self.goal_manager = None
+            self.goal_integrator = None
+
         # Initialize meta-cognitive system (conversational self-awareness)
         # Bridges consciousness, memory, and conversation flow for real-time dialogue quality monitoring
         from src.meta_cognition import init_meta_cognition
@@ -687,8 +708,13 @@ class KLoROS:
             self.ack_broker = None
 
         # -------------------- Introspection Tools ---------------------
-        from src.introspection_tools import IntrospectionToolRegistry
+        from src.introspection_tools import IntrospectionToolRegistry, register_scholar_tools, register_browser_tools
         self.tool_registry = IntrospectionToolRegistry()
+
+        register_scholar_tools()
+        register_browser_tools()
+
+        logger.info("Scholar and browser_agent tools registered")
 
         # -------------------- Capability Hot-Reload ---------------------
         # Re-enabled after fixing memory leak (was from D-REAM Evolution, not hot-reload)

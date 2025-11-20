@@ -1,4 +1,5 @@
 import os
+import logging
 from .collector import Collector
 from .analysis import summarize_episodes, compare_generations, macro_usage, safety_summary
 from .figures import bar_fig
@@ -8,11 +9,13 @@ from .writer import render_markdown
 from .reviewers.committee_tumix import run_committee
 from .citations.chroma_retriever import index_bibliography, query_citations
 
+logger = logging.getLogger(__name__)
+
 def build_plus_report(col: Collector, out_dir: str = "reports",
                       title="KLoROS Experimental Report", authors=None,
                       citations_query_terms=None, citations_bib_path=None,
                       chroma_client_or_path=None, chroma_collection="citations",
-                      run_reviewer=True):
+                      run_reviewer=True, use_tumix=False):
     authors = authors or ["KLoROS"]
     snap = col.snapshot()
     os.makedirs(out_dir, exist_ok=True)
@@ -79,19 +82,6 @@ def build_plus_report(col: Collector, out_dir: str = "reports",
         bullets = "\n".join([f"- {c.author} ({c.year}). *{c.title}*. {c.venue}. {c.url}" for c in citations[:10]])
         sec_related = Section(title="Related Work", body_md=bullets)
 
-    # Reviewer committee notes
-    appendix_extra = ""
-    if run_reviewer:
-        secs_for_review = [
-            {"title": "Methods", "body_md": sec_methods.body_md},
-            {"title": "Results", "body_md": sec_results.body_md},
-        ]
-        notes = run_committee(secs_for_review, rounds=1)
-        appendix_extra += "\n### Reviewer Notes (Heuristic Committee)\n"
-        for n in notes:
-            if n["notes"]:
-                appendix_extra += f"- **{n['section']}**: " + " ".join(n["notes"]) + f" (Δscore={n['score_delta']})\n"
-
     sections = [sec_methods, sec_results]
     if sec_related: sections.append(sec_related)
 
@@ -99,8 +89,88 @@ def build_plus_report(col: Collector, out_dir: str = "reports",
     spec = ReportSpec(
         title=title, authors=authors, abstract_md=abstract,
         sections=sections, citations=citations,
-        appendix_md=appendix_extra
+        appendix_md=""
     )
+    draft_report = render_markdown(spec)
+
+    appendix_extra = ""
+    if run_reviewer:
+        if use_tumix:
+            logger.info(f"Scholar using TUMIX meta-reasoning for report review: {title[:30]}")
+            try:
+                from src.tumix.meta_coordinator import get_meta_coordinator, ReasoningTask
+
+                spec_context = {
+                    "title": spec.title,
+                    "authors": spec.authors,
+                    "abstract_md": spec.abstract_md,
+                    "sections": [
+                        {
+                            "title": s.title,
+                            "body_md": s.body_md,
+                            "figs": len(s.figs),
+                            "tabs": len(s.tabs)
+                        }
+                        for s in spec.sections
+                    ],
+                    "citations_count": len(spec.citations)
+                }
+
+                task = ReasoningTask(
+                    task_id=f"scholar-review-{spec.title[:30]}",
+                    description=f"Review research report: {spec.title}",
+                    context={
+                        "draft_report": draft_report,
+                        "spec": spec_context,
+                        "stakes": "high",
+                        "domain": "research",
+                        "uncertainty": 0.6
+                    },
+                    priority=8
+                )
+
+                meta = get_meta_coordinator()
+                strategy = meta.plan_reasoning(task)
+                logger.info(f"TUMIX planned {strategy.strategy_type} strategy with {len(strategy.steps)} steps")
+
+                review_result = meta.execute_strategy(strategy, task)
+                logger.info(f"TUMIX review executed: success={review_result.success}")
+
+                secs_for_review = [
+                    {"title": "Methods", "body_md": sec_methods.body_md},
+                    {"title": "Results", "body_md": sec_results.body_md},
+                ]
+                notes = run_committee(secs_for_review, rounds=1)
+                appendix_extra += "\n### Reviewer Notes (TUMIX Meta-Reasoning + Committee)\n"
+                appendix_extra += f"*Strategy: {review_result.strategy_used}*\n"
+                for n in notes:
+                    if n["notes"]:
+                        appendix_extra += f"- **{n['section']}**: " + " ".join(n["notes"]) + f" (Δscore={n['score_delta']})\n"
+
+            except Exception as e:
+                logger.warning(f"TUMIX integration failed, falling back to direct committee: {e}")
+                secs_for_review = [
+                    {"title": "Methods", "body_md": sec_methods.body_md},
+                    {"title": "Results", "body_md": sec_results.body_md},
+                ]
+                notes = run_committee(secs_for_review, rounds=1)
+                appendix_extra += "\n### Reviewer Notes (Heuristic Committee)\n"
+                for n in notes:
+                    if n["notes"]:
+                        appendix_extra += f"- **{n['section']}**: " + " ".join(n["notes"]) + f" (Δscore={n['score_delta']})\n"
+        else:
+            logger.info(f"Scholar using direct committee review (use_tumix=False): {title[:30]}")
+            secs_for_review = [
+                {"title": "Methods", "body_md": sec_methods.body_md},
+                {"title": "Results", "body_md": sec_results.body_md},
+            ]
+            notes = run_committee(secs_for_review, rounds=1)
+            appendix_extra += "\n### Reviewer Notes (Heuristic Committee)\n"
+            for n in notes:
+                if n["notes"]:
+                    appendix_extra += f"- **{n['section']}**: " + " ".join(n["notes"]) + f" (Δscore={n['score_delta']})\n"
+
+    spec.appendix_md = appendix_extra
     md = render_markdown(spec)
     out_md = os.path.join(out_dir, "plus_report.md")
     with open(out_md, "w", encoding="utf-8") as f: f.write(md)

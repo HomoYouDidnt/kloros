@@ -23,6 +23,9 @@ except ImportError:
 # Knowledge base updater
 from src.knowledge_base_updater import get_updater
 
+_SCHOLAR_REGISTERED = False
+_BROWSER_REGISTERED = False
+
 
 class IntrospectionTool:
     """Single introspection tool that the LLM can invoke."""
@@ -4173,3 +4176,241 @@ def tool_reject_synthesis(kloros_instance, proposal_id="", **kwargs):
         return f"Error: Synthesis queue not available: {e}"
     except Exception as e:
         return f"Error rejecting synthesis: {e}"
+
+
+def register_scholar_tools():
+    """Register scholar tool for research report generation.
+
+    Idempotent: safe to call multiple times.
+    """
+    global _SCHOLAR_REGISTERED
+
+    if _SCHOLAR_REGISTERED:
+        return
+
+    import logging
+    logger = logging.getLogger(__name__)
+
+    def _generate_research_report(kloros_instance, title: str = "", research_question: str = "",
+                                   sources: str = "", use_tumix_review: bool = True, **kwargs) -> Dict:
+        """Generate a research report using scholar pipeline.
+
+        Args:
+            kloros_instance: KLoROS instance
+            title: Report title
+            research_question: Research question to investigate
+            sources: Comma-separated list of sources/topics
+            use_tumix_review: Whether to use TUMIX committee review
+
+        Returns:
+            Dict with report_path, spec, and tumix_used
+        """
+        try:
+            from src.scholar import Collector, build_plus_report
+            from src.kloros.orchestration.chem_bus import ChemPub
+
+            logger.info(f"Generating research report: {title}")
+
+            collector = Collector()
+
+            spec_dict = {
+                "title": title,
+                "research_question": research_question,
+                "sources": sources.split(",") if sources else [],
+                "use_tumix_review": use_tumix_review
+            }
+
+            out_dir = "/tmp/scholar_reports"
+            report_path = build_plus_report(
+                collector,
+                out_dir=out_dir,
+                title=title,
+                run_reviewer=use_tumix_review
+            )
+
+            pub = ChemPub()
+            pub.emit(
+                "introspection.scholar",
+                ecosystem="kloros_tools",
+                intensity=0.8,
+                facts={
+                    "title": title,
+                    "research_question": research_question,
+                    "sources_count": len(spec_dict["sources"]),
+                    "tumix_used": use_tumix_review
+                }
+            )
+            pub.close()
+
+            result = {
+                "report_path": str(report_path),
+                "spec": spec_dict,
+                "tumix_used": use_tumix_review,
+                "status": "success"
+            }
+
+            logger.info(f"Scholar report generated: {report_path}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error generating research report: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "tumix_used": use_tumix_review
+            }
+
+    registry = IntrospectionToolRegistry()
+    registry.register(IntrospectionTool(
+        name='generate_research_report',
+        description='Generate a research report with optional TUMIX committee review',
+        func=_generate_research_report,
+        parameters=['title', 'research_question', 'sources', 'use_tumix_review']
+    ))
+
+    _SCHOLAR_REGISTERED = True
+    logger.info("Scholar tools registered")
+
+
+def register_browser_tools():
+    """Register browser_agent tool for web navigation and extraction.
+
+    Idempotent: safe to call multiple times.
+    """
+    global _BROWSER_REGISTERED
+
+    if _BROWSER_REGISTERED:
+        return
+
+    import logging
+    import asyncio
+    logger = logging.getLogger(__name__)
+
+    def _browse_web(kloros_instance, url: str = "", extract_selector: str = None,
+                     max_depth: int = 1, **kwargs):
+        """Navigate and extract content from web pages with PETRI safety.
+
+        Args:
+            kloros_instance: KLoROS instance
+            url: URL to navigate to
+            extract_selector: CSS selector for content extraction
+            max_depth: Maximum navigation depth
+
+        Returns:
+            Dict with content, links, and petri_violations
+        """
+        try:
+            from src.config.browser_petri import (
+                BROWSER_PETRI_ALLOWED_DOMAINS,
+                BROWSER_BLOCK_EXECUTABLES,
+                BROWSER_BLOCK_FORMS
+            )
+            from src.browser_agent.agent.petri_policy import PetriPolicy
+            from src.browser_agent.agent.executor import BrowserExecutor
+            from src.kloros.orchestration.chem_bus import ChemPub
+
+            logger.info(f"Browser tool: navigating to {url}")
+
+            if not url:
+                return {
+                    "status": "error",
+                    "error": "URL is required",
+                    "petri_violations": []
+                }
+
+            policy = PetriPolicy()
+            policy.allow_domains = BROWSER_PETRI_ALLOWED_DOMAINS
+
+            petri_violations = []
+
+            if BROWSER_BLOCK_EXECUTABLES:
+                policy.max_actions = 20
+
+            if BROWSER_BLOCK_FORMS:
+                policy.screenshot_every_step = True
+
+            policy.check_domain(url)
+
+            async def _run_browser():
+                async with BrowserExecutor(policy=policy, headless=True) as executor:
+                    plan = {
+                        "meta": {
+                            "name": f"extract_{url.replace('://', '_').replace('/', '_')}",
+                            "start_url": url,
+                            "max_depth": max_depth
+                        },
+                        "actions": [
+                            {
+                                "type": "goto",
+                                "url": url
+                            }
+                        ]
+                    }
+
+                    if extract_selector:
+                        plan["actions"].append({
+                            "type": "extract",
+                            "selector": extract_selector
+                        })
+
+                    result = await executor.run_plan(plan)
+                    return result
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            browser_result = loop.run_until_complete(_run_browser())
+            loop.close()
+
+            content = ""
+            links = []
+
+            for step in browser_result.get("steps", []):
+                if step.get("success"):
+                    content += step.get("content", "")
+                    links.extend(step.get("links", []))
+
+            pub = ChemPub()
+            pub.emit(
+                "introspection.browser",
+                ecosystem="kloros_tools",
+                intensity=0.7,
+                facts={
+                    "url": url,
+                    "extract_selector": extract_selector,
+                    "max_depth": max_depth,
+                    "content_length": len(content),
+                    "links_found": len(links),
+                    "petri_violations": len(petri_violations)
+                }
+            )
+            pub.close()
+
+            result = {
+                "url": url,
+                "content": content[:1000],
+                "links": links[:10],
+                "petri_violations": petri_violations,
+                "status": "success"
+            }
+
+            logger.info(f"Browser navigation completed for {url}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in browser tool: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "petri_violations": []
+            }
+
+    registry = IntrospectionToolRegistry()
+    registry.register(IntrospectionTool(
+        name='browse_web',
+        description='Navigate and extract content from web pages with PETRI safety gates',
+        func=_browse_web,
+        parameters=['url', 'extract_selector', 'max_depth']
+    ))
+
+    _BROWSER_REGISTERED = True
+    logger.info("Browser tools registered")
