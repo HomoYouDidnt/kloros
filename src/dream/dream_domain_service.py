@@ -29,7 +29,7 @@ from candidate_pack import CandidatePack, RegimeResult, PackWriter, aggregate_re
 
 # Phase 2: Multi-regime evaluator (optional)
 try:
-    from evaluator import evaluate_candidate as evaluate_candidate_phase2
+    from src.evaluator import evaluate_candidate as evaluate_candidate_phase2
     PHASE2_AVAILABLE = True
 except ImportError:
     PHASE2_AVAILABLE = False

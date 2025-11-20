@@ -12,7 +12,7 @@ from pathlib import Path
 # Use kloros home explicitly
 sys.path.insert(0, '/home/kloros/src')
 
-from goal_system import (
+from src.goal_system import (
     GoalManager,
     Goal,
     GoalState,

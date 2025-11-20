@@ -1,6 +1,18 @@
 import os
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    plt = None
+
 def bar_fig(path, title, labels, values):
+    if not MATPLOTLIB_AVAILABLE:
+        raise ImportError(
+            "matplotlib is required for scholar figure generation. "
+            "Install with: pip install matplotlib"
+        )
     plt.figure()
     plt.bar(labels, values)
     plt.title(title)

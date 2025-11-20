@@ -23,7 +23,7 @@ sys.path.insert(0, '/home/kloros/src')
 
 from consciousness.integrated import IntegratedConsciousness
 from consciousness.conveyance import ConveyanceEngine, Context
-from goal_system import GoalManager, GoalProperties, integrate_goals_with_consciousness
+from src.goal_system import GoalManager, GoalProperties, integrate_goals_with_consciousness
 
 logging.basicConfig(
     level=logging.INFO,
