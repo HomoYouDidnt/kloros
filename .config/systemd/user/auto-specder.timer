@@ -1,0 +1,10 @@
+[Unit]
+Description=Run auto-specder every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Unit=auto-specder.service
+
+[Install]
+WantedBy=timers.target

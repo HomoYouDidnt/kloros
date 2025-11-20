@@ -1,0 +1,24 @@
+[Unit]
+Description=KLoROS ASR/TTS Worker (CUDA enabled)
+Documentation=man:kloros(1) https://github.com/KLoROS/KLoROS
+After=kloros-audio-capture.service
+Wants=kloros-audio-capture.service
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+Environment=KLR_CUDA_WORKER=1
+ExecStart=/opt/kloros/.venv/bin/python3 -m src.voice.cuda_worker
+WorkingDirectory=/home/kloros
+Restart=on-failure
+RestartSec=2
+KillMode=mixed
+TimeoutStopSec=15
+
+# GPU worker resource limits
+LimitNOFILE=2048
+MemoryMax=4G
+
+[Install]
+WantedBy=default.target

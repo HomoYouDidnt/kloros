@@ -1,0 +1,144 @@
+{
+  "services": {
+    "dream-domains.service": {
+      "status": "active",
+      "pid": "409462"
+    },
+    "dream-background.service": {
+      "status": "active",
+      "pid": "695746"
+    },
+    "phase-heuristics.service": {
+      "status": "inactive",
+      "pid": "0"
+    },
+    "kloros.service": {
+      "status": "active",
+      "pid": "62851"
+    },
+    "ollama-live.service": {
+      "status": "active",
+      "pid": "2975466"
+    },
+    "ollama-think.service": {
+      "status": "active",
+      "pid": "5049"
+    },
+    "ollama-deep.service": {
+      "status": "active",
+      "pid": "5057"
+    }
+  },
+  "python_version": "Python 3.13.5",
+  "modules": {
+    "torch": "N/A",
+    "numpy": "2.2.4",
+    "chromadb": "N/A",
+    "ollama": "N/A",
+    "pytest": "N/A",
+    "yaml": "6.0.2"
+  },
+  "data_files": {
+    "phase_report": {
+      "exists": true,
+      "size": 572,
+      "modified": "2025-10-17T19:26:16.819673",
+      "age_seconds": 3258
+    },
+    "fitness": {
+      "exists": true,
+      "size": 431,
+      "modified": "2025-10-17T19:27:13.600785",
+      "age_seconds": 3201
+    },
+    "fitness_prev_best": {
+      "exists": true,
+      "size": 8,
+      "modified": "2025-10-17T19:27:13.716787",
+      "age_seconds": 3201
+    },
+    "loop_config": {
+      "exists": true,
+      "size": 5677,
+      "modified": "2025-10-17T19:18:09.158303",
+      "age_seconds": 3746
+    },
+    "capabilities": {
+      "exists": true,
+      "size": 3117,
+      "modified": "2025-10-12T23:28:18.177155",
+      "age_seconds": 420737
+    },
+    "structured_log": {
+      "exists": true,
+      "size": 424,
+      "modified": "2025-10-17T19:44:25.708961",
+      "age_seconds": 2169
+    },
+    "bandit_state": {
+      "exists": true,
+      "size": 70,
+      "modified": "2025-10-17T20:10:56.465620",
+      "age_seconds": 578
+    },
+    "hints": {
+      "exists": false
+    }
+  },
+  "ports": {
+    "11434": {
+      "listening": false,
+      "description": "Ollama Live (GPU 0)"
+    },
+    "11435": {
+      "listening": false,
+      "description": "Ollama Think (GPU 1)"
+    },
+    "11436": {
+      "listening": false,
+      "description": "Ollama Deep (CPU)"
+    }
+  },
+  "gpus": [
+    {
+      "id": "0",
+      "name": "NVIDIA GeForce RTX 3060",
+      "utilization": "0",
+      "memory_used_mb": "5089",
+      "memory_total_mb": "12288",
+      "temp_c": "45",
+      "power_draw_w": "11.45",
+      "power_limit_w": "170.00"
+    },
+    {
+      "id": "1",
+      "name": "NVIDIA GeForce GTX 1080 Ti",
+      "utilization": "0",
+      "memory_used_mb": "18",
+      "memory_total_mb": "11264",
+      "temp_c": "45",
+      "power_draw_w": "14.10",
+      "power_limit_w": "280.00"
+    }
+  ],
+  "recent_log_events": [
+    {
+      "event": "governance.validation",
+      "timestamp": "2025-10-17T23:44:25Z"
+    }
+  ],
+  "promotion_markers": [
+    {
+      "file": "promoted_3ea1e10958b242b8a9179f31d4347ef7_20251017T232713Z.txt",
+      "modified": "2025-10-17T19:27:13.716787",
+      "age_seconds": 3201
+    },
+    {
+      "file": "promoted_3ea1e10958b242b8a9179f31d4347ef7_20251017T232630Z.txt",
+      "modified": "2025-10-17T19:26:30.415939",
+      "age_seconds": 3245
+    }
+  ],
+  "overall_status": "degraded",
+  "timestamp": "2025-10-18T00:20:35Z"
+}

@@ -1,0 +1,1143 @@
+import { useState, useEffect } from 'react';
+import { LineChart, Line, ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, AreaChart, Area, BarChart, Bar } from 'recharts';
+import './App.css';
+
+const API_URL = `http://${window.location.hostname}:8765`;
+const WS_URL = `ws://${window.location.hostname}:8765/ws/live`;
+
+// Utility functions
+const formatPercent = (value) => `${Math.round(value * 100)}%`;
+const getHealthColor = (value) => {
+  if (value >= 0.7) return 'text-green-400';
+  if (value >= 0.4) return 'text-yellow-400';
+  return 'text-red-400';
+};
+
+function App() {
+  const [metaState, setMetaState] = useState(null);
+  const [klorosRunning, setKlorosRunning] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  // Historical data
+  const [qualityHistory15min, setQualityHistory15min] = useState([]);
+  const [emotionalTrajectory, setEmotionalTrajectory] = useState([]);
+
+  // WebSocket connection
+  useEffect(() => {
+    let websocket;
+    let reconnectTimeout;
+
+    const connect = () => {
+      websocket = new WebSocket(WS_URL);
+
+      websocket.onopen = () => {
+        console.log('[dashboard] WebSocket connected');
+        setConnected(true);
+      };
+
+      websocket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'update' && message.data.meta_state) {
+          const state = message.data.meta_state;
+          setMetaState(state);
+          setKlorosRunning(message.data.kloros_running);
+
+          // Update 15-minute quality history
+          if (state.quality_history && state.quality_history.length > 0) {
+            setQualityHistory15min(state.quality_history);
+          }
+
+          // Update emotional trajectory
+          if (state.emotional_trajectory && state.emotional_trajectory.length > 0) {
+            setEmotionalTrajectory(state.emotional_trajectory);
+          }
+        }
+      };
+
+      websocket.onerror = (error) => {
+        console.error('[dashboard] WebSocket error:', error);
+        setConnected(false);
+      };
+
+      websocket.onclose = () => {
+        console.log('[dashboard] WebSocket closed, reconnecting...');
+        setConnected(false);
+        reconnectTimeout = setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      if (websocket) websocket.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+  }, []);
+
+  const tabs = [
+    { id: 'overview', label: '📊 Overview', icon: '📊' },
+    { id: 'conversation', label: '💬 Conversation', icon: '💬' },
+    { id: 'consciousness', label: '🧠 Consciousness', icon: '🧠' },
+    { id: 'curiosity', label: '🔍 Curiosity', icon: '🔍' },
+    { id: 'memory', label: '💾 Memory', icon: '💾' },
+    { id: 'performance', label: '⚡ Performance', icon: '⚡' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white">
+      {/* Header */}
+      <div className="bg-gray-800 border-b border-gray-700">
+        <div className="max-w-[2000px] mx-auto px-6 py-4">
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-3xl font-bold">KLoROS Meta-Cognitive Dashboard</h1>
+            <div className="flex gap-4 items-center">
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${connected ? 'bg-green-900/30' : 'bg-red-900/30'}`}>
+                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+                <span className="text-sm">{connected ? 'LIVE' : 'DISCONNECTED'}</span>
+              </div>
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${klorosRunning ? 'bg-blue-900/30' : 'bg-gray-700/30'}`}>
+                <div className={`w-2 h-2 rounded-full ${klorosRunning ? 'bg-blue-400' : 'bg-gray-500'}`}></div>
+                <span className="text-sm">{klorosRunning ? 'KLOROS ACTIVE' : 'KLOROS OFFLINE'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="flex gap-2 overflow-x-auto">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2 rounded-t-lg whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-gray-900 text-white border-t-2 border-blue-400'
+                    : 'bg-gray-700 text-gray-400 hover:text-white'
+                }`}
+              >
+                <span className="mr-2">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-[2000px] mx-auto p-6">
+        {!metaState ? (
+          <div className="text-center text-gray-400 mt-20">
+            <p className="text-xl">Waiting for data...</p>
+            <p className="text-sm mt-2">Make sure KLoROS is running with meta-cognition enabled</p>
+          </div>
+        ) : (
+          <>
+            {/* Overview Tab */}
+            {activeTab === 'overview' && <OverviewTab metaState={metaState} qualityHistory={qualityHistory15min} />}
+
+            {/* Conversation Tab */}
+            {activeTab === 'conversation' && <ConversationTab metaState={metaState} />}
+
+            {/* Consciousness Tab */}
+            {activeTab === 'consciousness' && <ConsciousnessTab metaState={metaState} emotionalTrajectory={emotionalTrajectory} />}
+
+            {/* Curiosity Tab */}
+            {activeTab === 'curiosity' && <CuriosityTab />}
+
+            {/* Memory Tab */}
+            {activeTab === 'memory' && <MemoryTab metaState={metaState} />}
+
+            {/* Performance Tab */}
+            {activeTab === 'performance' && <PerformanceTab metaState={metaState} />}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== OVERVIEW TAB =====
+function OverviewTab({ metaState, qualityHistory }) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Conversation Health - Large */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">Conversation Health</h2>
+        <div className={`text-6xl font-bold ${getHealthColor(metaState.conversation_health)}`}>
+          {formatPercent(metaState.conversation_health)}
+        </div>
+        <div className="mt-4 h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all duration-500 ${
+              metaState.conversation_health >= 0.7 ? 'bg-green-400' :
+              metaState.conversation_health >= 0.4 ? 'bg-yellow-400' : 'bg-red-400'
+            }`}
+            style={{ width: `${metaState.conversation_health * 100}%` }}
+          />
+        </div>
+        <p className="text-sm text-gray-400 mt-2">
+          Confidence: {formatPercent(metaState.meta_confidence)}
+        </p>
+      </div>
+
+      {/* Current Issues */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">Current Issues</h2>
+        <div className="space-y-3">
+          {Object.entries(metaState.issues).map(([key, value]) => (
+            <div key={key} className="flex items-center justify-between">
+              <span className="capitalize">{key.replace('_', ' ')}</span>
+              <span className={`px-2 py-1 rounded text-xs ${value ? 'bg-red-900/40 text-red-300' : 'bg-gray-700 text-gray-400'}`}>
+                {value ? 'DETECTED' : 'OK'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Active Interventions */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">Active Interventions</h2>
+        <div className="space-y-3">
+          {Object.entries(metaState.interventions).map(([key, value]) => (
+            <div key={key} className="flex items-center justify-between">
+              <span className="capitalize">{key.replace('_', ' ')}</span>
+              <span className={`px-2 py-1 rounded text-xs ${value ? 'bg-blue-900/40 text-blue-300' : 'bg-gray-700 text-gray-400'}`}>
+                {value ? 'ACTIVE' : 'IDLE'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Quality Timeline - 15 Minutes */}
+      {qualityHistory.length > 10 && (
+        <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-3">
+          <h2 className="text-lg font-semibold mb-4">Quality Timeline (Last 15 Minutes)</h2>
+          <ResponsiveContainer width="100%" height={250}>
+            <AreaChart data={qualityHistory}>
+              <defs>
+                <linearGradient id="colorHealth" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorProgress" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorClarity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#F59E0B" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="timestamp" stroke="#9CA3AF" fontSize={10} tickFormatter={(val) => new Date(val).toLocaleTimeString()} />
+              <YAxis stroke="#9CA3AF" fontSize={12} domain={[0, 1]} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1F2937', border: 'none', borderRadius: '8px' }}
+                labelStyle={{ color: '#9CA3AF' }}
+                labelFormatter={(val) => new Date(val).toLocaleTimeString()}
+              />
+              <Area type="monotone" dataKey="health" stroke="#10B981" fillOpacity={1} fill="url(#colorHealth)" name="Health" />
+              <Area type="monotone" dataKey="progress" stroke="#3B82F6" fillOpacity={1} fill="url(#colorProgress)" name="Progress" />
+              <Area type="monotone" dataKey="clarity" stroke="#F59E0B" fillOpacity={1} fill="url(#colorClarity)" name="Clarity" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Session Stats */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-3">
+        <h2 className="text-lg font-semibold mb-4">Session Information</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <p className="text-gray-400 text-sm">Turn Count</p>
+            <p className="text-3xl font-bold">{metaState.session.turn_count}</p>
+          </div>
+          <div>
+            <p className="text-gray-400 text-sm">Duration</p>
+            <p className="text-3xl font-bold">
+              {Math.floor(metaState.session.duration_seconds / 60)}m {metaState.session.duration_seconds % 60}s
+            </p>
+          </div>
+          <div>
+            <p className="text-gray-400 text-sm">Topics</p>
+            <p className="text-3xl font-bold">{metaState.session.topics.length}</p>
+            {metaState.session.topics.length > 0 && (
+              <p className="text-xs text-gray-500 mt-1">{metaState.session.topics.slice(0, 3).join(', ')}</p>
+            )}
+          </div>
+          <div>
+            <p className="text-gray-400 text-sm">Entities</p>
+            <p className="text-3xl font-bold">{metaState.session.entities.length}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== CONVERSATION TAB =====
+function ConversationTab({ metaState }) {
+  return (
+    <div className="space-y-6">
+      {/* External LLM Control Panel */}
+      <div className="bg-gray-800 rounded-lg p-4 shadow-lg border-l-4 border-purple-500">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              🚀 External LLM Access
+              {externalLLMConfig.enabled && (
+                <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
+                  ACTIVE
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-gray-400">
+              {externalLLMConfig.description || "Enable access to Windows rig for enhanced curiosity processing"}
+            </p>
+            {externalLLMConfig.endpoint_url && (
+              <p className="text-xs text-gray-500 mt-1">
+                Endpoint: {externalLLMConfig.endpoint_url}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleToggleExternalLLM}
+            disabled={updatingLLM}
+            className={`ml-4 relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-800 ${
+              externalLLMConfig.enabled ? 'bg-purple-600' : 'bg-gray-600'
+            } ${updatingLLM ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                externalLLMConfig.enabled ? 'translate-x-9' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Existing Curiosity Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Recent Conversation Turns (#1) */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+        <h2 className="text-lg font-semibold mb-4">📝 Recent Conversation Turns</h2>
+        {metaState.recent_turns && metaState.recent_turns.length > 0 ? (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {metaState.recent_turns.map((turn, idx) => (
+              <div key={idx} className={`p-3 rounded ${turn.role === 'user' ? 'bg-blue-900/20 border-l-4 border-blue-400' : 'bg-green-900/20 border-l-4 border-green-400'}`}>
+                <div className="flex justify-between items-start mb-1">
+                  <span className="font-semibold text-sm">{turn.role === 'user' ? '👤 User' : '🤖 KLoROS'}</span>
+                  {turn.timestamp && (
+                    <span className="text-xs text-gray-500">{new Date(turn.timestamp).toLocaleTimeString()}</span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-200">{turn.text}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No conversation turns yet</p>
+        )}
+      </div>
+
+      {/* Intervention History (#2) */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">🎯 Intervention History</h2>
+        {metaState.intervention_history && metaState.intervention_history.length > 0 ? (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {metaState.intervention_history.map((intervention, idx) => (
+              <div key={idx} className="p-2 rounded bg-gray-700/50 border-l-2 border-yellow-400">
+                <div className="flex justify-between items-start">
+                  <span className="font-medium text-xs">{intervention.type}</span>
+                  <span className="text-xs text-gray-500">{new Date(intervention.timestamp).toLocaleTimeString()}</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{intervention.reason}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No interventions yet</p>
+        )}
+      </div>
+
+      {/* Topic/Entity Network (#5) */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">🕸️ Topic & Entity Network</h2>
+        {metaState.session.topics.length > 0 || metaState.session.entities.length > 0 ? (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-blue-400 mb-2">Topics ({metaState.session.topics.length})</h3>
+              <div className="flex flex-wrap gap-2">
+                {metaState.session.topics.map((topic, idx) => (
+                  <span key={idx} className="px-3 py-1 rounded-full bg-blue-900/40 text-blue-300 text-sm">
+                    {topic}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-green-400 mb-2">Entities ({metaState.session.entities.length})</h3>
+              <div className="flex flex-wrap gap-2">
+                {metaState.session.entities.map((entity, idx) => (
+                  <span key={idx} className="px-3 py-1 rounded-full bg-green-900/40 text-green-300 text-sm">
+                    {entity}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No topics or entities yet</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== CONSCIOUSNESS TAB =====
+function ConsciousnessTab({ metaState, emotionalTrajectory }) {
+  const consciousnessDetails = metaState.consciousness_details || {};
+  const coreAffect = consciousnessDetails.core_affect || metaState.affect;
+  const primaryEmotions = consciousnessDetails.primary_emotions || {};
+  const homeostatic = consciousnessDetails.homeostatic || [];
+
+  return (
+    <div className="space-y-6">
+      {/* External LLM Control Panel */}
+      <div className="bg-gray-800 rounded-lg p-4 shadow-lg border-l-4 border-purple-500">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              🚀 External LLM Access
+              {externalLLMConfig.enabled && (
+                <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
+                  ACTIVE
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-gray-400">
+              {externalLLMConfig.description || "Enable access to Windows rig for enhanced curiosity processing"}
+            </p>
+            {externalLLMConfig.endpoint_url && (
+              <p className="text-xs text-gray-500 mt-1">
+                Endpoint: {externalLLMConfig.endpoint_url}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleToggleExternalLLM}
+            disabled={updatingLLM}
+            className={`ml-4 relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-800 ${
+              externalLLMConfig.enabled ? 'bg-purple-600' : 'bg-gray-600'
+            } ${updatingLLM ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                externalLLMConfig.enabled ? 'translate-x-9' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Existing Curiosity Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Core Affect State */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">🎭 Core Affect</h2>
+        <div className="space-y-3">
+          <div className="flex justify-between items-center">
+            <span>Valence:</span>
+            <span className={`font-semibold ${coreAffect.valence > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {coreAffect.valence?.toFixed(2) || '0.00'}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Arousal:</span>
+            <span className="font-semibold">{coreAffect.arousal?.toFixed(2) || '0.00'}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Dominance:</span>
+            <span className="font-semibold">{coreAffect.dominance?.toFixed(2) || '0.00'}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Uncertainty:</span>
+            <span className="font-semibold">{formatPercent(coreAffect.uncertainty || 0)}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Fatigue:</span>
+            <span className="font-semibold">{formatPercent(coreAffect.fatigue || 0)}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Curiosity:</span>
+            <span className="font-semibold">{formatPercent(coreAffect.curiosity || 0)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Emotional Trajectory (#7) */}
+      {emotionalTrajectory.length > 5 && (
+        <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+          <h2 className="text-lg font-semibold mb-4">📈 Emotional Trajectory</h2>
+          <ResponsiveContainer width="100%" height={250}>
+            <ScatterChart>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis type="number" dataKey="valence" name="Valence" domain={[-1, 1]} stroke="#9CA3AF" label={{ value: 'Valence', position: 'insideBottom', offset: -5 }} />
+              <YAxis type="number" dataKey="arousal" name="Arousal" domain={[-1, 1]} stroke="#9CA3AF" label={{ value: 'Arousal', angle: -90, position: 'insideLeft' }} />
+              <Tooltip
+                cursor={{ strokeDasharray: '3 3' }}
+                contentStyle={{ backgroundColor: '#1F2937', border: 'none', borderRadius: '8px' }}
+              />
+              <Scatter name="Emotion" data={emotionalTrajectory} fill="#8b5cf6" />
+            </ScatterChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-gray-500 text-center mt-2">Valence (pleasure) vs Arousal (energy) over time</p>
+        </div>
+      )}
+
+      {/* Primary Emotions (#9 - partial) */}
+      {Object.keys(primaryEmotions).length > 0 && (
+        <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+          <h2 className="text-lg font-semibold mb-4">💫 Primary Emotions (Panksepp)</h2>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={Object.entries(primaryEmotions).map(([name, value]) => ({ name: name.toUpperCase(), value }))}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="name" stroke="#9CA3AF" fontSize={10} />
+              <YAxis domain={[0, 1]} stroke="#9CA3AF" />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1F2937', border: 'none', borderRadius: '8px' }}
+              />
+              <Bar dataKey="value" fill="#8b5cf6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Homeostatic Variables (#9 - partial) */}
+      {homeostatic.length > 0 && (
+        <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+          <h2 className="text-lg font-semibold mb-4">⚖️ Homeostatic Variables</h2>
+          <div className="space-y-3">
+            {homeostatic.map((variable, idx) => (
+              <div key={idx} className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span>{variable.name}</span>
+                  <span className={variable.satisfied ? 'text-green-400' : 'text-yellow-400'}>
+                    {variable.current.toFixed(2)} / {variable.target.toFixed(2)}
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${variable.satisfied ? 'bg-green-400' : 'bg-yellow-400'}`}
+                    style={{ width: `${variable.current * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500">Pressure: {formatPercent(variable.pressure)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== MEMORY TAB =====
+function MemoryTab({ metaState }) {
+  const memoryInsights = metaState.memory_insights || {};
+  const reflections = memoryInsights.recent_reflections || [];
+  const memoryStats = memoryInsights.memory_stats || {};
+
+  return (
+    <div className="space-y-6">
+      {/* External LLM Control Panel */}
+      <div className="bg-gray-800 rounded-lg p-4 shadow-lg border-l-4 border-purple-500">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              🚀 External LLM Access
+              {externalLLMConfig.enabled && (
+                <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
+                  ACTIVE
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-gray-400">
+              {externalLLMConfig.description || "Enable access to Windows rig for enhanced curiosity processing"}
+            </p>
+            {externalLLMConfig.endpoint_url && (
+              <p className="text-xs text-gray-500 mt-1">
+                Endpoint: {externalLLMConfig.endpoint_url}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleToggleExternalLLM}
+            disabled={updatingLLM}
+            className={`ml-4 relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-800 ${
+              externalLLMConfig.enabled ? 'bg-purple-600' : 'bg-gray-600'
+            } ${updatingLLM ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                externalLLMConfig.enabled ? 'translate-x-9' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Existing Curiosity Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Memory Statistics */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">📊 Memory Statistics</h2>
+        <div className="space-y-4">
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Total Memories</span>
+              <span className="font-bold text-2xl">{memoryStats.total_memories || 0}</span>
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Episodic</span>
+              <span className="font-semibold">{memoryStats.episodic_count || 0}</span>
+            </div>
+            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-400"
+                style={{ width: `${((memoryStats.episodic_count || 0) / (memoryStats.total_memories || 1)) * 100}%` }}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Semantic</span>
+              <span className="font-semibold">{memoryStats.semantic_count || 0}</span>
+            </div>
+            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-purple-400"
+                style={{ width: `${((memoryStats.semantic_count || 0) / (memoryStats.total_memories || 1)) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Reflections (#6) */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+        <h2 className="text-lg font-semibold mb-4">💡 Recent Memory Insights & Reflections</h2>
+        {reflections.length > 0 ? (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {reflections.map((reflection, idx) => (
+              <div key={idx} className="p-3 rounded bg-purple-900/20 border-l-4 border-purple-400">
+                <div className="flex justify-between items-start mb-1">
+                  <span className="text-xs font-semibold text-purple-300">{reflection.pattern_type}</span>
+                  <span className="text-xs text-gray-500">Confidence: {formatPercent(reflection.confidence)}</span>
+                </div>
+                <p className="text-sm text-gray-200">{reflection.insight}</p>
+                {reflection.timestamp && (
+                  <p className="text-xs text-gray-500 mt-1">{new Date(reflection.timestamp).toLocaleString()}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No reflections yet</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===== CURIOSITY TAB =====
+function CuriosityTab() {
+  const [curiosityState, setCuriosityState] = useState(null);
+  const [internalDialogue, setInternalDialogue] = useState([]);
+  const [xaiTraces, setXaiTraces] = useState([]);
+  const [selectedTrace, setSelectedTrace] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [externalLLMConfig, setExternalLLMConfig] = useState({ enabled: false, endpoint_url: null, model_name: null, description: null });
+  const [updatingLLM, setUpdatingLLM] = useState(false);
+
+  useEffect(() => {
+    const fetchCuriosityData = async () => {
+      try {
+        const [curiosityRes, dialogueRes, tracesRes, llmConfigRes] = await Promise.all([
+          fetch(`${API_URL}/api/curiosity`),
+          fetch(`${API_URL}/api/internal-dialogue?limit=10`),
+          fetch(`${API_URL}/api/xai-traces?limit=5`),
+          fetch(`${API_URL}/api/external-llm-config`)
+        ]);
+
+        if (curiosityRes.ok) {
+          const data = await curiosityRes.json();
+          setCuriosityState(data);
+        }
+        if (dialogueRes.ok) {
+          const data = await dialogueRes.json();
+          setInternalDialogue(data);
+        }
+        if (tracesRes.ok) {
+          const data = await tracesRes.json();
+          setXaiTraces(data);
+        }
+        if (llmConfigRes.ok) {
+          const data = await llmConfigRes.json();
+          setExternalLLMConfig(data);
+        }
+      } catch (error) {
+        console.error('[curiosity] Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCuriosityData();
+    const interval = setInterval(fetchCuriosityData, 5000); // Refresh every 5 seconds
+
+  const handleToggleExternalLLM = async () => {
+    setUpdatingLLM(true);
+    try {
+      const response = await fetch(`${API_URL}/api/external-llm-config?enabled=${!externalLLMConfig.enabled}`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        const updated = await response.json();
+        setExternalLLMConfig(updated);
+      }
+    } catch (error) {
+      console.error('[curiosity] Error toggling external LLM:', error);
+    } finally {
+      setUpdatingLLM(false);
+    }
+  };
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const getDialogueTypeColor = (type) => {
+    const colors = {
+      reflection: 'border-purple-400 bg-purple-900/20',
+      planning: 'border-blue-400 bg-blue-900/20',
+      concern: 'border-yellow-400 bg-yellow-900/20',
+      insight: 'border-green-400 bg-green-900/20'
+    };
+    return colors[type] || 'border-gray-400 bg-gray-900/20';
+  };
+
+  const getQuestionStatusColor = (status) => {
+    const colors = {
+      active: 'bg-blue-900/40 text-blue-300',
+      investigating: 'bg-yellow-900/40 text-yellow-300',
+      answered: 'bg-green-900/40 text-green-300',
+      deferred: 'bg-gray-700 text-gray-400'
+    };
+    return colors[status] || 'bg-gray-700 text-gray-400';
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center text-gray-400 py-8">
+        <p className="text-xl">Loading curiosity data...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* External LLM Control Panel */}
+      <div className="bg-gray-800 rounded-lg p-4 shadow-lg border-l-4 border-purple-500">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              🚀 External LLM Access
+              {externalLLMConfig.enabled && (
+                <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
+                  ACTIVE
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-gray-400">
+              {externalLLMConfig.description || "Enable access to Windows rig for enhanced curiosity processing"}
+            </p>
+            {externalLLMConfig.endpoint_url && (
+              <p className="text-xs text-gray-500 mt-1">
+                Endpoint: {externalLLMConfig.endpoint_url}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleToggleExternalLLM}
+            disabled={updatingLLM}
+            className={`ml-4 relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-800 ${
+              externalLLMConfig.enabled ? 'bg-purple-600' : 'bg-gray-600'
+            } ${updatingLLM ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                externalLLMConfig.enabled ? 'translate-x-9' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Existing Curiosity Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Curiosity Overview */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">🔍 Curiosity State</h2>
+        {curiosityState ? (
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between mb-2">
+                <span>Curiosity Level</span>
+                <span className="font-bold text-2xl text-yellow-400">
+                  {formatPercent(curiosityState.curiosity_level)}
+                </span>
+              </div>
+              <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-yellow-400 transition-all duration-500"
+                  style={{ width: `${curiosityState.curiosity_level * 100}%` }}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 pt-4">
+              <div>
+                <p className="text-gray-400 text-sm">Active Questions</p>
+                <p className="text-3xl font-bold">{curiosityState.active_questions.length}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Total Generated</p>
+                <p className="text-3xl font-bold">{curiosityState.total_questions_generated}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Answered</p>
+                <p className="text-3xl font-bold">{curiosityState.total_questions_answered}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Answer Rate</p>
+                <p className="text-3xl font-bold">
+                  {curiosityState.total_questions_generated > 0
+                    ? formatPercent(curiosityState.total_questions_answered / curiosityState.total_questions_generated)
+                    : '0%'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No curiosity data available</p>
+        )}
+      </div>
+
+      {/* Active Questions */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">❓ Active Questions</h2>
+        {curiosityState && curiosityState.active_questions.length > 0 ? (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {curiosityState.active_questions.map((q) => (
+              <div key={q.id} className="p-3 rounded bg-gray-700/50 border-l-4 border-yellow-400">
+                <div className="flex justify-between items-start mb-2">
+                  <span className={`px-2 py-1 rounded text-xs ${getQuestionStatusColor(q.status)}`}>
+                    {q.status}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Autonomy L{q.autonomy} | Value: {formatPercent(q.value_estimate)}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-blue-300 mb-1">{q.hypothesis}</p>
+                <p className="text-sm text-gray-200">{q.question}</p>
+                {q.evidence && q.evidence.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-500">Evidence:</p>
+                    <ul className="text-xs text-gray-400 list-disc list-inside">
+                      {q.evidence.slice(0, 2).map((e, idx) => (
+                        <li key={idx}>{e}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No active questions</p>
+        )}
+      </div>
+
+      {/* Internal Dialogue */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+        <h2 className="text-lg font-semibold mb-4">💭 Internal Dialogue</h2>
+        {internalDialogue.length > 0 ? (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {internalDialogue.map((entry, idx) => (
+              <div key={idx} className={`p-3 rounded border-l-4 ${getDialogueTypeColor(entry.type)}`}>
+                <div className="flex justify-between items-start mb-1">
+                  <span className="text-xs font-semibold uppercase text-gray-400">{entry.type}</span>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-xs text-gray-500">
+                      Confidence: {formatPercent(entry.confidence)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(entry.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-200">{entry.content}</p>
+                {entry.context && (
+                  <p className="text-xs text-gray-500 mt-1 italic">Context: {entry.context}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No internal dialogue recorded</p>
+        )}
+      </div>
+
+      {/* XAI Reasoning Traces */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+        <h2 className="text-lg font-semibold mb-4">🧩 Explainable AI Reasoning Traces</h2>
+        {xaiTraces.length > 0 ? (
+          <div className="space-y-3">
+            {xaiTraces.map((trace) => (
+              <div key={trace.decision_id} className="p-4 rounded bg-gray-700/50 border border-gray-600">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <span className="text-sm font-semibold text-cyan-300">{trace.decision_type}</span>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(trace.timestamp).toLocaleString()} | Confidence: {formatPercent(trace.confidence)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedTrace(selectedTrace?.decision_id === trace.decision_id ? null : trace)}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs transition-colors"
+                  >
+                    {selectedTrace?.decision_id === trace.decision_id ? 'Hide Details' : 'Show Details'}
+                  </button>
+                </div>
+                <p className="text-sm text-gray-200 mb-2">
+                  <span className="font-semibold">Question:</span> {trace.question}
+                </p>
+                <p className="text-sm text-green-300">
+                  <span className="font-semibold">Decision:</span> {trace.final_decision}
+                </p>
+
+                {selectedTrace?.decision_id === trace.decision_id && (
+                  <div className="mt-4 pt-4 border-t border-gray-600">
+                    <h3 className="text-sm font-semibold mb-3 text-purple-300">Reasoning Steps:</h3>
+                    <div className="space-y-2">
+                      {trace.reasoning_steps.map((step, idx) => (
+                        <div key={idx} className="pl-4 border-l-2 border-purple-500/50">
+                          <p className="text-xs font-semibold text-purple-400">
+                            Step {step.step_number}: {step.step_type}
+                          </p>
+                          <p className="text-sm text-gray-300">{step.description}</p>
+                          {step.evidence && step.evidence.length > 0 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Evidence: {step.evidence.join(', ')}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-500">
+                            Confidence: {formatPercent(step.confidence)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {trace.alternatives_considered && trace.alternatives_considered.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-600">
+                        <p className="text-xs font-semibold text-yellow-400 mb-1">
+                          Alternatives Considered:
+                        </p>
+                        <ul className="text-xs text-gray-400 list-disc list-inside">
+                          {trace.alternatives_considered.map((alt, idx) => (
+                            <li key={idx}>{alt}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-center py-8">No XAI traces available</p>
+        )}
+      </div>
+
+      {/* Recent Investigations */}
+      {curiosityState && curiosityState.recent_investigations.length > 0 && (
+        <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+          <h2 className="text-lg font-semibold mb-4">📚 Recent Investigations</h2>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {curiosityState.recent_investigations.map((q) => (
+              <div key={q.id} className="p-2 rounded bg-gray-700/30 border-l-2 border-green-500">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-green-300">{q.hypothesis}</p>
+                    <p className="text-xs text-gray-400">{q.question}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded text-xs ml-2 ${getQuestionStatusColor(q.status)}`}>
+                    {q.status}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {new Date(q.created_at).toLocaleString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+    </div>
+    );
+}
+
+// ===== PERFORMANCE TAB =====
+function PerformanceTab({ metaState }) {
+  const resources = metaState.system_resources || {};
+  const resourceHistory = metaState.resource_history || [];
+
+  return (
+    <div className="space-y-6">
+      {/* External LLM Control Panel */}
+      <div className="bg-gray-800 rounded-lg p-4 shadow-lg border-l-4 border-purple-500">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              🚀 External LLM Access
+              {externalLLMConfig.enabled && (
+                <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
+                  ACTIVE
+                </span>
+              )}
+            </h3>
+            <p className="text-sm text-gray-400">
+              {externalLLMConfig.description || "Enable access to Windows rig for enhanced curiosity processing"}
+            </p>
+            {externalLLMConfig.endpoint_url && (
+              <p className="text-xs text-gray-500 mt-1">
+                Endpoint: {externalLLMConfig.endpoint_url}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleToggleExternalLLM}
+            disabled={updatingLLM}
+            className={`ml-4 relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-800 ${
+              externalLLMConfig.enabled ? 'bg-purple-600' : 'bg-gray-600'
+            } ${updatingLLM ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <span
+              className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                externalLLMConfig.enabled ? 'translate-x-9' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Existing Curiosity Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* System Resources (#3) */}
+      <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">💻 System Resources</h2>
+        <div className="space-y-4">
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>CPU Usage</span>
+              <span className="font-semibold">{resources.cpu_percent?.toFixed(1) || 0}%</span>
+            </div>
+            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-400" style={{ width: `${resources.cpu_percent || 0}%` }} />
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Memory Usage</span>
+              <span className="font-semibold">
+                {resources.memory_used_gb?.toFixed(1) || 0} / {resources.memory_total_gb?.toFixed(1) || 0} GB ({resources.memory_percent?.toFixed(1) || 0}%)
+              </span>
+            </div>
+            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-full bg-green-400" style={{ width: `${resources.memory_percent || 0}%` }} />
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>KLoROS Process</span>
+              <span className="font-semibold">
+                CPU: {resources.process_cpu?.toFixed(1) || 0}% | RAM: {resources.process_memory_mb?.toFixed(0) || 0} MB
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* GPU Monitoring (#3) */}
+      {resources.gpus && resources.gpus.length > 0 && (
+        <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+          <h2 className="text-lg font-semibold mb-4">🎮 GPU Utilization</h2>
+          <div className="space-y-4">
+            {resources.gpus.map((gpu, idx) => (
+              <div key={idx} className="space-y-2">
+                <h3 className="text-sm font-semibold text-yellow-400">
+                  GPU {gpu.index}: {gpu.name}
+                </h3>
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>GPU Load</span>
+                    <span>{gpu.utilization_gpu.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-yellow-400" style={{ width: `${gpu.utilization_gpu}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span>VRAM</span>
+                    <span>{gpu.memory_used_mb.toFixed(0)} / {gpu.memory_total_mb.toFixed(0)} MB ({gpu.utilization_memory.toFixed(1)}%)</span>
+                  </div>
+                  <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-purple-400" style={{ width: `${gpu.utilization_memory}%` }} />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">Temperature: {gpu.temperature_c}°C</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Resource History (#4) */}
+      {resourceHistory.length > 5 && (
+        <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+          <h2 className="text-lg font-semibold mb-4">📉 Resource History (Last 5 Minutes)</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={resourceHistory}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="timestamp" stroke="#9CA3AF" fontSize={10} tickFormatter={(val) => new Date(val).toLocaleTimeString()} />
+              <YAxis stroke="#9CA3AF" fontSize={12} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1F2937', border: 'none', borderRadius: '8px' }}
+                labelFormatter={(val) => new Date(val).toLocaleTimeString()}
+              />
+              <Line type="monotone" dataKey="cpu_percent" stroke="#3B82F6" strokeWidth={2} dot={false} name="CPU %" />
+              <Line type="monotone" dataKey="memory_percent" stroke="#10B981" strokeWidth={2} dot={false} name="Memory %" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;

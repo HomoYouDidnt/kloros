@@ -1,0 +1,32 @@
+[promotion]
+shadow_win_min = 0.02          # candidate must beat baseline by ≥2% reward
+min_shadow_trials = 20
+max_tools_promote_per_day = 2
+require_tests_green = true
+risk_allow = ["low","medium"]   # high-risk needs manual approve
+
+[shadow]
+traffic_share = 0.2             # 20% of matching intents go to shadow (no side effects)
+dry_run = true
+
+[bandit]
+algo = "linucb"
+alpha = 1.2                     # exploration strength
+feature_dim = 128               # embed size you pass in
+warm_start_reward = 0.5         # assumed reward for unseen tools (priors)
+
+[risk]
+mqtt_publish = "high"
+gpu_status   = "low"
+memory_summary = "low"
+xai_search   = "medium"
+
+[dream_evolution]
+enabled = true
+population_size = 8
+max_generations = 5
+mutation_rate = 0.7
+crossover_rate = 0.3
+elite_count = 2
+fitness_threshold = 0.6     # Minimum fitness to re-quarantine evolved tool
+auto_submit_on_failure = true

@@ -1,0 +1,16 @@
+[Unit]
+Description=KLoROS D-REAM RAG Quality Runner (manual/disabled by default)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=kloros
+Environment=KLR_REGISTRY=/home/kloros/src/registry/capabilities.yaml
+ExecStart=/home/kloros/.venv/bin/python3 /home/kloros/dream/run_rag_quality.py
+WorkingDirectory=/home/kloros
+StandardOutput=append:/var/log/kloros/dream.log
+StandardError=append:/var/log/kloros/dream.log
+
+[Install]
+WantedBy=multi-user.target

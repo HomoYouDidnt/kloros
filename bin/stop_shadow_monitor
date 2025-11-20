@@ -1,0 +1,20 @@
+#!/bin/bash
+
+PID_FILE="/home/kloros/.kloros/shadow_monitor.pid"
+
+if [ ! -f "$PID_FILE" ]; then
+    echo "Monitor not running (no PID file)"
+    exit 0
+fi
+
+PID=$(cat "$PID_FILE")
+
+if ps -p "$PID" > /dev/null 2>&1; then
+    echo "Stopping monitor (PID: $PID)..."
+    kill "$PID"
+    rm -f "$PID_FILE"
+    echo "Monitor stopped"
+else
+    echo "Monitor not running (stale PID file)"
+    rm -f "$PID_FILE"
+fi

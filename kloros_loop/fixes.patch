@@ -1,0 +1,49 @@
+--- a/src/phase/report_writer.py
++++ b/src/phase/report_writer.py
+@@ -91,9 +91,9 @@ def write_test_result(
+             "status": status,
+             "latency_ms": latency_ms,
+             "cpu_pct": cpu_pct,
+-            "mem_mb": mem_mb,
++            "memory_mb": mem_mb,
+             "seed": seed,
+-            "started_at": now,
+-            "finished_at": now,
++            "start_time": now,
++            "end_time": now,
+         }
+         if artifact_bytes:
+
+--- a/src/dream/fitness_writer.py
++++ b/src/dream/fitness_writer.py
+@@ -7,6 +7,7 @@ KLoROS Tool-Integrity requirements.
+ """
+ from __future__ import annotations
+ import os, json, sys, time
++import uuid
+ from statistics import mean
+ from pathlib import Path
+ from typing import Dict, Any, Iterable
+@@ -30,6 +31,8 @@ WEIGHTS = {"pass_rate": 0.4, "latency_delta": 0.3, "efficiency": 0.2, "stabilit
+ # File I/O timeout budget (seconds)
+ IO_TIMEOUT = 10
+ 
++def _ulid() -> str:
++    return uuid.uuid4().hex
++
+ def _load_phase_lines() -> list[dict]:
+     """Load and parse PHASE test results from phase_report.jsonl.
+ 
+@@ -135,9 +138,10 @@ def compute_fitness(lines: list[dict]) -> Dict[str, Any]:
+         emit("fitness.computed", epoch_id=epoch_id, score=score, decision=decision, total_tests=total)
+ 
+         return {
++            "run_id": _ulid(),
+             "epoch_id": epoch_id,
+             "inputs": inputs,
+             "weights": WEIGHTS,
+-            "score": score,
++            "fitness_score": score,
+             "decision": decision,
+             "evidence": {"phase_report_path": str(PHASE), "total_tests": total, "passes": passes, "flakes": flakes}
+         }

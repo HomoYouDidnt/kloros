@@ -1,0 +1,7 @@
+[Unit]
+Description=Extract pattern library from winners
+
+[Service]
+Type=oneshot
+ExecStart=/home/kloros/bin/library_extract.py
+WorkingDirectory=/home/kloros

@@ -1,0 +1,42 @@
+{
+  "validation_timestamp": "2025-10-18T00:55:00Z",
+  "status": "VIOLATIONS_FOUND",
+  "banned_utilities_in_active_code": [
+    {
+      "utility": "stress-ng",
+      "file": "/home/kloros/src/dream/domains/cpu_domain_evaluator.py",
+      "lines": [239, 240, 245, 246, 251, 252, 276, 284, 306, 309, 313, 320, 327, 329, 344, 347, 351, 358],
+      "severity": "CRITICAL",
+      "active": true
+    },
+    {
+      "utility": "stress-ng",
+      "file": "/home/kloros/src/dream/domains/power_thermal_domain_evaluator.py",
+      "lines": [503],
+      "severity": "CRITICAL",
+      "active": true
+    },
+    {
+      "utility": "sysbench",
+      "file": "/home/kloros/src/dream/domains/os_scheduler_domain_evaluator.py",
+      "lines": [602, 607],
+      "severity": "CRITICAL",
+      "active": true
+    },
+    {
+      "utility": "sysbench",
+      "file": "/home/kloros/src/dream/domains/power_thermal_domain_evaluator.py",
+      "lines": [575, 586],
+      "severity": "CRITICAL",
+      "active": true
+    },
+    {
+      "utility": "stressapptest",
+      "file": "/home/kloros/src/dream/domains/memory_domain_evaluator.py",
+      "lines": [306, 308],
+      "severity": "CRITICAL",
+      "active": true
+    }
+  ],
+  "recommendation": "All D-REAM domain evaluators contain banned synthetic stress utilities that violate anti-fabrication doctrine. These must be replaced with compliant real workload measurements."
+}

@@ -1,0 +1,97 @@
+{
+  "remediation_summary": {
+    "timestamp": "2025-10-18T00:46:30Z",
+    "status": "COMPLETE",
+    "total_issues_fixed": 6,
+    "fixes_applied": [
+      {
+        "issue": "SPEC-004 artifact contract violation",
+        "fix": "Updated report_writer.py field names: mem_mb→memory_mb, started_at→start_time, finished_at→end_time",
+        "file": "/home/kloros/src/phase/report_writer.py",
+        "verification": "phase_report.jsonl regenerated with correct fields",
+        "status": "VERIFIED"
+      },
+      {
+        "issue": "SPEC-005 artifact contract violation",
+        "fix": "Updated fitness_writer.py: added run_id field, renamed score→fitness_score",
+        "file": "/home/kloros/src/dream/fitness_writer.py",
+        "verification": "fitness.json regenerated with correct fields",
+        "status": "VERIFIED"
+      },
+      {
+        "issue": "hints.json location mismatch",
+        "fix": "Moved hints.json to /home/kloros/out/heuristics/",
+        "verification": "File exists at expected location",
+        "status": "VERIFIED"
+      },
+      {
+        "issue": "reasoning_bank.jsonl missing",
+        "fix": "Initialized reasoning_bank.jsonl",
+        "file": "/home/kloros/.kloros/reasoning_bank.jsonl",
+        "verification": "File created",
+        "status": "VERIFIED"
+      },
+      {
+        "issue": "kloros_memory.db name mismatch",
+        "fix": "Created symlink from memory.db to kloros_memory.db",
+        "file": "/home/kloros/.kloros/kloros_memory.db",
+        "verification": "Symlink verified",
+        "status": "VERIFIED"
+      },
+      {
+        "issue": "Logging permission issue",
+        "fix": "Fixed structured.jsonl permissions to 666",
+        "file": "/home/kloros/kloros_loop/structured.jsonl",
+        "verification": "Permissions updated",
+        "status": "VERIFIED"
+      }
+    ],
+    "false_positives": [
+      {
+        "issue": "phase-heuristics service inactive",
+        "reason": "Timer-triggered service, runs every ~10min",
+        "action": "None required"
+      },
+      {
+        "issue": "Ollama ports not detected",
+        "reason": "Ports are listening, detection method issue",
+        "action": "None required"
+      },
+      {
+        "issue": "Empty bandit_state.json",
+        "reason": "No PHASE epochs run yet",
+        "action": "Will populate on first PHASE run"
+      }
+    ],
+    "validation_results": {
+      "d_ream_validator": {
+        "total_checks": 14,
+        "passed": 13,
+        "warnings": 1,
+        "failed": 0
+      },
+      "drift_detector": {
+        "total_findings": 0,
+        "status": "CLEAN"
+      },
+      "governance_enforcement": {
+        "decision": "APPROVE",
+        "checks_passed": 14,
+        "checks_failed": 0
+      }
+    },
+    "artifacts_generated": [
+      "/home/kloros/kloros_loop/fixes.patch",
+      "/home/kloros/kloros_loop/validator_summary.txt",
+      "/home/kloros/kloros_loop/dream_validator_report.json",
+      "/home/kloros/kloros_loop/drift_findings_final.jsonl",
+      "/home/kloros/kloros_loop/remediation_complete.json"
+    ],
+    "system_status": "OPERATIONAL",
+    "next_recommended_actions": [
+      "Run PHASE epoch to populate bandit_state.json",
+      "Monitor structured.jsonl for any new drift",
+      "Re-run full governance validation in 24h to confirm stability"
+    ]
+  }
+}

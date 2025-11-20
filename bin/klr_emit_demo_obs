@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""
+Synthetic OBSERVATION generator for testing ledger writer.
+
+Emits 5 demo observations to verify ledger writer is consuming events.
+"""
+import sys
+import time
+import random
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / "src"))
+
+from kloros.observability.emit_observation import emit_observation_simple
+
+print("Emitting 5 demo OBSERVATION events...")
+print("Watch ledger: tail -f ~/.kloros/lineage/fitness_ledger.jsonl")
+print("")
+
+for i in range(5):
+    # Emit observation
+    ok = (i % 5 != 0)  # One failure (i=0)
+    ttr_ms = random.randint(280, 420)
+
+    emit_observation_simple(
+        zooid_name="LatencyTracker_v1",
+        niche="latency_monitoring",
+        ecosystem="queue_management",
+        incident_id=f"demo-{i:03d}",
+        ok=ok,
+        ttr_ms=ttr_ms
+    )
+
+    status = "✓ OK" if ok else "✗ FAIL"
+    print(f"  [{i+1}/5] incident=demo-{i:03d} ttr={ttr_ms}ms {status}")
+
+    time.sleep(0.3)
+
+print("")
+print("✅ Emitted 5 demo observations")
+print("Check logs: sudo journalctl -u klr-ledger-writer.service -n 20")

@@ -1,0 +1,109 @@
+.worktrees/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+.venv_vllm/
+venv/
+ENV/
+env/
+
+# Runtime/Personal files
+.Xauthority
+.bash_history
+.bash_logout
+.bashrc
+.profile
+.zshrc
+.wget-hsts
+.face
+.face.icon
+.triton/
+.rustup/
+.pyenv/
+
+# Cache and local state
+.cache/
+.local/
+.claude/
+.kloros/
+.kloros_asr_config
+.kloros_early_init.done
+.kloros_early_init.lock
+.kloros_env*
+.overnight_logs/
+.rollback/
+
+# Environment files
+.env
+.env.*
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.old
+*.backup
+*.bak
+*.swp
+*~
+
+# Data directories
+embeddings/
+candidates/
+d_ream_candidates/
+knowledge_base/
+rag_data/
+models/
+artifacts/
+metrics/
+out/
+reports/
+assets/
+data/
+training_data/
+voice_files/
+work/
+var/
+tmp/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.tar.gz
+*.zip
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+package-lock.json
+
+# Test outputs
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Permission-restricted directories
+MILESTONES/
+.config/procps/
+.config/pulse/
+
+# Audio/voice files
+*.wav
+*.mp3
+*.flac
+*.ogg
+voice_samples/
+audio_samples/

@@ -1,0 +1,252 @@
+================================================================================
+                KLoROS SYSTEM ARCHITECTURE - QUICK SUMMARY
+================================================================================
+
+SYSTEM OVERVIEW
+===============
+KLoROS is an advanced autonomous AI voice assistant with evolutionary 
+self-improvement, sophisticated memory systems, and multi-layered orchestration.
+
+MAJOR SUBSYSTEMS (5)
+====================
+
+1. KLOROS CORE ✅ 100% Operational
+   └─ Voice pipeline with Vosk+Whisper hybrid STT
+   └─ Piper TTS with speaker enrollment
+   └─ Audio processing (VAD, calibration)
+   └─ Personality preservation system
+   └─ Location: /home/kloros/src/kloros_voice.py (183KB)
+
+2. ASTRAEA FOUNDATION ✅ 100% Operational
+   └─ Autopoietic Spatial-Temporal Reasoning Architecture
+   └─ Foundational framework for all subsystems
+   └─ Mythological: Named after Virgo constellation goddess
+   └─ Philosophical basis for autonomous operation
+
+3. D-REAM EVOLUTION ✅ 100% Operational
+   └─ Darwinian-RZero Evolution & Anti-collapse Module
+   └─ 14,125+ evaluations across 4 experiments
+   └─ 3 tools under active evolution (0% failure rate)
+   └─ Location: /home/kloros/src/dream/
+
+4. PHASE TESTING 🟡 Paused for Migration
+   └─ Phased Heuristic Adaptive Scheduling Engine
+   └─ Accelerated testing (3-7 AM daily)
+   └─ 8 domain specializations
+   └─ Location: /home/kloros/src/phase/
+
+5. SPICA TEMPLATE 🟡 Migration in Progress (60%)
+   └─ Self-Progressive Intelligent Cognitive Archetype
+   └─ Base template for all testable instances
+   └─ Status: Tests disabled pending SPICA type hierarchy
+
+MEMORY SYSTEMS ✅ 100% Operational
+=====================================
+├─ Episodic-Semantic Memory
+│  └─ SQLite storage (~/.kloros/memory.db) with WAL mode
+│  └─ Episode condensation with LLM summarization
+│  └─ Smart context retrieval with multi-factor scoring
+│  └─ Housekeeping & maintenance automation
+│
+├─ Idle Reflection System
+│  └─ 15-minute self-analysis cycles
+│  └─ Speech pipeline health monitoring
+│  └─ Conversation pattern recognition
+│  └─ Meta-cognitive insights
+│
+└─ Conversation Memory
+   └─ ChromaDB integration
+   └─ Last 6 turns + semantic similarity
+
+ORCHESTRATION & CONTROL ✅ 100% Operational
+==============================================
+├─ Orchestrator Coordinator
+│  └─ State machine (8 states)
+│  └─ Phase & Dream scheduling
+│  └─ Result ingestion pipeline
+│
+├─ Lock Management
+│  └─ fcntl-based exclusive locks
+│  └─ PID tracking and stale detection
+│  └─ TTL-based lock reaping
+│
+├─ GPU Maintenance
+│  └─ Quiesce/Canary/Restore workflow
+│  └─ Budget tracking with hard abort
+│  └─ Maintenance window: 03:00-07:00 NY time
+│
+└─ Observer & Curiosity System
+   └─ Symptom detection & escalation
+   └─ Automatic question generation
+   └─ Capability gap analysis
+
+REASONING & RAG ✅ 100% Operational
+===================================
+├─ Hybrid RAG System
+│  └─ BM25 keyword search
+│  └─ BAAI/bge-small-en-v1.5 semantic embeddings
+│  └─ RRF fusion & reranking
+│  └─ 1,893 voice samples in knowledge base
+│
+├─ LLM Model Routing
+│  └─ "live" → qwen2.5:14b-instruct-q4_0
+│  └─ "think" → deepseek-r1:7b
+│  └─ "code" → qwen2.5-coder:32b
+│  └─ "deep" → qwen2.5:14b-instruct-q4_0
+│
+└─ Dual GPU Setup
+   └─ GPU 0 (RTX 3060 12GB): LIVE/CODE
+   └─ GPU 1 (GTX 1080 Ti 11GB): THINK/DEEP
+
+TOOL SYNTHESIS ✅ 100% Operational
+===================================
+├─ 50+ Introspection Tools
+│  └─ System diagnostics
+│  └─ Performance monitoring
+│  └─ Audio analysis
+│  └─ Memory introspection
+│
+├─ Tool Governance
+│  └─ 50 tools/day quota (was 2)
+│  └─ 200 tools/week quota (was 6)
+│  └─ Shadow testing before promotion
+│
+└─ Tool Evolution
+   └─ 3 tools under active evolution
+   └─ Versioned directories with atomic symlink deployment
+   └─ LLM-guided mutation engine
+
+D-REAM ACTIVE EXPERIMENTS
+==========================
+1. rag_opt_baseline         - 4,114 evals | Context recall, precision, latency
+2. conv_quality_tune        - 5,409 evals | Helpfulness, faithfulness
+3. audio_latency_trim       - 4,106 evals | Latency p95, underruns, CPU%
+4. tool_evolution           - 496 evals  | Fail rate, latency, F1, QPS
+
+KEY CONFIGURATION
+=================
+Audio:          KLR_INPUT_IDX=11 (CMTECK), KLR_INPUT_GAIN=4.0
+STT:            KLR_STT_BACKEND=hybrid, ASR_CORRECTION_THRESHOLD=0.75
+Memory:         KLR_ENABLE_MEMORY=1, KLR_AUTO_CONDENSE=1
+GPU:            CUDA_VISIBLE_DEVICES=0, KLR_CANARY_TIMEOUT=30
+Windows:        PHASE/GPU: "03:00-07:00 America/New_York"
+
+CRITICAL PATHS
+==============
+Main voice:       /home/kloros/src/kloros_voice.py (183KB)
+D-REAM runner:    /home/kloros/src/dream/complete_dream_system.py (800+ lines)
+RAG engine:       /home/kloros/src/simple_rag.py
+Orchestration:    /home/kloros/src/kloros/orchestration/coordinator.py
+Introspection:    /home/kloros/src/introspection_tools.py (166KB)
+
+KNOWN ISSUES
+============
+1. SPICA Migration - Tests disabled pending type hierarchy completion
+2. Context Loss - max_ctx_chars=3000 too small (recommend 6000-8000)
+3. File Ownership - Should be kloros:kloros (FIXED Oct 20)
+
+COMPLETION STATUS
+=================
+✅ KLoROS Voice Pipeline         100%
+✅ Memory Systems                100%
+✅ D-REAM Evolution               100%
+✅ Orchestration                  100%
+✅ RAG System                     100%
+✅ Tool Synthesis                 100%
+✅ Observer & Curiosity           100%
+🟡 SPICA Migration                 60%
+📅 Camera Integration             Planned
+📅 Physical Embodiment            Planned
+
+METRICS (October 2025)
+======================
+Evolution Evaluations:          14,125+
+Tool Evolution Evals:               496
+Tool Evolution Failure Rate:        0%
+Telemetry Collected:           7.1 MB
+Zero-Downtime Deployment:      ✅ Yes
+
+DOCUMENTATION
+==============
+Comprehensive:  /home/kloros/KLOROS_SYSTEM_ANALYSIS_COMPREHENSIVE.md
+Architecture:   /home/kloros/COMPONENT_ARCHITECTURE.md
+Quick Ref:      /home/kloros/COMPONENT_QUICK_REFERENCE.txt
+ASTRAEA:        /home/kloros/docs/ASTRAEA_SYSTEM_THESIS.md
+System Org:     /home/kloros/docs/SYSTEM_ARCHITECTURE_OVERVIEW.md
+
+VOICE PIPELINE FLOW
+===================
+Audio (48kHz, USB)
+  ↓
+VAD (Silero + RMS dBFS)
+  ↓
+STT Hybrid (Vosk + Whisper)
+  ↓
+Query Classification
+  ↓
+RAG Retrieval
+  ↓
+LLM Inference (mode-routed)
+  ↓
+TTS Synthesis (Piper)
+  ↓
+Audio Output
+
+EVOLUTION PIPELINE
+==================
+D-REAM (24/7)
+  ↓
+Candidate Generation
+  ↓
+Multi-regime Evaluation
+  ↓
+Fitness & Novelty
+  ↓
+Tournament Selection
+  ↓
+Approval Gate (Safety)
+  ↓
+Atomic Deployment
+  ↓
+PHASE Testing (3-7 AM)
+  ↓
+Result → Dashboard → Promotion
+
+WHAT'S COMPLETE & WORKING
+==========================
+✓ Voice-to-voice conversation pipeline
+✓ Episodic memory with condensation
+✓ Autonomous evolutionary optimization
+✓ Tool synthesis and evolution
+✓ GPU-accelerated inference with fallbacks
+✓ Complete orchestration & scheduling
+✓ Observer system with escalation
+✓ RAG with hybrid retrieval
+✓ Speaker identification & enrollment
+✓ Comprehensive logging & monitoring
+✓ Idle reflection system
+✓ Safety gates & approval workflow
+
+WHAT NEEDS ATTENTION
+====================
+⚠ SPICA type hierarchy finalization
+⚠ Domain derivative implementations
+⚠ CI gate for SPICA compliance
+⚠ RAG context window increase (3000→8000 chars)
+⚠ D-REAM/PHASE test re-enablement
+
+RECOMMENDED NEXT STEPS
+======================
+1. Complete SPICA type hierarchy
+2. Migrate all domains to SPICA derivatives
+3. Implement CI enforcement for SPICA
+4. Re-enable D-REAM and PHASE tests
+5. Increase RAG context window
+6. Monitor tool evolution convergence
+7. Track GPU isolation effectiveness
+
+================================================================================
+Analysis Date: November 3, 2025
+Scope: Complete KLoROS system (72 src directories, 200+ Python files)
+Thoroughness: Very Thorough
+================================================================================

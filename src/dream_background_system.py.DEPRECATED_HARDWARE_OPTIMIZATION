@@ -1,0 +1,782 @@
+#!/usr/bin/env python3
+"""
+Background D-REAM System for Continuous Optimization Detection
+Runs autonomously to detect improvement opportunities for evolution triggering.
+"""
+
+import os
+import sys
+import time
+import json
+import signal
+import threading
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+import traceback
+
+# Add KLoROS source to path
+sys.path.insert(0, '/home/kloros/src')
+from dream_background_integration import DreamEvolutionTrigger
+from dream_alerts.passive_indicators import PassiveIndicatorAlert
+from dream_alerts.alert_methods import ImprovementAlert
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/home/kloros/.kloros/dream_background.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('dream_background')
+
+class PerformanceMonitor:
+    """Monitor system performance for optimization opportunities."""
+
+    def __init__(self):
+        self.metrics_history = []
+        self.max_history = 100
+        self.baseline_metrics = None
+
+    def collect_metrics(self) -> Dict[str, Any]:
+        """Collect current system performance metrics."""
+        metrics = {
+            'timestamp': datetime.now().isoformat(),
+            'cpu_usage': self._get_cpu_usage(),
+            'memory_usage': self._get_memory_usage(),
+            'response_times': self._get_response_times(),
+            'error_rates': self._get_error_rates(),
+            'audio_quality': self._get_audio_quality(),
+            'recognition_accuracy': self._get_recognition_accuracy()
+        }
+
+        self.metrics_history.append(metrics)
+        if len(self.metrics_history) > self.max_history:
+            self.metrics_history = self.metrics_history[-self.max_history:]
+
+        return metrics
+
+    def _get_cpu_usage(self) -> float:
+        """Get CPU usage percentage."""
+        try:
+            # Simple CPU load from /proc/loadavg
+            with open('/proc/loadavg', 'r') as f:
+                load_avg = float(f.read().split()[0])
+            # Convert to percentage (assuming 4 cores)
+            return min(load_avg / 4.0 * 100, 100.0)
+        except:
+            return 0.0
+
+    def _get_memory_usage(self) -> float:
+        """Get memory usage percentage."""
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                lines = f.readlines()
+
+            total = None
+            available = None
+            for line in lines:
+                if line.startswith('MemTotal:'):
+                    total = int(line.split()[1])
+                elif line.startswith('MemAvailable:'):
+                    available = int(line.split()[1])
+
+            if total and available:
+                used = total - available
+                return (used / total) * 100
+        except:
+            pass
+        return 0.0
+
+    def _get_response_times(self) -> Dict[str, float]:
+        """Get response time metrics from KLoROS logs."""
+        try:
+            # Read today's log file
+            log_file = Path(f"/home/kloros/.kloros/logs/kloros-{time.strftime('%Y%m%d')}.jsonl")
+            if not log_file.exists():
+                logger.warning(f"Log file not found: {log_file}")
+                return {'error': 'log_file_not_found'}
+
+            # Parse last 100 turns for timing data
+            timings = []
+            with open(log_file, 'r') as f:
+                lines = f.readlines()
+                for line in lines[-100:]:
+                    try:
+                        event = json.loads(line)
+                        if event.get('name') == 'turn_done':
+                            # Extract real timing data if available
+                            if 'duration_sec' in event:
+                                timings.append(event['duration_sec'])
+                    except:
+                        continue
+
+            if not timings:
+                logger.warning("No timing data found in recent logs")
+                return {'error': 'no_timing_data'}
+
+            # Return real measured average
+            avg_time = sum(timings) / len(timings)
+            return {
+                'total_pipeline': avg_time,
+                'sample_size': len(timings)
+            }
+        except Exception as e:
+            logger.error(f"Failed to read response times: {e}")
+            return {'error': str(e)}
+
+    def _get_error_rates(self) -> Dict[str, float]:
+        """Get error rate metrics from KLoROS logs."""
+        try:
+            log_file = Path(f"/home/kloros/.kloros/logs/kloros-{time.strftime('%Y%m%d')}.jsonl")
+            if not log_file.exists():
+                return {'error': 'log_file_not_found'}
+
+            total_events = 0
+            error_events = 0
+
+            with open(log_file, 'r') as f:
+                for line in f.readlines()[-200:]:
+                    try:
+                        event = json.loads(line)
+                        if event.get('level') in ['ERROR', 'WARNING']:
+                            error_events += 1
+                        total_events += 1
+                    except:
+                        continue
+
+            if total_events == 0:
+                return {'error': 'no_event_data'}
+
+            return {
+                'error_rate': error_events / total_events,
+                'total_events': total_events,
+                'error_events': error_events
+            }
+        except Exception as e:
+            logger.error(f"Failed to read error rates: {e}")
+            return {'error': str(e)}
+
+    def _get_audio_quality(self) -> float:
+        """Get audio quality metrics from VAD data in logs."""
+        try:
+            log_file = Path(f"/home/kloros/.kloros/logs/kloros-{time.strftime('%Y%m%d')}.jsonl")
+            if not log_file.exists():
+                return None
+
+            # Collect dBFS peak values from VAD events
+            dbfs_peaks = []
+            with open(log_file, 'r') as f:
+                for line in f.readlines()[-200:]:
+                    try:
+                        event = json.loads(line)
+                        # vad_two_stage events contain quality indicators
+                        if event.get('name') == 'vad_two_stage':
+                            # Check if refinement succeeded (good quality audio)
+                            if event.get('stage_b_refined'):
+                                dbfs_peaks.append(1.0)  # Good quality
+                            else:
+                                dbfs_peaks.append(0.5)  # Marginal quality
+                    except:
+                        continue
+
+            if not dbfs_peaks:
+                return None
+
+            # Return average quality score
+            return sum(dbfs_peaks) / len(dbfs_peaks)
+        except Exception as e:
+            logger.error(f"Failed to read audio quality: {e}")
+            return None
+
+    def _get_recognition_accuracy(self) -> float:
+        """Get speech recognition accuracy from STT confidence scores in logs."""
+        try:
+            log_file = Path(f"/home/kloros/.kloros/logs/kloros-{time.strftime('%Y%m%d')}.jsonl")
+            if not log_file.exists():
+                return None
+
+            # Collect STT confidence scores
+            confidences = []
+            with open(log_file, 'r') as f:
+                for line in f.readlines()[-100:]:
+                    try:
+                        event = json.loads(line)
+                        if event.get('name') == 'stt_done':
+                            # STT confidence is a proxy for recognition accuracy
+                            conf = event.get('confidence')
+                            if conf is not None:
+                                confidences.append(conf)
+                    except:
+                        continue
+
+            if not confidences:
+                return None
+
+            # Return average STT confidence as recognition accuracy
+            return sum(confidences) / len(confidences)
+        except Exception as e:
+            logger.error(f"Failed to read recognition accuracy: {e}")
+            return None
+
+    def detect_performance_issues(self) -> List[Dict[str, Any]]:
+        """Detect performance issues that could be optimized."""
+        issues = []
+
+        if len(self.metrics_history) < 5:
+            return issues  # Need enough data
+
+        recent_metrics = self.metrics_history[-5:]
+
+        # Check for high CPU usage
+        avg_cpu = sum(m['cpu_usage'] for m in recent_metrics) / len(recent_metrics)
+        if avg_cpu > 80:
+            issues.append({
+                'type': 'high_cpu_usage',
+                'severity': 'medium',
+                'description': f'Average CPU usage {avg_cpu:.1f}% over last 5 measurements',
+                'suggested_improvement': 'CPU optimization algorithms',
+                'confidence': 0.7
+            })
+
+        # Check for high memory usage
+        avg_memory = sum(m['memory_usage'] for m in recent_metrics) / len(recent_metrics)
+        if avg_memory > 85:
+            issues.append({
+                'type': 'high_memory_usage',
+                'severity': 'high',
+                'description': f'Average memory usage {avg_memory:.1f}% over last 5 measurements',
+                'suggested_improvement': 'Memory optimization algorithms',
+                'confidence': 0.8
+            })
+
+        # Check for slow response times - ONLY use real data
+        valid_times = [m['response_times'].get('total_pipeline')
+                       for m in recent_metrics
+                       if 'error' not in m['response_times'] and 'total_pipeline' in m['response_times']]
+
+        if valid_times:
+            avg_total_time = sum(valid_times) / len(valid_times)
+            if avg_total_time > 5.0:
+                issues.append({
+                    'type': 'slow_response_times',
+                    'severity': 'high',
+                    'description': f'Average pipeline response time {avg_total_time:.1f}s (target: <3s)',
+                    'suggested_improvement': 'Response time optimization',
+                    'confidence': 0.85,
+                    'data_source': 'real_kloros_logs'
+                })
+
+        # Recognition accuracy - returns None if not implemented (no fabrication)
+        valid_accuracy = [m['recognition_accuracy'] for m in recent_metrics if m['recognition_accuracy'] is not None]
+        if valid_accuracy:
+            avg_accuracy = sum(valid_accuracy) / len(valid_accuracy)
+            if avg_accuracy < 0.90:
+                issues.append({
+                    'type': 'low_recognition_accuracy',
+                    'severity': 'medium',
+                    'description': f'Average recognition accuracy {avg_accuracy:.1%} (target: >90%)',
+                    'suggested_improvement': 'Speech recognition enhancement',
+                    'confidence': 0.75,
+                    'data_source': 'real_metrics'
+                })
+
+        # Audio quality - returns None if not implemented (no fabrication)
+        valid_audio = [m['audio_quality'] for m in recent_metrics if m['audio_quality'] is not None]
+        if valid_audio:
+            avg_audio_quality = sum(valid_audio) / len(valid_audio)
+            if avg_audio_quality < 0.80:
+                issues.append({
+                    'type': 'low_audio_quality',
+                    'severity': 'medium',
+                'description': f'Average audio quality {avg_audio_quality:.1%} (target: >80%)',
+                'suggested_improvement': 'Audio processing optimization',
+                'confidence': 0.70
+            })
+
+        return issues
+
+class OptimizationDetector:
+    """Detect specific optimization opportunities using evolutionary algorithms."""
+
+    def __init__(self):
+        self.optimization_cache = {}
+        self.last_evolutionary_run = None
+
+    def detect_optimizations(self, performance_issues: List[Dict], metrics: Dict) -> List[Dict[str, Any]]:
+        """Detect specific optimization opportunities."""
+        optimizations = []
+
+        # Run evolutionary optimization detection
+        evolutionary_optimizations = self._run_evolutionary_detection(performance_issues, metrics)
+        optimizations.extend(evolutionary_optimizations)
+
+        # Detect configuration optimizations
+        config_optimizations = self._detect_config_optimizations(metrics)
+        optimizations.extend(config_optimizations)
+
+        # Detect algorithm optimizations
+        algorithm_optimizations = self._detect_algorithm_optimizations(performance_issues)
+        optimizations.extend(algorithm_optimizations)
+
+        return optimizations
+    def _run_evolutionary_detection(self, issues: List[Dict], metrics: Dict) -> List[Dict[str, Any]]:
+        """Run production D-REAM evolution for detected issues."""
+        optimizations = []
+
+        # Only run evolutionary detection every 30 minutes to avoid overload
+        now = datetime.now()
+        if (self.last_evolutionary_run and
+            now - self.last_evolutionary_run < timedelta(minutes=30)):
+            return optimizations
+
+        try:
+            # Use the new D-REAM trigger system
+            if not hasattr(self, 'dream_trigger'):
+                self.dream_trigger = DreamEvolutionTrigger()
+
+            # Analyze high-priority issues
+            for issue in issues:
+                if issue.get('severity') in ['high', 'medium'] and issue.get('confidence', 0) > 0.7:
+                    optimization = {
+                        'type': f"auto_{issue['type']}",
+                        'component': 'system',
+                        'description': issue['description'],
+                        'expected_benefit': issue.get('suggested_improvement'),
+                        'risk_level': 'medium' if issue['severity'] == 'high' else 'low',
+                        'confidence': issue.get('confidence', 0.7)
+                    }
+
+                    # Attempt to trigger D-REAM evolution
+                    logger.info(f"Attempting to trigger D-REAM evolution for {issue['type']}")
+                    result = self.dream_trigger.trigger_evolution(optimization)
+
+                    if result and result.get('success'):
+                        optimizations.append({
+                            'type': 'evolutionary_optimization',
+                            'component': 'dream_evolution',
+                            'description': f"D-REAM evolution run {result.get('run_id')} for {issue['type']}",
+                            'expected_benefit': f"Automated optimization via D-REAM evolution",
+                            'risk_level': 'low',
+                            'confidence': 0.9,
+                            'optimization_data': {
+                                'run_id': result.get('run_id'),
+                                'triggered_for': issue['type'],
+                                'timestamp': result.get('timestamp')
+                            }
+                        })
+
+                        logger.info(f"✅ D-REAM evolution triggered successfully for {issue['type']}")
+                        self.last_evolutionary_run = now
+                        break  # Only trigger one evolution per cycle
+
+        except Exception as e:
+            logger.warning(f"D-REAM evolution trigger failed: {e}")
+
+        return optimizations
+    def _detect_config_optimizations(self, metrics: Dict) -> List[Dict[str, Any]]:
+        """Detect configuration-based optimizations."""
+        optimizations = []
+
+        response_times = metrics.get('response_times', {})
+
+        # Audio gain optimization
+        if response_times.get('speech_recognition', 0) > 1.5:
+            optimizations.append({
+                'type': 'configuration',
+                'component': 'audio_processing',
+                'description': 'Optimize audio input gain for better recognition speed',
+                'expected_benefit': '15-25% reduction in speech recognition latency',
+                'risk_level': 'low',
+                'confidence': 0.75,
+                'config_changes': {
+                    'KLR_INPUT_GAIN': '3.5',
+                    'KLR_VAD_SENSITIVITY': '0.7'
+                }
+            })
+
+        # Memory management optimization
+        memory_usage = metrics.get('memory_usage', 0)
+        if memory_usage > 80:
+            optimizations.append({
+                'type': 'configuration',
+                'component': 'memory_management',
+                'description': 'Optimize memory usage through garbage collection tuning',
+                'expected_benefit': '10-15% reduction in memory footprint',
+                'risk_level': 'low',
+                'confidence': 0.70,
+                'config_changes': {
+                    'KLR_GC_THRESHOLD': '100',
+                    'KLR_MEMORY_LIMIT': '8GB'
+                }
+            })
+
+        return optimizations
+
+    def _detect_algorithm_optimizations(self, issues: List[Dict]) -> List[Dict[str, Any]]:
+        """Detect algorithm-based optimizations."""
+        optimizations = []
+
+        for issue in issues:
+            if issue['type'] == 'slow_response_times':
+                optimizations.append({
+                    'type': 'algorithm',
+                    'component': 'voice_pipeline',
+                    'description': 'Implement parallel processing for voice pipeline stages',
+                    'expected_benefit': '20-30% reduction in total response time',
+                    'risk_level': 'medium',
+                    'confidence': 0.80,
+                    'algorithm_changes': {
+                        'parallel_stt_tts': True,
+                        'pipeline_buffering': True,
+                        'async_processing': True
+                    }
+                })
+
+            elif issue['type'] == 'low_recognition_accuracy':
+                optimizations.append({
+                    'type': 'algorithm',
+                    'component': 'speech_recognition',
+                    'description': 'Enhanced noise filtering and model fine-tuning',
+                    'expected_benefit': '5-10% improvement in recognition accuracy',
+                    'risk_level': 'low',
+                    'confidence': 0.85,
+                    'algorithm_changes': {
+                        'noise_filtering': 'adaptive',
+                        'model_fine_tuning': True,
+                        'context_aware_recognition': True
+                    }
+                })
+
+        return optimizations
+
+
+class ChaosMetricsAnalyzer:
+    """Analyze chaos lab metrics to detect self-healing weaknesses."""
+
+    def __init__(self):
+        self.metrics_file = Path('/home/kloros/.kloros/dream_chaos_metrics.jsonl')
+        self.history_file = Path('/home/kloros/.kloros/chaos_history.jsonl')
+        self.weakness_threshold = 70  # Score below this indicates weakness
+
+    def analyze_chaos_patterns(self) -> List[Dict[str, Any]]:
+        """Analyze chaos test results to identify systematic weaknesses."""
+        weaknesses = []
+
+        try:
+            if not self.metrics_file.exists():
+                return weaknesses
+
+            # Read recent chaos metrics
+            metrics = []
+            with open(self.metrics_file, 'r') as f:
+                for line in f:
+                    if line.strip():
+                        metrics.append(json.loads(line))
+
+            # Only analyze recent metrics (last 20)
+            recent_metrics = metrics[-20:] if len(metrics) > 20 else metrics
+
+            if not recent_metrics:
+                return weaknesses
+
+            # Group by scenario/target
+            by_target = {}
+            for m in recent_metrics:
+                target = m.get('scenario', 'unknown')
+                if target not in by_target:
+                    by_target[target] = []
+                by_target[target].append(m)
+
+            # Identify systematic failures
+            for target, target_metrics in by_target.items():
+                avg_score = sum(m.get('score', 0) for m in target_metrics) / len(target_metrics)
+                avg_mttr = sum(m.get('mttr', 999) for m in target_metrics) / len(target_metrics)
+                heal_rate = sum(1 for m in target_metrics if m.get('healed', False)) / len(target_metrics)
+
+                if avg_score < self.weakness_threshold or heal_rate < 0.7:
+                    # Identify the component
+                    component = target.split('_')[0] if '_' in target else 'general'
+
+                    weaknesses.append({
+                        'type': 'chaos_weakness',
+                        'component': f'self_healing.{component}',
+                        'target_scenario': target,
+                        'severity': 'high' if avg_score < 50 else 'medium',
+                        'description': f'Systematic weakness in {target}: avg score {avg_score:.0f}/100, heal rate {heal_rate:.0%}, avg MTTR {avg_mttr:.1f}s',
+                        'expected_benefit': f'Improve healing for {target} to >80/100 score, >90% heal rate',
+                        'risk_level': 'low',
+                        'confidence': 0.9 if len(target_metrics) >= 3 else 0.7,
+                        'urgency': 'high' if avg_score < 40 else 'medium',
+                        'fitness_data': {
+                            'avg_score': avg_score,
+                            'avg_mttr': avg_mttr,
+                            'heal_rate': heal_rate,
+                            'sample_count': len(target_metrics)
+                        }
+                    })
+
+            # Identify global patterns
+            if recent_metrics:
+                global_avg_score = sum(m.get('score', 0) for m in recent_metrics) / len(recent_metrics)
+                global_heal_rate = sum(1 for m in recent_metrics if m.get('healed', False)) / len(recent_metrics)
+
+                if global_avg_score < 60:
+                    weaknesses.append({
+                        'type': 'chaos_global_weakness',
+                        'component': 'self_healing.system',
+                        'severity': 'high',
+                        'description': f'Overall healing performance degraded: avg score {global_avg_score:.0f}/100, heal rate {global_heal_rate:.0%}',
+                        'expected_benefit': 'Improve overall self-healing robustness across all scenarios',
+                        'risk_level': 'medium',
+                        'confidence': 0.85,
+                        'urgency': 'high'
+                    })
+
+            logger.info(f"[chaos_analyzer] Analyzed {len(recent_metrics)} chaos metrics, found {len(weaknesses)} weaknesses")
+
+        except Exception as e:
+            logger.warning(f"[chaos_analyzer] Failed to analyze chaos metrics: {e}")
+
+        return weaknesses
+
+
+class DreamBackgroundSystem:
+    """Main background D-REAM system for continuous optimization detection."""
+
+    def __init__(self):
+        self.running = False
+        self.monitor = PerformanceMonitor()
+        self.detector = OptimizationDetector()
+        self.chaos_analyzer = ChaosMetricsAnalyzer()
+        self.monitoring_interval = 60  # seconds
+        self.detection_interval = 300  # 5 minutes
+        self.last_detection_run = None
+
+        # Initialize Passive Indicator for sending improvements to KLoROS
+        # (Writes to shared file location that KLoROS monitors)
+        try:
+            self.passive_indicator = PassiveIndicatorAlert()
+            logger.info("✅ Passive Indicator initialized for KLoROS communication")
+        except Exception as e:
+            logger.warning(f"⚠️ Passive Indicator initialization failed: {e}")
+            self.passive_indicator = None
+
+        # Statistics
+        self.stats = {
+            'monitoring_cycles': 0,
+            'detection_cycles': 0,
+            'optimizations_found': 0,
+            'alerts_sent': 0,
+            'start_time': None
+        }
+
+        self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Setup signal handlers for graceful shutdown."""
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+
+    def _signal_handler(self, signum, frame):
+        """Handle shutdown signals."""
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        self.stop()
+
+    def start(self):
+        """Start the background monitoring system."""
+        if self.running:
+            logger.warning("Background system already running")
+            return
+
+        self.running = True
+        self.stats['start_time'] = datetime.now()
+
+        logger.info("🚀 Starting D-REAM Background System")
+        logger.info(f"   Monitoring interval: {self.monitoring_interval}s")
+        logger.info(f"   Detection interval: {self.detection_interval}s")
+
+        # Start monitoring thread
+        monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
+        monitoring_thread.start()
+
+        logger.info("✅ D-REAM Background System started")
+
+        return monitoring_thread
+
+    def stop(self):
+        """Stop the background monitoring system."""
+        if not self.running:
+            return
+
+        self.running = False
+        logger.info("🛑 Stopping D-REAM Background System")
+
+        # Log final statistics
+        self._log_statistics()
+
+        logger.info("✅ D-REAM Background System stopped")
+
+    def _monitoring_loop(self):
+        """Main monitoring loop."""
+        logger.info("📊 Starting monitoring loop")
+
+        while self.running:
+            try:
+                # Collect performance metrics
+                metrics = self.monitor.collect_metrics()
+                self.stats['monitoring_cycles'] += 1
+
+                logger.debug(f"Collected metrics: CPU {metrics['cpu_usage']:.1f}%, Memory {metrics['memory_usage']:.1f}%")
+
+                # Check if it's time for optimization detection
+                now = datetime.now()
+                if (not self.last_detection_run or
+                    now - self.last_detection_run >= timedelta(seconds=self.detection_interval)):
+
+                    self._run_optimization_detection(metrics)
+                    self.last_detection_run = now
+
+                # Wait for next monitoring cycle
+                time.sleep(self.monitoring_interval)
+
+            except Exception as e:
+                logger.error(f"Error in monitoring loop: {e}")
+                logger.error(traceback.format_exc())
+                time.sleep(10)  # Brief pause before retrying
+
+    def _run_optimization_detection(self, metrics: Dict):
+        """Run optimization detection cycle."""
+        logger.info("🔍 Running optimization detection cycle")
+        self.stats['detection_cycles'] += 1
+
+        try:
+            # Detect performance issues
+            performance_issues = self.monitor.detect_performance_issues()
+
+            if performance_issues:
+                logger.info(f"🚨 Found {len(performance_issues)} performance issues")
+                for issue in performance_issues:
+                    logger.info(f"   - {issue['type']}: {issue['description']}")
+
+            # Analyze chaos lab results for self-healing weaknesses
+            chaos_weaknesses = self.chaos_analyzer.analyze_chaos_patterns()
+
+            if chaos_weaknesses:
+                logger.info(f"🧪 Found {len(chaos_weaknesses)} chaos-detected weaknesses")
+                for weakness in chaos_weaknesses:
+                    logger.info(f"   - {weakness['type']}: {weakness['description']}")
+
+                # Feed high-priority weaknesses to D-REAM
+                from shared_dream_instance import SharedDreamManager
+                shared_dream = SharedDreamManager()
+
+                for weakness in chaos_weaknesses:
+                    if weakness.get('severity') in ['high', 'medium'] and weakness.get('confidence', 0) > 0.75:
+                        try:
+                            success = shared_dream.inject_improvement(weakness)
+                            if success:
+                                logger.info(f"   ✅ Injected chaos weakness into D-REAM: {weakness['component']}")
+                        except Exception as e:
+                            logger.warning(f"   ⚠️ Failed to inject weakness: {e}")
+
+            # Detect optimization opportunities
+            optimizations = self.detector.detect_optimizations(performance_issues, metrics)
+
+            if optimizations:
+                logger.info(f"💡 Found {len(optimizations)} optimization opportunities")
+                self.stats['optimizations_found'] += len(optimizations)
+
+                # Send alerts to KLoROS via Passive Indicator (file-based queue)
+                if self.passive_indicator:
+                    for optimization in optimizations:
+                        try:
+                            # Create ImprovementAlert from optimization
+                            alert = ImprovementAlert(
+                                request_id=optimization.get('id', f"auto_opt_{int(time.time())}_{optimization.get('type', 'unknown')}"),
+                                description=optimization.get('description', 'System optimization detected'),
+                                component=optimization.get('component', 'system'),
+                                urgency=optimization.get('urgency', 'medium'),
+                                confidence=optimization.get('confidence', 0.5),
+                                detected_at=datetime.now(),
+                                expected_benefit=optimization.get('expected_benefit', 'Performance improvement'),
+                                risk_level=optimization.get('risk_level', 'medium')
+                            )
+
+                            # Write to passive indicator file (KLoROS will read this)
+                            result = self.passive_indicator.deliver_alert(alert)
+
+                            if result.success:
+                                self.stats['alerts_sent'] += 1
+                                logger.info(f"📤 Sent alert {alert.request_id} to KLoROS via passive indicator ({alert.urgency} urgency)")
+                            else:
+                                logger.warning(f"⚠️ Failed to send alert {alert.request_id}: {result.error}")
+
+                        except Exception as e:
+                            logger.error(f"❌ Error sending alert for optimization: {e}")
+                            logger.error(traceback.format_exc())
+                else:
+                    logger.warning("⚠️ Passive Indicator not available, optimizations not sent to KLoROS")
+
+            else:
+                logger.info("✅ No optimization opportunities detected")
+
+        except Exception as e:
+            logger.error(f"Error in optimization detection: {e}")
+            logger.error(traceback.format_exc())
+
+    def _log_statistics(self):
+        """Log system statistics."""
+        uptime = datetime.now() - self.stats['start_time'] if self.stats['start_time'] else timedelta(0)
+
+        logger.info("📈 D-REAM Background System Statistics:")
+        logger.info(f"   Uptime: {uptime}")
+        logger.info(f"   Monitoring cycles: {self.stats['monitoring_cycles']}")
+        logger.info(f"   Detection cycles: {self.stats['detection_cycles']}")
+        logger.info(f"   Optimizations found: {self.stats['optimizations_found']}")
+        logger.info(f"   Alerts sent to KLoROS: {self.stats['alerts_sent']}")
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get current system status."""
+        uptime = datetime.now() - self.stats['start_time'] if self.stats['start_time'] else timedelta(0)
+
+        return {
+            'running': self.running,
+            'uptime_seconds': uptime.total_seconds(),
+            'monitoring_interval': self.monitoring_interval,
+            'detection_interval': self.detection_interval,
+            'statistics': self.stats.copy(),
+            'recent_metrics': self.monitor.metrics_history[-5:] if self.monitor.metrics_history else []
+        }
+
+def main():
+    """Main entry point for background system."""
+    logger.info("🧪 D-REAM Background System Starting Up")
+
+    # Create and start system
+    system = DreamBackgroundSystem()
+
+    try:
+        monitoring_thread = system.start()
+
+        # Keep main thread alive
+        while system.running:
+            time.sleep(1)
+
+        # Wait for monitoring thread to finish
+        if monitoring_thread.is_alive():
+            monitoring_thread.join(timeout=5)
+
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        logger.error(traceback.format_exc())
+    finally:
+        system.stop()
+
+if __name__ == "__main__":
+    main()

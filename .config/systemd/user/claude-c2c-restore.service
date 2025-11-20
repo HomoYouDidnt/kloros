@@ -1,0 +1,12 @@
+[Unit]
+Description=Claude C2C Session State Auto-Restore
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/kloros/src/c2c/auto_restore_claude.py restore
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,198 @@
+#!/home/kloros/.venv/bin/python3
+"""
+Shadow Mode Monitor with KLoROS Voice Alerts
+Watches shadow validation run and alerts via KLoROS TTS
+"""
+
+import sys
+import time
+import json
+from pathlib import Path
+from datetime import datetime
+
+METRICS_DIR = Path.home() / ".kloros" / "metrics"
+LOGS_DIR = Path.home() / ".kloros" / "logs"
+CHECK_INTERVAL = 60  # Check every 60 seconds
+
+tts_engine = None
+TTS_AVAILABLE = False
+
+def _init_tts():
+    """Lazy initialization of TTS engine."""
+    global tts_engine, TTS_AVAILABLE
+
+    if TTS_AVAILABLE or tts_engine is not None:
+        return
+
+    try:
+        sys.path.insert(0, str(Path.home() / 'src'))
+        from tts.adapters.xtts_v2 import XTTSV2Adapter
+        tts_engine = XTTSV2Adapter()
+        TTS_AVAILABLE = True
+        log("KLoROS TTS initialized successfully")
+    except Exception as e:
+        log(f"TTS not available: {e}")
+        TTS_AVAILABLE = False
+
+def speak(message: str):
+    """Speak message using KLoROS TTS - fully proactive, no wake word needed."""
+    global tts_engine, TTS_AVAILABLE
+
+    timestamp = datetime.now().strftime('%H:%M')
+    alert_msg = f"Alert at {timestamp}. {message}"
+
+    print(f"[ALERT] {alert_msg}")
+
+    if not TTS_AVAILABLE:
+        _init_tts()
+
+    if TTS_AVAILABLE and tts_engine:
+        try:
+            audio = tts_engine.generate_speech(alert_msg)
+            tts_engine.play_audio(audio)
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"TTS failed: {e}")
+            for _ in range(5):
+                print('\a', end='', flush=True)
+                time.sleep(0.2)
+    else:
+        for _ in range(5):
+            print('\a', end='', flush=True)
+            time.sleep(0.2)
+
+def log(message: str):
+    """Log message with timestamp."""
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+
+def check_runner_alive() -> bool:
+    """Check if shadow runner process is still running."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['pgrep', '-f', 'shadow_cohort_1_runner'],
+            capture_output=True,
+            timeout=5
+        )
+        if result.returncode != 0:
+            speak("Warning! Shadow runner process has stopped.")
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        log("Warning: pgrep timeout checking runner")
+        return True
+
+def check_daemons_alive() -> bool:
+    """Check if shadow daemons are still running."""
+    import subprocess
+    failed = False
+
+    for niche in ['maintenance_housekeeping', 'observability_logging']:
+        try:
+            result = subprocess.run(
+                ['pgrep', '-f', f'shadow_{niche}_daemon'],
+                capture_output=True,
+                timeout=5
+            )
+
+            if result.returncode != 0:
+                speak(f"Critical! Shadow daemon for {niche} has crashed.")
+
+                stderr_log = LOGS_DIR / f"shadow_{niche}_stderr.log"
+                if stderr_log.exists():
+                    last_lines = stderr_log.read_text().splitlines()[-5:]
+                    for line in last_lines:
+                        if any(word in line.lower() for word in ['error', 'exception', 'critical']):
+                            log(f"Error: {line}")
+                            break
+
+                failed = True
+        except subprocess.TimeoutExpired:
+            log(f"Warning: pgrep timeout checking {niche} daemon")
+
+    return not failed
+
+def check_rollback_triggered() -> bool:
+    """Check if rollback was triggered in any niche."""
+    failed = False
+
+    for niche in ['maintenance_housekeeping', 'observability_logging']:
+        metrics_file = METRICS_DIR / f"shadow_{niche}.json"
+
+        if metrics_file.exists():
+            try:
+                with open(metrics_file, 'r') as f:
+                    metrics = json.load(f)
+
+                if metrics.get('rollback_triggered', False):
+                    drift = metrics.get('max_drift_percentage', 0)
+                    speak(f"Rollback triggered for {niche}! Maximum drift: {drift:.1f} percent.")
+                    failed = True
+            except Exception as e:
+                log(f"Error reading metrics for {niche}: {e}")
+
+    return not failed
+
+def check_high_error_rate() -> bool:
+    """Check for high error rates."""
+    warning_given = False
+
+    for niche in ['maintenance_housekeeping', 'observability_logging']:
+        metrics_file = METRICS_DIR / f"shadow_{niche}.json"
+
+        if metrics_file.exists():
+            try:
+                with open(metrics_file, 'r') as f:
+                    metrics = json.load(f)
+
+                errors = metrics.get('wrapper_error_count', 0)
+                total = metrics.get('total_executions', 1)
+
+                if errors > 0 and total > 10:
+                    error_rate = (errors / total) * 100
+
+                    if error_rate > 5.0:
+                        speak(f"High error rate for {niche}: {error_rate:.1f} percent.")
+                        warning_given = True
+            except Exception as e:
+                log(f"Error reading metrics for {niche}: {e}")
+
+    return not warning_given
+
+# Main monitoring loop
+def main():
+    log("Shadow monitor started (KLoROS voice alerts)")
+    log(f"Checking every {CHECK_INTERVAL} seconds")
+    log(f"Monitoring metrics in: {METRICS_DIR}")
+    log(f"Monitoring logs in: {LOGS_DIR}")
+    print()
+
+    while True:
+        try:
+            if not check_runner_alive():
+                speak("Shadow validation has stopped. Check the logs for details.")
+                return 1
+
+            if not check_daemons_alive():
+                speak("One or more daemons have failed. Manual intervention required.")
+                return 1
+
+            if not check_rollback_triggered():
+                speak("Shadow validation failed rollback check. Stopping monitor.")
+                return 1
+
+            check_high_error_rate()
+
+            time.sleep(CHECK_INTERVAL)
+
+        except KeyboardInterrupt:
+            log("Monitor stopped by user")
+            return 0
+        except Exception as e:
+            log(f"Monitor error: {e}")
+            time.sleep(CHECK_INTERVAL)
+
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

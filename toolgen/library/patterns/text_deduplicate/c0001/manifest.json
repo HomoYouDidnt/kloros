@@ -1,0 +1,30 @@
+{
+  "spec_id": "text_deduplicate",
+  "cluster_id": "c0001",
+  "fingerprints": [
+    "ast:9a497a167e657cf4b63d0b7893e2fd2cf8a460dcd2443e27008a380a7f13b8ff",
+    "tok:930f01b2c870892e9ce17096f1c8223c3588dab1e91ee99d0b698a3557ef4ee3"
+  ],
+  "quality": {
+    "wins": 1,
+    "median_ms": 0.0,
+    "stability": 1.0
+  },
+  "interfaces": [
+    {
+      "fn": "deduplicate_lines",
+      "sig": "<inferred>"
+    }
+  ],
+  "constraints": {
+    "deps": [],
+    "forbidden_calls": []
+  },
+  "provenance": [
+    {
+      "bundle_dir": "/home/kloros/artifacts/toolgen_bundles/text_deduplicate_1763048335/text_deduplicate",
+      "sha256": "8d008ec55bc12a35c6b30c0e4642fdaa1ec9ed27d807010a3a106aa966b003ef"
+    }
+  ],
+  "ts": 1763622610.9763427
+}

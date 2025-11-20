@@ -1,0 +1,9 @@
+[Unit]
+Description=Start/keep RepairLab queue watcher alive
+
+[Timer]
+OnBootSec=5
+OnUnitActiveSec=5
+
+[Install]
+WantedBy=timers.target

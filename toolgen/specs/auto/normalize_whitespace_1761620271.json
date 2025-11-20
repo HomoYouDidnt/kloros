@@ -1,0 +1,53 @@
+{
+  "id": "normalize_whitespace_1761620271",
+  "task": "Normalize whitespace in text: collapse spaces, trim edges, preserve newlines.",
+  "language": "python",
+  "io": {
+    "inputs": [
+      {
+        "name": "text",
+        "type": "string"
+      }
+    ],
+    "output": {
+      "type": "string"
+    }
+  },
+  "constraints": {
+    "time_budget_ms": 150,
+    "memory_budget_mb": 64,
+    "max_deps": [],
+    "forbidden_calls": []
+  },
+  "examples": [
+    {
+      "in": {
+        "text": "a   b"
+      },
+      "out": "a b"
+    },
+    {
+      "in": {
+        "text": " a\n\n b "
+      },
+      "out": "a\n\nb"
+    }
+  ],
+  "properties": [
+    {
+      "name": "idempotent",
+      "type": "boolean",
+      "value": true
+    },
+    {
+      "name": "no_mutation",
+      "type": "boolean",
+      "value": true
+    }
+  ],
+  "origin": {
+    "reason": "auto_expansion",
+    "epoch_hint": null,
+    "ts": 1761620271.9566607
+  }
+}

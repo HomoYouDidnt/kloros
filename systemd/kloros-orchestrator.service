@@ -1,0 +1,36 @@
+[Unit]
+Description=KLoROS Orchestration Coordinator (Oneshot)
+After=network.target
+Documentation=https://github.com/kloros/orchestration
+
+[Service]
+Type=oneshot
+User=kloros
+Group=kloros
+
+# Environment
+Environment=KLR_ORCHESTRATION_MODE=disabled
+Environment=PYTHONPATH=/home/kloros:/home/kloros/src
+
+# Working directory
+WorkingDirectory=/home/kloros
+
+# Command
+ExecStart=/home/kloros/.venv/bin/python3 -m src.kloros.orchestration.run_once
+
+# Output
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-orchestrator
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+TimeoutSec=120
+
+# Security
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

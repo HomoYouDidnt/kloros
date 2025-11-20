@@ -1,0 +1,29 @@
+name: "rag_quality_fusion"
+target_files:
+  - "/home/kloros/src/rag/pipeline.py"
+  - "/home/kloros/src/rag/hybrid.py"
+limits:
+  max_files_changed: 2
+  max_patch_bytes: 20000
+  time_budget_seconds: 600
+fitness:
+  goals:
+    - id: "hit_rate@5"
+      weight: 0.5
+    - id: "mrr@5"
+      weight: 0.5
+  hard_fail:
+    - "verify_failed"
+mutations:
+  - "fusion:0.3,0.7"
+  - "fusion:0.4,0.6"
+  - "fusion:0.5,0.5"
+  - "fusion:0.6,0.4"
+  - "fusion:0.7,0.3"
+guards:
+  allow_paths:
+    - "/home/kloros/src/"
+  deny_globs:
+    - "**/.venv/**"
+    - "/home/kloros/src/kloros_memory/**"
+    - "/home/kloros/src/security/**"

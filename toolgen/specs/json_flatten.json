@@ -1,0 +1,33 @@
+{
+  "id": "json_flatten_v1",
+  "tool_id": "json_flatten",
+  "description": "Flatten nested JSON to single-level dict with dot/bracket paths",
+  "signature": "def flatten_json(data: dict) -> dict",
+  "docstring": "Flatten nested JSON. Arrays use [i], nested dicts use dot notation.",
+  "test_cases": [
+    {
+      "input": {"data": {"a": 1, "b": {"c": 2}}},
+      "expected_output": {"a": 1, "b.c": 2},
+      "description": "Nested dict"
+    },
+    {
+      "input": {"data": {"x": [10, 20]}},
+      "expected_output": {"x[0]": 10, "x[1]": 20},
+      "description": "Array flattening"
+    },
+    {
+      "input": {"data": {"a": 1, "b": {"c": [10, 20]}}},
+      "expected_output": {"a": 1, "b.c[0]": 10, "b.c[1]": 20},
+      "description": "Mixed nested dict and array"
+    }
+  ],
+  "constraints": {
+    "forbidden_apis": ["os.system", "subprocess", "eval", "exec"],
+    "max_runtime_sec": 1.0,
+    "max_memory_mb": 64
+  },
+  "performance_targets": {
+    "nodes_per_sec": 5000,
+    "memory_overhead_mb": 20
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "findings": [
+    {
+      "component": "reasoning_bank",
+      "status": "missing"
+    },
+    {
+      "component": "chromadb",
+      "status": "missing"
+    },
+    {
+      "component": "promotion_markers",
+      "status": "operational",
+      "marker_count": 2
+    },
+    {
+      "component": "fitness_correlation",
+      "status": "operational",
+      "current_score": 0.5924600000000001,
+      "prev_best": 0.59246,
+      "gate_met": true
+    },
+    {
+      "component": "recall_mechanism",
+      "status": "operational",
+      "implementation": "complete"
+    },
+    {
+      "component": "memory_activity",
+      "status": "operational",
+      "event_count": 0
+    }
+  ],
+  "operational": 4,
+  "degraded": 2,
+  "total": 6,
+  "overall_status": "degraded"
+}

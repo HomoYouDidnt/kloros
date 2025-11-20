@@ -1,0 +1,7 @@
+[Unit]
+Description=Auto-spec proposer based on metrics/handoffs
+
+[Service]
+Type=oneshot
+ExecStart=/home/kloros/bin/auto_specder.py
+WorkingDirectory=/home/kloros

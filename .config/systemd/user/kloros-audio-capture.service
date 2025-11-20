@@ -1,0 +1,27 @@
+[Unit]
+Description=KLoROS Audio Capture (no CUDA dependencies)
+Documentation=man:kloros(1) https://github.com/KLoROS/KLoROS
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=KLR_AUDIO_ONLY=1
+Environment=KLR_NO_CUDA=1
+ExecStart=/opt/kloros/.venv/bin/python3 -m src.audio.capture
+WorkingDirectory=/home/kloros
+Restart=on-failure
+RestartSec=1
+KillMode=mixed
+TimeoutStopSec=10
+
+# Resource limits to prevent audio from affecting GPU workers
+LimitNOFILE=1024
+MemoryMax=256M
+
+# Ensure clean audio environment
+ExecStartPre=/bin/bash -c 'test -w $XDG_RUNTIME_DIR'
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=KLoROS ChemBus Proxy (ZMQ message bus)
+After=network.target
+
+[Service]
+Type=simple
+User=kloros
+WorkingDirectory=/home/kloros/src
+Environment=PYTHONPATH=/home/kloros/src
+ExecStart=/home/kloros/.venv/bin/python -u kloros/orchestration/chem_proxy.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

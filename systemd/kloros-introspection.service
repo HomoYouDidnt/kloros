@@ -1,0 +1,35 @@
+[Unit]
+Description=KLoROS Introspection Daemon - Real-time Scanner Orchestrator
+Documentation=file:///home/kloros/docs/introspection-scanners.md
+After=network.target kloros-chembus-proxy.service
+Wants=kloros-chembus-proxy.service
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros
+
+# Python executable from venv
+ExecStart=/home/kloros/.venv/bin/python3 -m kloros.introspection.introspection_daemon
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-introspection
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="KLR_CHEM_XSUB=tcp://127.0.0.1:5556"
+Environment="KLR_CHEM_XPUB=tcp://127.0.0.1:5557"
+
+[Install]
+WantedBy=multi-user.target

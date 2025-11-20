@@ -1,0 +1,47 @@
+# Performance test: Add caching to expensive functions
+family: performance.caching
+
+payload:
+  type: add_caching
+  target_pattern: "recursive functions with repeated computations"
+  symbols:
+    decorator: "@lru_cache(maxsize=128)"
+    import_line: "from functools import lru_cache"
+  description: "Add memoization to expensive recursive functions"
+
+base:
+  diff_limit: 80
+  max_files_changed: 8
+  preserve_api: true
+  timeout_s: 60
+
+slots:
+  # Common expensive recursive functions to optimize
+  function_names:
+    - ["fibonacci", "fibonacci_cached"]
+    - ["factorial", "factorial_cached"]
+    - ["ackermann", "ackermann_cached"]
+    - ["combinations", "combinations_cached"]
+
+mutators:
+  - type: stricter_perf
+    trigger: last_passed_false
+    action: reduce_diff_limit
+    factor: 0.85
+  - type: relax_perf
+    trigger: last_passed_true
+    action: increase_diff_limit
+    factor: 1.15
+    max_limit: 120
+
+expected:
+  tests_pass: true
+  no_crashes: true
+  performance_improved: true
+  memory_reasonable: true
+
+validation:
+  - check: "decorator applied correctly"
+  - check: "import statement added"
+  - check: "function signature preserved"
+  - check: "performance improved by >20%"

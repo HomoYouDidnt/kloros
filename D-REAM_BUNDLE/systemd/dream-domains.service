@@ -1,0 +1,37 @@
+[Unit]
+Description=D-REAM Domain Evaluation Service
+Documentation=https://github.com/kloros/dream
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros/src/dream
+Environment="PYTHONPATH=/home/kloros/src/dream:/home/kloros/src"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/kloros"
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitBurst=3
+StartLimitInterval=60
+
+# Logging
+StandardOutput=append:/home/kloros/.kloros/dream-domains.log
+StandardError=append:/home/kloros/.kloros/dream-domains.error.log
+
+# Main service
+ExecStart=/home/kloros/.venv/bin/python3 /home/kloros/src/dream/dream_domain_service.py
+
+# Graceful shutdown
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

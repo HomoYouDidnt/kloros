@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KLoROS D-REAM Dashboard</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/sse.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>[x-cloak] { display: none !important; }</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <!-- Toast notification -->
+  <div id="toast" class="fixed top-4 right-4 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg hidden z-50">
+    <div id="toast-message"></div>
+  </div>
+
+  <!-- Comparison Modal -->
+  <div id="comparison-modal" class="fixed inset-0 bg-black/70 z-50 hidden flex items-center justify-center p-6">
+    <div class="bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+      <div class="flex items-center justify-between p-4 border-b border-slate-800">
+        <h2 class="text-xl font-semibold">Baseline Comparison</h2>
+        <button onclick="closeComparisonModal()" class="text-slate-400 hover:text-white">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="comparison-content" class="p-6">
+        <div class="text-center text-slate-400">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto p-6 space-y-6">
+    <header class="flex items-center justify-between">
+      <div class="flex items-center gap-6">
+        <h1 class="text-3xl font-bold">KLoROS D-REAM Dashboard</h1>
+        <nav class="flex gap-3">
+          <a href="/" class="text-indigo-400 hover:text-indigo-300 transition font-medium">Dashboard</a>
+          <a href="/observations" class="text-slate-400 hover:text-white transition font-medium">Observations</a>
+        </nav>
+      </div>
+      <div class="flex items-center gap-3">
+        <input type="password" id="token-input" placeholder="AUTH_TOKEN"
+               class="rounded-lg bg-slate-800 px-3 py-1 text-sm outline-none border border-slate-700 focus:border-indigo-500" />
+        <button id="save-token-btn" class="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-sm font-semibold">
+          Set Token
+        </button>
+        <div class="text-sm opacity-80">v0.1</div>
+      </div>
+    </header>
+
+    <!-- Stats -->
+    <section class="grid md:grid-cols-3 gap-4">
+      <div class="rounded-2xl bg-slate-900 p-4 shadow">
+        <div class="text-slate-400 text-sm">Pending Improvements</div>
+        <div class="text-3xl font-semibold" id="stat-pending" hx-ext="sse" sse-connect="/events" sse-swap="message"
+             sse-event="improvement_update">
+          <span class="htmx-settling transition">{{ pending|length }}</span>
+        </div>
+      </div>
+      <div class="rounded-2xl bg-slate-900 p-4 shadow">
+        <div class="text-slate-400 text-sm">Queue Size</div>
+        <div class="text-3xl font-semibold" id="stat-queue" hx-ext="sse" sse-connect="/events" sse-swap="message"
+             sse-event="queue_update">
+          <span class="htmx-settling transition">{{ queue|length }}</span>
+        </div>
+      </div>
+      <div class="rounded-2xl bg-slate-900 p-4 shadow">
+        <div class="text-slate-400 text-sm">Time (UTC)</div>
+        <div class="text-3xl font-semibold" id="clock"></div>
+      </div>
+    </section>
+    <!-- System Metrics -->
+    <section>
+      {% include "_metrics_panel.html" %}
+    </section>
+
+    <!-- XAI Traces -->
+    <section class="rounded-2xl bg-slate-900 shadow" x-data="xaiTraces()">
+      <div class="flex items-center justify-between p-4 border-b border-slate-800">
+        <h2 class="text-xl font-semibold">XAI Traces</h2>
+        <div class="flex items-center gap-3">
+          <select x-model="phaseFilter" @change="loadTraces()"
+                  class="rounded-lg bg-slate-800 px-3 py-1 text-sm outline-none border border-slate-700">
+            <option value="">All Phases</option>
+            <option value="routing">Routing Only</option>
+            <option value="execution">Execution Only</option>
+          </select>
+          <button @click="loadTraces()" class="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-sm font-semibold">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div class="p-4">
+        <div x-show="loading" class="text-center text-slate-400 py-8">Loading traces...</div>
+
+        <div x-show="!loading && traces.length === 0" class="text-center text-slate-400 py-8">
+          No XAI traces found. Traces will appear here after tool invocations.
+        </div>
+
+        <div x-show="!loading && traces.length > 0" class="space-y-4 max-h-96 overflow-y-auto">
+          <template x-for="trace in traces" :key="trace.ts">
+            <!-- Routing Trace -->
+            <div x-show="trace.phase === 'routing'" class="rounded-xl bg-slate-800 p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-1 text-xs rounded bg-blue-600">ROUTING</span>
+                  <span class="text-sm font-mono" x-text="trace.intent"></span>
+                  <span class="text-xs text-slate-400" x-text="trace.ts"></span>
+                </div>
+                <div class="text-sm">
+                  <span class="text-green-400">→</span>
+                  <span class="font-mono text-sm" x-text="trace.tool_selected"></span>
+                </div>
+              </div>
+
+              <!-- Token Attribution -->
+              <div x-show="trace.attribution && trace.attribution.length > 0">
+                <div class="text-xs text-slate-400 mb-1">Token Attribution:</div>
+                <div class="flex flex-wrap gap-2">
+                  <template x-for="attr in (trace.attribution || []).slice(0, 8)" :key="attr.token">
+                    <span class="px-2 py-1 rounded bg-slate-700 text-xs font-mono"
+                          :style="'opacity: ' + (0.4 + attr.weight * 0.6)">
+                      <span x-text="attr.token"></span>
+                      <span class="text-slate-400 ml-1" x-text="(attr.weight * 100).toFixed(0) + '%'"></span>
+                    </span>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Candidates -->
+              <div x-show="trace.candidates && trace.candidates.length > 0">
+                <div class="text-xs text-slate-400 mb-1">Candidates:</div>
+                <div class="space-y-1">
+                  <template x-for="cand in (trace.candidates || []).slice(0, 5)" :key="cand.tool">
+                    <div class="flex items-center gap-2 text-xs">
+                      <div class="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-indigo-500" :style="'width: ' + (cand.score * 100) + '%'"></div>
+                      </div>
+                      <span class="font-mono flex-1" x-text="cand.tool"></span>
+                      <span class="text-slate-400" x-text="(cand.score * 100).toFixed(0) + '%'"></span>
+                      <span x-show="!cand.visible" class="text-red-400">✗ hidden</span>
+                      <span x-show="cand.visible" class="text-green-400">✓</span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Decisions -->
+              <div x-show="trace.decisions && trace.decisions.length > 0">
+                <div class="text-xs text-slate-400 mb-1">Decision Steps:</div>
+                <div class="space-y-1">
+                  <template x-for="(dec, idx) in (trace.decisions || [])" :key="idx">
+                    <div class="text-xs">
+                      <span class="text-slate-500" x-text="(idx + 1) + '.'"></span>
+                      <span class="text-indigo-400" x-text="dec.step"></span>:
+                      <span class="text-slate-300" x-text="dec.why"></span>
+                      <span class="text-slate-500">→</span>
+                      <span class="text-green-400" x-text="dec.result"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <!-- Execution Trace -->
+            <div x-show="trace.phase === 'execution'" class="rounded-xl bg-slate-800 p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-1 text-xs rounded bg-purple-600">EXECUTION</span>
+                  <span class="text-sm font-mono" x-text="trace.intent"></span>
+                  <span class="text-xs text-slate-400" x-text="trace.ts"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-sm" x-text="trace.tool_selected"></span>
+                  <span :class="{
+                    'text-green-400': trace.outcome === 'success',
+                    'text-yellow-400': trace.outcome === 'fallback',
+                    'text-red-400': trace.outcome === 'failure'
+                  }" x-text="trace.outcome"></span>
+                </div>
+              </div>
+
+              <!-- Execution Steps -->
+              <div x-show="trace.execution && trace.execution.length > 0">
+                <div class="text-xs text-slate-400 mb-1">Execution Steps:</div>
+                <div class="space-y-1">
+                  <template x-for="(step, idx) in (trace.execution || [])" :key="idx">
+                    <div class="text-xs">
+                      <span class="text-slate-500" x-text="(idx + 1) + '.'"></span>
+                      <span class="text-purple-400" x-text="step.step"></span>:
+                      <span class="text-slate-300" x-text="step.why"></span>
+                      <span class="text-slate-500">→</span>
+                      <span :class="{
+                        'text-green-400': step.result === 'ok' || step.result.includes('success'),
+                        'text-red-400': step.result === 'denied' || step.result.includes('exception'),
+                        'text-yellow-400': step.result.includes('attempt') || step.result.includes('fallback')
+                      }" x-text="step.result"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Parameters (sanitized) -->
+              <div x-show="trace.sanitized_params">
+                <div class="text-xs text-slate-400 mb-1">Parameters:</div>
+                <pre class="text-xs bg-slate-900 rounded p-2 overflow-x-auto" x-text="JSON.stringify(trace.sanitized_params, null, 2)"></pre>
+              </div>
+
+              <!-- Error (if any) -->
+              <div x-show="trace.error" class="text-xs text-red-400 bg-red-900/20 rounded p-2">
+                <span class="font-semibold">Error:</span>
+                <span x-text="trace.error"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <!-- Layout -->
+    <section class="grid md:grid-cols-2 gap-6">
+      <!-- Pending Improvements -->
+      <div class="rounded-2xl bg-slate-900 shadow">
+        <div class="flex items-center justify-between p-4 border-b border-slate-800">
+          <h2 class="text-xl font-semibold">Pending Improvements</h2>
+          <div class="text-xs opacity-70">Approve or decline</div>
+        </div>
+        <div id="pending-panel">
+          {% include "_pending_table.html" %}
+        </div>
+      </div>
+
+      <!-- Queue / Add Experiment -->
+      <div class="space-y-4">
+        <div class="rounded-2xl bg-slate-900 shadow">
+          <div class="flex items-center justify-between p-4 border-b border-slate-800">
+            <h2 class="text-xl font-semibold">Queue</h2>
+            <div class="text-xs opacity-70">Newest first</div>
+          </div>
+          <div id="queue-panel">
+            {% include "_queue_table.html" %}
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-slate-900 shadow">
+          <div class="flex items-center justify-between p-4 border-b border-slate-800">
+            <h2 class="text-xl font-semibold">Queue New Experiment</h2>
+            <div class="text-xs opacity-70">Pick type, presets, or enter params</div>
+          </div>
+          <form class="p-4 space-y-3" hx-post="/x/queue" hx-target="#queue-panel" hx-swap="outerHTML"
+                x-data="experimentForm()" x-init="init(window.EXPERIMENT_TYPES)">
+            <input type="hidden" name="token" id="auth-token-field" />
+
+            <label class="block text-sm text-slate-300">Experiment Type</label>
+            <select name="type_key" @change="selectType($event.target.value)"
+                    class="w-full rounded-xl bg-slate-800 p-2 outline-none">
+              {% for t in exp_types %}
+              <option value="{{t.key}}">{{t.name}}</option>
+              {% endfor %}
+            </select>
+
+            <!-- Presets -->
+            <div x-show="currentType && currentType.presets && currentType.presets.length > 0"
+                 class="flex flex-wrap gap-2">
+              <template x-for="preset in (currentType?.presets || [])" :key="preset.label">
+                <button type="button" @click="applyPreset(preset.values)"
+                        class="px-3 py-1 text-xs rounded-lg bg-indigo-600 hover:bg-indigo-500"
+                        x-text="preset.label"></button>
+              </template>
+            </div>
+
+            <!-- Dynamic Fields -->
+            <div x-show="currentType && currentType.fields && currentType.fields.length > 0"
+                 class="space-y-3">
+              <template x-for="field in (currentType?.fields || [])" :key="field.name">
+                <div x-show="showField(field)">
+                  <label class="block text-sm text-slate-300" x-text="field.label"></label>
+
+                  <template x-if="field.type === 'select'">
+                    <select x-model="params[field.name]" @change="updateJson()"
+                            class="w-full rounded-xl bg-slate-800 p-2 outline-none">
+                      <template x-for="[val, label] in field.options" :key="val">
+                        <option :value="val" x-text="label"></option>
+                      </template>
+                    </select>
+                  </template>
+
+                  <template x-if="field.type === 'number'">
+                    <input type="number" x-model.number="params[field.name]" @input="updateJson()"
+                           :min="field.min" :max="field.max" :step="field.step || 1"
+                           class="w-full rounded-xl bg-slate-800 p-2 outline-none" />
+                  </template>
+
+                  <template x-if="field.type === 'text'">
+                    <input type="text" x-model="params[field.name]" @input="updateJson()"
+                           :placeholder="field.placeholder || ''"
+                           class="w-full rounded-xl bg-slate-800 p-2 outline-none" />
+                  </template>
+
+                  <template x-if="field.type === 'multiselect'">
+                    <select x-model="params[field.name]" @change="updateJson()" multiple size="3"
+                            class="w-full rounded-xl bg-slate-800 p-2 outline-none">
+                      <template x-for="[val, label] in field.options" :key="val">
+                        <option :value="val" x-text="label"></option>
+                      </template>
+                    </select>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- Legacy JSON textarea (fallback) -->
+            <div x-show="!currentType || !currentType.fields || currentType.fields.length === 0">
+              <label class="block text-sm text-slate-300">Params JSON</label>
+              <textarea x-model="paramsJson" @input="updateParams()" rows="4"
+                        class="w-full rounded-xl bg-slate-800 p-2 outline-none"
+                        placeholder='{"example": true}'></textarea>
+            </div>
+
+            <!-- Hidden params_json for new format -->
+            <input type="hidden" name="params_json" :value="paramsJson" />
+
+            <label class="block text-sm text-slate-300">Note (optional)</label>
+            <input name="note" class="w-full rounded-xl bg-slate-800 p-2 outline-none" placeholder="Short note" />
+
+            <!-- QoL Toggles -->
+            <div class="flex items-center gap-4 pt-1">
+              <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" name="auto_adopt" class="rounded accent-emerald-500" />
+                Auto-adopt on success
+              </label>
+              <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" name="safe_mode" class="rounded accent-amber-500" />
+                Safe mode (dry-run)
+              </label>
+            </div>
+
+            <div class="flex items-center gap-3 pt-2">
+              <button class="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-4 py-2 font-semibold">Queue</button>
+              <button type="button" @click="cloneLast()"
+                      class="rounded-xl bg-slate-700 hover:bg-slate-600 px-3 py-2 text-sm">Clone Last</button>
+              <span class="text-xs opacity-70">Requires AUTH_TOKEN</span>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Toast notification helper
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      const toastMessage = document.getElementById('toast-message');
+      toastMessage.textContent = message;
+
+      // Set color based on type
+      if (type === 'success') {
+        toast.className = 'fixed top-4 right-4 bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg z-50';
+      } else if (type === 'error') {
+        toast.className = 'fixed top-4 right-4 bg-rose-600 text-white px-4 py-3 rounded-lg shadow-lg z-50';
+      } else {
+        toast.className = 'fixed top-4 right-4 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg z-50';
+      }
+
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3000);
+    }
+
+    // Configure HTMX to include auth token in all requests
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+      const token = localStorage.getItem('AUTH_TOKEN');
+      if (token) {
+        // Add as both header and form field for maximum compatibility
+        evt.detail.headers['Authorization'] = 'Bearer ' + token;
+
+        // Also update the hidden field
+        const authField = document.getElementById('auth-token-field');
+        if (authField) {
+          authField.value = token;
+        }
+      }
+    });
+
+    // Handle HTMX success
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      updateCounts();
+
+      // Show success message for approve/decline
+      if (evt.detail.pathInfo.requestPath.includes('/x/approve/')) {
+        showToast('✓ Improvement approved and adopted!', 'success');
+      } else if (evt.detail.pathInfo.requestPath.includes('/x/decline/')) {
+        showToast('Improvement declined', 'info');
+      } else if (evt.detail.pathInfo.requestPath.includes('/x/queue')) {
+        showToast('✓ Experiment queued', 'success');
+      }
+    });
+
+    // Handle HTMX errors
+    document.body.addEventListener('htmx:responseError', function(evt) {
+      if (evt.detail.xhr.status === 401) {
+        showToast('⚠ Authentication failed - check your token', 'error');
+      } else {
+        showToast('⚠ Request failed: ' + evt.detail.xhr.statusText, 'error');
+      }
+    });
+
+    document.body.addEventListener('htmx:sendError', function(evt) {
+      showToast('⚠ Network error - check your connection', 'error');
+    });
+
+    // Display counts in the stat cards
+    function updateCounts() {
+      // Count only data rows (those with 5 cells), not the "No items" message row
+      const pendingRows = Array.from(document.querySelectorAll('#pending-table tbody tr'));
+      const pendingCount = pendingRows.filter(row => row.children.length === 5).length;
+
+      const queueRows = Array.from(document.querySelectorAll('#queue-table tbody tr'));
+      const queueCount = queueRows.filter(row => row.children.length > 1).length;
+
+      document.querySelector('#stat-pending span').textContent = pendingCount;
+      document.querySelector('#stat-queue span').textContent = queueCount;
+    }
+    updateCounts();
+
+    // Live UTC clock
+    function tick() {
+      const d = new Date();
+      document.getElementById('clock').textContent = d.toISOString().slice(11,19) + 'Z';
+    }
+    setInterval(tick, 1000); tick();
+
+    // Read AUTH_TOKEN from localStorage to avoid retyping (this is just a convenience; rely on Tailscale ACLs too)
+    const saved = localStorage.getItem('AUTH_TOKEN');
+    if (saved) {
+      document.getElementById('auth-token-field').value = saved;
+      document.getElementById('token-input').value = saved;
+    }
+
+    // Handle token save button
+    document.getElementById('save-token-btn').addEventListener('click', function() {
+      const token = document.getElementById('token-input').value;
+      if (token) {
+        localStorage.setItem('AUTH_TOKEN', token);
+        document.getElementById('auth-token-field').value = token;
+        showToast('✓ Token saved!', 'success');
+      } else {
+        showToast('⚠ Please enter a token', 'error');
+      }
+    });
+
+    // Baseline Comparison Modal
+    async function compareToBaseline(runId) {
+      const modal = document.getElementById('comparison-modal');
+      const content = document.getElementById('comparison-content');
+
+      modal.classList.remove('hidden');
+      content.innerHTML = '<div class="text-center text-slate-400">Loading comparison...</div>';
+
+      try {
+        const response = await fetch(`/api/compare?run_id=${runId}`);
+        const data = await response.json();
+
+        if (!data.ok) {
+          content.innerHTML = '<div class="text-rose-400">Error: Failed to load comparison</div>';
+          return;
+        }
+
+        // Format comparison HTML
+        content.innerHTML = `
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <h3 class="font-semibold text-sm text-slate-400 mb-2">Current Run</h3>
+                <div class="bg-slate-800 rounded-lg p-3 space-y-1 text-sm">
+                  <div>Run ID: <span class="font-mono text-indigo-400">${data.run_id}</span></div>
+                  <div>WER: <span class="font-mono">${data.current.wer !== null ? data.current.wer.toFixed(3) : 'N/A'}</span></div>
+                  <div>Latency: <span class="font-mono">${data.current.latency_ms}ms</span></div>
+                  <div>VAD: <span class="font-mono">${data.current.vad_boundary_ms}ms</span></div>
+                  <div>Score: <span class="font-mono">${data.current.score !== null ? data.current.score.toFixed(2) : 'N/A'}</span></div>
+                </div>
+              </div>
+
+              <div>
+                <h3 class="font-semibold text-sm text-slate-400 mb-2">Baseline</h3>
+                <div class="bg-slate-800 rounded-lg p-3 space-y-1 text-sm">
+                  <div>Run ID: <span class="font-mono text-emerald-400">${data.baseline.run_id || 'N/A'}</span></div>
+                  <div>WER: <span class="font-mono">${data.baseline.wer !== null ? data.baseline.wer.toFixed(3) : 'N/A'}</span></div>
+                  <div>Latency: <span class="font-mono">${data.baseline.latency_ms}ms</span></div>
+                  <div>VAD: <span class="font-mono">${data.baseline.vad_boundary_ms}ms</span></div>
+                  <div>Score: <span class="font-mono">${data.baseline.score !== null ? data.baseline.score.toFixed(2) : 'N/A'}</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="font-semibold text-sm text-slate-400 mb-2">Delta (Current - Baseline)</h3>
+              <div class="bg-slate-800 rounded-lg p-3 space-y-1 text-sm">
+                <div>WER: <span class="font-mono ${data.delta.wer !== null && data.delta.wer < 0 ? 'text-emerald-400' : data.delta.wer > 0 ? 'text-rose-400' : ''}">${data.delta.wer !== null ? (data.delta.wer > 0 ? '+' : '') + data.delta.wer.toFixed(3) : 'N/A'}</span></div>
+                <div>Latency: <span class="font-mono ${data.delta.latency_ms !== null && data.delta.latency_ms < 0 ? 'text-emerald-400' : data.delta.latency_ms > 0 ? 'text-rose-400' : ''}">${data.delta.latency_ms !== null ? (data.delta.latency_ms > 0 ? '+' : '') + data.delta.latency_ms + 'ms' : 'N/A'}</span></div>
+                <div>VAD: <span class="font-mono ${data.delta.vad_boundary_ms !== null && data.delta.vad_boundary_ms < 0 ? 'text-emerald-400' : data.delta.vad_boundary_ms > 0 ? 'text-rose-400' : ''}">${data.delta.vad_boundary_ms !== null ? (data.delta.vad_boundary_ms > 0 ? '+' : '') + data.delta.vad_boundary_ms + 'ms' : 'N/A'}</span></div>
+                <div>Score: <span class="font-mono ${data.delta.score !== null && data.delta.score > 0 ? 'text-emerald-400' : data.delta.score < 0 ? 'text-rose-400' : ''}">${data.delta.score !== null ? (data.delta.score > 0 ? '+' : '') + data.delta.score.toFixed(3) : 'N/A'}</span></div>
+              </div>
+            </div>
+          </div>
+        `;
+      } catch (error) {
+        content.innerHTML = '<div class="text-rose-400">Error loading comparison</div>';
+      }
+    }
+
+    function closeComparisonModal() {
+      document.getElementById('comparison-modal').classList.add('hidden');
+    }
+
+    // Close modal on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeComparisonModal();
+    });
+
+    // Experiment types data (from backend)
+    window.EXPERIMENT_TYPES = {{ exp_types|tojson|safe }};
+
+        // Alpine.js experimentForm component
+    function experimentForm() {
+      return {
+        types: [],
+        currentType: null,
+        params: {},
+        paramsJson: "{}",
+
+        init(types) {
+          this.types = types;
+          if (types.length > 0) {
+            this.selectType(types[0].key);
+          }
+        },
+
+        selectType(key) {
+          this.currentType = this.types.find(t => t.key === key);
+          this.params = {};
+
+          // Set defaults from field definitions
+          if (this.currentType?.fields) {
+            this.currentType.fields.forEach(f => {
+              if (f.default !== undefined) {
+                this.params[f.name] = f.default;
+              }
+            });
+          }
+
+          this.updateJson();
+        },
+
+        showField(field) {
+          if (!field.show_if) return true;
+          // Check all show_if conditions
+          return Object.entries(field.show_if).every(([k, v]) => this.params[k] === v);
+        },
+
+        applyPreset(values) {
+          Object.assign(this.params, values);
+          this.updateJson();
+        },
+
+        updateJson() {
+          this.paramsJson = JSON.stringify(this.params);
+        },
+
+        updateParams() {
+          try {
+            this.params = JSON.parse(this.paramsJson);
+          } catch(e) {
+            // Keep previous params if JSON is invalid
+          }
+        },
+
+        cloneLast() {
+          const rows = document.querySelectorAll('#queue-table tbody tr');
+          if (rows.length === 0) return;
+
+          // Get the first row (newest)
+          const lastRow = rows[0];
+          const cells = lastRow.querySelectorAll('td');
+
+          if (cells.length >= 3) {
+            const typeKey = cells[1].textContent.trim();
+            try {
+              const params = JSON.parse(cells[2].textContent);
+              this.selectType(typeKey);
+              this.params = params;
+              this.updateJson();
+              showToast('✓ Cloned last experiment', 'success');
+            } catch(e) {
+              showToast('⚠ Failed to parse last experiment params', 'error');
+            }
+          }
+        }
+      };
+    }
+
+    // Alpine.js xaiTraces component
+    function xaiTraces() {
+      return {
+        traces: [],
+        loading: false,
+        phaseFilter: '',
+
+        init() {
+          this.loadTraces();
+          // Auto-refresh every 10 seconds
+          setInterval(() => this.loadTraces(), 10000);
+        },
+
+        async loadTraces() {
+          this.loading = true;
+          try {
+            let url = '/api/xai?limit=20';
+            if (this.phaseFilter) {
+              url += `&phase=${this.phaseFilter}`;
+            }
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            this.traces = data.traces || [];
+          } catch (error) {
+            console.error('Failed to load XAI traces:', error);
+            this.traces = [];
+          } finally {
+            this.loading = false;
+          }
+        }
+      };
+    }
+  </script>
+</body>
+</html>

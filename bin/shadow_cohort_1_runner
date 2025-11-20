@@ -1,0 +1,196 @@
+#!/home/kloros/.venv/bin/python3
+"""
+Shadow Mode Runner - Cohort 1 (24h Real-World Validation)
+
+Runs both maintenance_housekeeping and observability_logging in shadow mode
+for 24 hours, streaming metrics and checking for auto-promotion eligibility.
+"""
+
+import sys
+import time
+import json
+import logging
+import subprocess
+from pathlib import Path
+from datetime import datetime
+
+sys.path.insert(0, str(Path.home() / 'src'))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def start_shadow_daemon(niche: str) -> subprocess.Popen:
+    """Start shadow daemon for a niche."""
+    script_path = Path.home() / "bin" / f"shadow_{niche}_daemon"
+
+    logger.info(f"Starting shadow daemon: {niche}")
+
+    # Set PYTHONPATH so daemon can import kloros modules
+    import os
+    env = os.environ.copy()
+    env['PYTHONPATH'] = str(Path.home() / 'src')
+
+    # Log daemon output to separate files for debugging
+    log_dir = Path.home() / ".kloros" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stdout_log = log_dir / f"shadow_{niche}_stdout.log"
+    stderr_log = log_dir / f"shadow_{niche}_stderr.log"
+
+    proc = subprocess.Popen(
+        [str(script_path)],
+        stdout=open(stdout_log, 'w'),
+        stderr=open(stderr_log, 'w'),
+        text=True,
+        env=env,
+    )
+
+    logger.info(f"  Daemon logs: {stdout_log} | {stderr_log}")
+
+    return proc
+
+
+def monitor_metrics(niches: list, processes: dict, duration_hours: float = 24.0):
+    """Monitor metrics from all shadow daemons."""
+    metrics_dir = Path.home() / ".kloros" / "metrics"
+
+    start_time = time.time()
+    end_time = start_time + (duration_hours * 3600)
+
+    logger.info(f"Monitoring shadow metrics for {duration_hours}h...")
+    logger.info(f"  Niches: {', '.join(niches)}")
+    logger.info(f"  Metrics dir: {metrics_dir}")
+
+    last_report_time = start_time
+
+    while time.time() < end_time:
+        try:
+            elapsed_hours = (time.time() - start_time) / 3600
+
+            # Check if daemon processes are still alive
+            for niche, proc in processes.items():
+                if proc.poll() is not None:
+                    exit_code = proc.returncode
+                    logger.error(f"🚨 Shadow daemon {niche} exited unexpectedly (code: {exit_code})")
+
+                    stderr_log = Path.home() / ".kloros" / "logs" / f"shadow_{niche}_stderr.log"
+                    if stderr_log.exists():
+                        with open(stderr_log, 'r') as f:
+                            stderr_content = f.read()
+                            if stderr_content:
+                                logger.error(f"Daemon stderr:\n{stderr_content}")
+                    return 1
+
+            # Read metrics for all niches
+            all_metrics = {}
+            for niche in niches:
+                metrics_path = metrics_dir / f"shadow_{niche}.json"
+                if metrics_path.exists():
+                    with open(metrics_path, 'r') as f:
+                        all_metrics[niche] = json.load(f)
+
+            # Report every 30 minutes
+            if time.time() - last_report_time >= 1800:
+                logger.info(f"\n{'=' * 80}")
+                logger.info(f"Shadow Progress Report - {elapsed_hours:.2f}h / {duration_hours}h")
+                logger.info(f"{'=' * 80}")
+
+                for niche, metrics in all_metrics.items():
+                    logger.info(f"\n{niche}:")
+                    logger.info(f"  Executions: {metrics['total_executions']}")
+                    logger.info(f"  Avg Drift: {metrics['avg_drift_percentage']:.4f}%")
+                    logger.info(f"  Max Drift: {metrics['max_drift_percentage']:.4f}%")
+                    logger.info(f"  Errors: {metrics['wrapper_error_count']}")
+                    logger.info(f"  Rollback: {metrics['rollback_triggered']}")
+                    logger.info(f"  Promotion Eligible: {'✅' if metrics['promotion_eligible'] else '⏳'}")
+
+                logger.info(f"{'=' * 80}\n")
+                last_report_time = time.time()
+
+            # Check for rollback
+            for niche, metrics in all_metrics.items():
+                if metrics.get('rollback_triggered'):
+                    logger.error(f"🚨 ROLLBACK TRIGGERED for {niche}! Stopping shadow mode.")
+                    return 1
+
+            time.sleep(60)
+
+        except Exception as e:
+            logger.error(f"Error monitoring metrics: {e}")
+            time.sleep(60)
+
+    # Final report
+    logger.info(f"\n{'=' * 80}")
+    logger.info(f"Shadow Mode Complete - {duration_hours}h")
+    logger.info(f"{'=' * 80}")
+
+    all_eligible = True
+    for niche in niches:
+        metrics_path = metrics_dir / f"shadow_{niche}.json"
+        if metrics_path.exists():
+            with open(metrics_path, 'r') as f:
+                metrics = json.load(f)
+
+            eligible = metrics.get('promotion_eligible', False)
+            all_eligible = all_eligible and eligible
+
+            logger.info(f"\n{niche}:")
+            logger.info(f"  Executions: {metrics['total_executions']}")
+            logger.info(f"  Avg Drift: {metrics['avg_drift_percentage']:.4f}%")
+            logger.info(f"  Max Drift: {metrics['max_drift_percentage']:.4f}%")
+            logger.info(f"  Promotion Eligible: {'✅ YES' if eligible else '❌ NO'}")
+
+    logger.info(f"\n{'=' * 80}")
+    if all_eligible:
+        logger.info("✅ COHORT 1 READY FOR PRIMARY PROMOTION")
+        logger.info("   Run: klorosctl promote --cohort 1 --to PRIMARY")
+    else:
+        logger.info("❌ COHORT 1 NOT READY FOR PROMOTION")
+        logger.info("   Review metrics and address issues")
+    logger.info(f"{'=' * 80}\n")
+
+    return 0 if all_eligible else 1
+
+
+def main():
+    """Run shadow mode for Cohort 1."""
+    logger.info("Starting Shadow Mode for Cohort 1")
+    logger.info(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("")
+
+    niches = ["maintenance_housekeeping", "observability_logging"]
+
+    # Start shadow daemons
+    processes = {}
+    for niche in niches:
+        try:
+            proc = start_shadow_daemon(niche)
+            processes[niche] = proc
+            logger.info(f"✅ Started {niche} shadow daemon (PID: {proc.pid})")
+        except Exception as e:
+            logger.error(f"Failed to start {niche} shadow daemon: {e}")
+            return 1
+
+    time.sleep(5)  # Give daemons time to initialize
+
+    # Monitor metrics
+    try:
+        result = monitor_metrics(niches, processes, duration_hours=24.0)
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user, stopping shadow mode...")
+        result = 1
+    finally:
+        # Stop all daemons
+        for niche, proc in processes.items():
+            logger.info(f"Stopping {niche} shadow daemon...")
+            proc.terminate()
+            proc.wait(timeout=10)
+
+    return result
+
+
+if __name__ == "__main__":
+    sys.exit(main())

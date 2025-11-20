@@ -1,0 +1,38 @@
+# Appraisal Weights Configuration
+# These weights control how interoceptive signals map to affective dimensions
+
+appraisal_weights:
+  # Valence formula: +w1*success - w2*error - w3*resource_strain
+  valence_success: 0.6
+  valence_error: -0.5
+  valence_resource_strain: -0.3
+
+  # Arousal formula: +u1*surprise + u2*deadline + u3*backlog
+  arousal_surprise: 0.5
+  arousal_deadline: 0.3
+  arousal_backlog: 0.2
+
+  # Dominance formula: +d1*tool_success - d2*retry - d3*rate_limit
+  dominance_tool_success: 0.5
+  dominance_retry: -0.4
+  dominance_rate_limit: -0.3
+
+  # Uncertainty formula: +q1*epistemic + q2*novelty - q3*confidence
+  uncertainty_epistemic: 0.5
+  uncertainty_novelty: 0.4
+  uncertainty_confidence: -0.3
+
+  # Fatigue formula: +f1*context + f2*token + f3*cache_miss + f4*memory
+  fatigue_context: 0.4
+  fatigue_token: 0.3
+  fatigue_cache_miss: 0.2
+  fatigue_memory: 0.1
+
+  # Curiosity formula (sigmoid): c1*surprise + c2*novelty - c3*fatigue - c4*deadline
+  curiosity_surprise: 0.5
+  curiosity_novelty: 0.4
+  curiosity_fatigue: -0.3
+  curiosity_deadline: -0.2
+
+  # EMA smoothing factor (0-1, lower = more smoothing)
+  ema_alpha: 0.2

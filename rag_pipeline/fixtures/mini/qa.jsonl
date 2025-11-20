@@ -1,0 +1,3 @@
+{"q": "What pipeline does KLoROS use?", "a": "RAG with verification", "docs": ["001.md"]}
+{"q": "How does SLED help?", "a": "Contrasts final and mid-layer logits", "docs": ["002.md"]}
+{"q": "What does CoVe do?", "a": "Verifies claims; abstains if not supported", "docs": ["003.md"]}

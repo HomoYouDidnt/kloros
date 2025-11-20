@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly library extract (02:10)
+
+[Timer]
+OnCalendar=*-*-* 02:10:00
+Unit=library-extract.service
+
+[Install]
+WantedBy=timers.target

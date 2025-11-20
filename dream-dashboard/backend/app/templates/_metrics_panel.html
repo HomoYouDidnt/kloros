@@ -1,0 +1,238 @@
+<!-- KLoROS System Metrics Panel -->
+<div class="rounded-2xl bg-slate-900 shadow" id="metrics-panel">
+  <div class="flex items-center justify-between p-4 border-b border-slate-800 cursor-pointer" 
+       onclick="document.getElementById('metrics-content').classList.toggle('hidden')">
+    <h2 class="text-xl font-semibold">System Metrics</h2>
+    <button class="text-xs opacity-70 hover:opacity-100">
+      <span id="metrics-toggle">▼</span> Toggle
+    </button>
+  </div>
+  
+  <div id="metrics-content" class="p-4 space-y-4">
+    <!-- Metrics Grid -->
+    <div class="grid md:grid-cols-4 gap-3">
+      <!-- Test Pass Rate -->
+      <div class="bg-slate-800 rounded-xl p-3">
+        <div class="text-slate-400 text-xs mb-1">Test Pass Rate</div>
+        <div class="text-2xl font-bold" id="metric-test-pass-rate">
+          <span class="text-green-400">--%</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1" id="metric-test-count">0/0 tests</div>
+      </div>
+
+      <!-- Tool Promotions -->
+      <div class="bg-slate-800 rounded-xl p-3">
+        <div class="text-slate-400 text-xs mb-1">Tools Promoted</div>
+        <div class="text-2xl font-bold" id="metric-promoted-tools">
+          <span class="text-blue-400">0</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1" id="metric-tool-win-rate">0% avg win rate</div>
+      </div>
+
+      <!-- Quota Usage -->
+      <div class="bg-slate-800 rounded-xl p-3">
+        <div class="text-slate-400 text-xs mb-1">Quota Remaining</div>
+        <div class="text-2xl font-bold" id="metric-quota-remaining">
+          <span class="text-yellow-400">0</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1" id="metric-quota-limit">of 0 daily</div>
+      </div>
+
+      <!-- D-REAM Evolution -->
+      <div class="bg-slate-800 rounded-xl p-3">
+        <div class="text-slate-400 text-xs mb-1">D-REAM Generations</div>
+        <div class="text-2xl font-bold" id="metric-dream-gens">
+          <span class="text-purple-400">0</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1" id="metric-dream-success">0% success</div>
+      </div>
+    </div>
+
+    <!-- Improvement Proposals & Candidate Queues -->
+    <div class="grid md:grid-cols-3 gap-3">
+      <!-- Improvement Proposals -->
+      <div class="bg-slate-800 rounded-xl p-3">
+        <div class="text-slate-400 text-xs mb-1">Improvement Proposals</div>
+        <div class="text-2xl font-bold" id="metric-proposals-total">
+          <span class="text-cyan-400">0</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1" id="metric-proposals-breakdown">No proposals</div>
+      </div>
+
+      <!-- Tool Synthesis Queue -->
+      <div class="bg-slate-800 rounded-xl p-3">
+        <div class="text-slate-400 text-xs mb-1">Tool Synthesis Queue</div>
+        <div class="text-2xl font-bold" id="metric-tool-queue">
+          <span class="text-amber-400">0</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1">Awaiting D-REAM eval</div>
+      </div>
+
+      <!-- Total Pending Candidates -->
+      <div class="bg-slate-800 rounded-xl p-3">
+        <div class="text-slate-400 text-xs mb-1">Total Pending Evolution</div>
+        <div class="text-2xl font-bold" id="metric-total-pending">
+          <span class="text-emerald-400">0</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1" id="metric-proposal-candidates">0 from proposals</div>
+      </div>
+    </div>
+
+    <!-- Test Families Breakdown -->
+    <div class="bg-slate-800 rounded-xl p-3">
+      <div class="text-sm font-semibold mb-2 text-slate-300">Test Families</div>
+      <div class="space-y-1 text-xs" id="metric-test-families">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <!-- Recent Tool Promotions -->
+    <div class="bg-slate-800 rounded-xl p-3" id="recent-promotions-container" style="display:none;">
+      <div class="text-sm font-semibold mb-2 text-slate-300">Recent Promotions</div>
+      <div class="space-y-1 text-xs" id="metric-recent-promotions">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <div class="text-xs text-slate-500 text-right" id="metrics-timestamp">
+      Last updated: --
+    </div>
+  </div>
+</div>
+
+<script>
+// Fetch and update metrics
+async function updateMetrics() {
+  try {
+    const resp = await fetch('/api/metrics');
+    const data = await resp.json();
+    
+    const tests = data.tests || {};
+    const testPassRate = Math.round((tests.pass_rate || 0) * 100);
+    const testPassEl = document.getElementById('metric-test-pass-rate');
+    if (testPassEl) {
+      testPassEl.innerHTML = '<span class="' + (testPassRate >= 80 ? 'text-green-400' : 'text-yellow-400') + '">' + testPassRate + '%</span>';
+    }
+    
+    const testCountEl = document.getElementById('metric-test-count');
+    if (testCountEl) {
+      testCountEl.textContent = (tests.passed_tests || 0) + '/' + (tests.total_tests || 0) + ' tests';
+    }
+    
+    const families = tests.families || {};
+    const familyLines = [];
+    for (const key in families) {
+      const f = families[key];
+      const pct = f.total > 0 ? Math.round((f.passed / f.total) * 100) : 0;
+      const color = pct === 100 ? 'text-green-400' : pct >= 80 ? 'text-yellow-400' : 'text-red-400';
+      familyLines.push('<div class="flex justify-between"><span>' + f.family + '</span><span class="' + color + '">' + f.passed + '/' + f.total + ' (' + pct + '%)</span></div>');
+    }
+    const familyEl = document.getElementById('metric-test-families');
+    if (familyEl) {
+      familyEl.innerHTML = familyLines.join('');
+    }
+    
+    const evidence = data.evidence || {};
+    const promotedEl = document.getElementById('metric-promoted-tools');
+    if (promotedEl) {
+      promotedEl.innerHTML = '<span class="text-blue-400">' + (evidence.promoted_tools || 0) + '</span>';
+    }
+    
+    const winRate = Math.round((evidence.avg_win_rate || 0) * 100);
+    const winRateEl = document.getElementById('metric-tool-win-rate');
+    if (winRateEl) {
+      winRateEl.textContent = winRate + '% avg win rate';
+    }
+    
+    if (evidence.recent_promotions && evidence.recent_promotions.length > 0) {
+      const container = document.getElementById('recent-promotions-container');
+      if (container) container.style.display = 'block';
+      
+      const recentLines = [];
+      const recents = evidence.recent_promotions.slice(0, 5);
+      for (let i = 0; i < recents.length; i++) {
+        const p = recents[i];
+        recentLines.push('<div class="flex justify-between"><span>' + p.tool + ' v' + p.version + '</span><span class="text-green-400">' + Math.round(p.win_rate * 100) + '% win</span></div>');
+      }
+      const recentEl = document.getElementById('metric-recent-promotions');
+      if (recentEl) recentEl.innerHTML = recentLines.join('');
+    }
+    
+    const quota = data.quota || {};
+    const quotaRemaining = quota.remaining || 0;
+    const quotaLimit = quota.daily_limit || 0;
+    const quotaPct = quotaLimit > 0 ? (quotaRemaining / quotaLimit) * 100 : 0;
+    const quotaColor = quotaPct > 50 ? 'text-green-400' : quotaPct > 20 ? 'text-yellow-400' : 'text-red-400';
+    const quotaEl = document.getElementById('metric-quota-remaining');
+    if (quotaEl) {
+      quotaEl.innerHTML = '<span class="' + quotaColor + '">' + quotaRemaining + '</span>';
+    }
+    const quotaLimitEl = document.getElementById('metric-quota-limit');
+    if (quotaLimitEl) {
+      quotaLimitEl.textContent = 'of ' + quotaLimit + ' daily';
+    }
+    
+    const dream = data.dream || {};
+    const dreamGensEl = document.getElementById('metric-dream-gens');
+    if (dreamGensEl) {
+      dreamGensEl.innerHTML = '<span class="text-purple-400">' + (dream.total_generations || 0) + '</span>';
+    }
+    const dreamSuccess = Math.round((dream.success_rate || 0) * 100);
+    const dreamSuccessEl = document.getElementById('metric-dream-success');
+    if (dreamSuccessEl) {
+      dreamSuccessEl.textContent = dreamSuccess + '% success';
+    }
+
+    // Improvement Proposals
+    const proposals = data.proposals || {};
+    const proposalsTotalEl = document.getElementById('metric-proposals-total');
+    if (proposalsTotalEl) {
+      proposalsTotalEl.innerHTML = '<span class="text-cyan-400">' + (proposals.total_proposals || 0) + '</span>';
+    }
+
+    const proposalsBreakdownEl = document.getElementById('metric-proposals-breakdown');
+    if (proposalsBreakdownEl) {
+      if (proposals.total_proposals > 0) {
+        const byComponent = proposals.by_component || {};
+        const componentNames = Object.keys(byComponent).slice(0, 2).join(', ');
+        const byPriority = proposals.by_priority || {};
+        const highPri = byPriority.high || 0;
+        const critPri = byPriority.critical || 0;
+        const urgentCount = highPri + critPri;
+        proposalsBreakdownEl.textContent = componentNames + (urgentCount > 0 ? ' (' + urgentCount + ' urgent)' : '');
+      } else {
+        proposalsBreakdownEl.textContent = 'No proposals';
+      }
+    }
+
+    // Candidate Queues
+    const queues = data.candidate_queues || {};
+    const toolQueueEl = document.getElementById('metric-tool-queue');
+    if (toolQueueEl) {
+      toolQueueEl.innerHTML = '<span class="text-amber-400">' + (queues.tool_synthesis_queue || 0) + '</span>';
+    }
+
+    const totalPendingEl = document.getElementById('metric-total-pending');
+    if (totalPendingEl) {
+      totalPendingEl.innerHTML = '<span class="text-emerald-400">' + (queues.total_pending || 0) + '</span>';
+    }
+
+    const proposalCandidatesEl = document.getElementById('metric-proposal-candidates');
+    if (proposalCandidatesEl) {
+      proposalCandidatesEl.textContent = (queues.proposal_candidates || 0) + ' from proposals';
+    }
+
+    const ts = new Date(data.timestamp).toLocaleTimeString();
+    const tsEl = document.getElementById('metrics-timestamp');
+    if (tsEl) {
+      tsEl.textContent = 'Last updated: ' + ts;
+    }
+    
+  } catch (err) {
+    console.error('Failed to fetch metrics:', err);
+  }
+}
+
+updateMetrics();
+setInterval(updateMetrics, 10000);
+</script>

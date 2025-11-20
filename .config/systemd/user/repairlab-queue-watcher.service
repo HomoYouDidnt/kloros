@@ -1,0 +1,13 @@
+[Unit]
+Description=RepairLab queue watcher (ToolGen handoffs)
+
+[Service]
+ExecStart=/home/kloros/.venv/bin/python3 /home/kloros/bin/repairlab_queue_watcher.py
+Restart=always
+RestartSec=2
+WorkingDirectory=/home/kloros
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/kloros/.venv/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,577 @@
+#!/usr/bin/env python3
+"""
+KLoROS D-REAM Web Dashboard
+Simple mobile-friendly interface for approving system improvements.
+"""
+
+import sys
+import os
+import json
+from datetime import datetime
+from flask import Flask, render_template_string, request, jsonify
+from typing import Dict, List, Any
+
+# Add KLoROS source to path
+sys.path.insert(0, '/home/kloros/src')
+
+try:
+    from dream_alerts.alert_manager import DreamAlertManager
+    from dream_alerts.alert_methods import ImprovementAlert
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Make sure D-REAM components are available.")
+    sys.exit(1)
+
+app = Flask(__name__)
+
+# Register D-REAM candidates blueprint
+try:
+    from src.dashboard.routes_dream import bp_dream
+    app.register_blueprint(bp_dream, url_prefix="")
+    print("[dashboard] D-REAM candidates routes registered")
+except ImportError as e:
+    print(f"[dashboard] Warning: Could not load D-REAM routes: {e}")
+
+# Register D-REAM comparison blueprint
+try:
+    from src.dashboard.routes_compare import bp_compare
+    app.register_blueprint(bp_compare, url_prefix="")
+    print("[dashboard] D-REAM comparison routes registered")
+except ImportError as e:
+    print(f"[dashboard] Warning: Could not load comparison routes: {e}")
+
+# Mobile-friendly HTML template
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KLoROS D-REAM Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+            min-height: 100vh;
+            padding: 10px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+        }
+        .header h1 { font-size: 2em; margin-bottom: 10px; }
+        .header p { opacity: 0.8; }
+        .status-card {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+        .improvement-card {
+            background: rgba(255,255,255,0.15);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #00ff88;
+        }
+        .improvement-card h3 { margin-bottom: 10px; color: #00ff88; }
+        .improvement-details {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            flex: 1;
+            min-width: 120px;
+            transition: all 0.3s ease;
+        }
+        .btn-approve { background: #00ff88; color: #000; }
+        .btn-reject { background: #ff4444; color: white; }
+        .btn-explain { background: #4488ff; color: white; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        .btn:active { transform: translateY(0); }
+        .no-improvements {
+            text-align: center;
+            padding: 40px;
+            opacity: 0.7;
+        }
+        .no-improvements h3 { margin-bottom: 10px; }
+        .refresh-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px auto;
+            display: block;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            display: none;
+        }
+        .alert-success { background: rgba(0,255,136,0.2); border: 1px solid #00ff88; }
+        .alert-error { background: rgba(255,68,68,0.2); border: 1px solid #ff4444; }
+        .candidate-card {
+            background: rgba(255,255,255,0.15);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            border-left: 4px solid #4488ff;
+        }
+        .candidate-card h4 { margin-bottom: 8px; color: #4488ff; }
+        .candidate-metrics {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            margin: 8px 0;
+        }
+        .btn-compare {
+            background: #ff9933;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: all 0.3s ease;
+        }
+        .btn-compare:hover {
+            background: #ffaa55;
+            transform: translateY(-2px);
+        }
+        .comparison-view {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+        .comparison-view.active { display: block; }
+        .delta-positive { color: #00ff88; }
+        .delta-negative { color: #ff4444; }
+        .delta-neutral { color: #aaaaaa; }
+        @media (max-width: 600px) {
+            .button-group { flex-direction: column; }
+            .btn { min-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 KLoROS D-REAM</h1>
+            <p>Darwinian-RZero Evolution & Anti-collapse Management</p>
+        </div>
+
+        <div id="alert-container"></div>
+
+        <div class="status-card">
+            <h2>📊 System Status</h2>
+            <div id="system-status">Loading...</div>
+            <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh</button>
+        </div>
+
+        <div class="status-card">
+            <h2>⚡ Pending Improvements</h2>
+            <div id="improvements-container">Loading...</div>
+        </div>
+
+        <div class="status-card">
+            <h2>🧬 D-REAM Candidates</h2>
+            <div id="candidates-container">Loading...</div>
+        </div>
+    </div>
+
+    <script>
+        function showAlert(message, type) {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alert.style.display = 'block';
+            container.appendChild(alert);
+            setTimeout(() => alert.remove(), 5000);
+        }
+
+        function processAction(action, requestId) {
+            const command = `${action.toUpperCase()} EVOLUTION ${requestId}`;
+
+            fetch('/api/process_response', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ response: command, channel: 'web_dashboard' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(`✅ Successfully ${action.toLowerCase()}ed improvement ${requestId}`, 'success');
+                    loadDashboard(); // Refresh
+                } else {
+                    showAlert(`❌ Failed to ${action.toLowerCase()}: ${data.error}`, 'error');
+                }
+            })
+            .catch(error => {
+                showAlert(`❌ Network error: ${error}`, 'error');
+            });
+        }
+
+        function loadDashboard() {
+            // Load system status
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('system-status').innerHTML = `
+                        <p><strong>Status:</strong> ${data.status || 'Unknown'}</p>
+                        <p><strong>Pending Count:</strong> ${data.pending_count || 0}</p>
+                        <p><strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
+                    `;
+                });
+
+            // Load pending improvements
+            fetch('/api/pending')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('improvements-container');
+
+                    if (!data.improvements || data.improvements.length === 0) {
+                        container.innerHTML = `
+                            <div class="no-improvements">
+                                <h3>🎉 No Pending Improvements</h3>
+                                <p>All system optimizations are up to date!</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    container.innerHTML = data.improvements.map(improvement => `
+                        <div class="improvement-card">
+                            <h3>💡 ${improvement.component || 'System Improvement'}</h3>
+                            <p><strong>Description:</strong> ${improvement.description || 'No description available'}</p>
+                            <p><strong>Expected Benefit:</strong> ${improvement.expected_benefit || 'Performance improvement'}</p>
+                            <p><strong>Risk Level:</strong> ${improvement.risk_level || 'unknown'}</p>
+                            <p><strong>Confidence:</strong> ${Math.round((improvement.confidence || 0) * 100)}%</p>
+
+                            <div class="improvement-details">
+                                <strong>Request ID:</strong> ${improvement.task_id}<br>
+                                <strong>Detected:</strong> ${improvement.detected_at || 'Unknown'}<br>
+                                <strong>Urgency:</strong> ${improvement.urgency || 'medium'}
+                            </div>
+
+                            <div class="button-group">
+                                <button class="btn btn-approve" onclick="processAction('approve', '${improvement.task_id}')">
+                                    ✅ Approve
+                                </button>
+                                <button class="btn btn-reject" onclick="processAction('reject', '${improvement.task_id}')">
+                                    ❌ Reject
+                                </button>
+                                <button class="btn btn-explain" onclick="processAction('explain', '${improvement.task_id}')">
+                                    ℹ️ Explain
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    document.getElementById('improvements-container').innerHTML = `
+                        <div class="no-improvements">
+                            <h3>❌ Error Loading Improvements</h3>
+                            <p>Could not connect to D-REAM system</p>
+                        </div>
+                    `;
+                });
+
+            // Load D-REAM candidates
+            fetch('/api/dream/candidates')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('candidates-container');
+
+                    if (!data || data.length === 0) {
+                        container.innerHTML = `
+                            <div class="no-improvements">
+                                <h3>📦 No Candidates</h3>
+                                <p>No D-REAM candidate packs found.</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // Sort by most recent first
+                    data.sort((a, b) => {
+                        const aTime = a.lineage?.created_at || '';
+                        const bTime = b.lineage?.created_at || '';
+                        return bTime.localeCompare(aTime);
+                    });
+
+                    container.innerHTML = data.map(pack => {
+                        const best = pack.summary?.best_id || 'N/A';
+                        const numCandidates = pack.summary?.num || pack.candidates?.length || 0;
+                        const runId = pack.run_id;
+
+                        return `
+                            <div class="candidate-card">
+                                <h4>🧬 Run ${runId}</h4>
+                                <div class="candidate-metrics">
+                                    <strong>Best Candidate:</strong> ${best}<br>
+                                    <strong>Total Candidates:</strong> ${numCandidates}<br>
+                                    <strong>Origin:</strong> ${pack.lineage?.origin || 'unknown'}<br>
+                                    <strong>Created:</strong> ${pack.lineage?.created_at || 'unknown'}
+                                </div>
+                                <button class="btn-compare" onclick="compareToBaseline('${runId}')">
+                                    📊 Compare to Baseline
+                                </button>
+                                <div id="comparison-${runId}" class="comparison-view"></div>
+                            </div>
+                        `;
+                    }).join('');
+                })
+                .catch(error => {
+                    document.getElementById('candidates-container').innerHTML = `
+                        <div class="no-improvements">
+                            <h3>❌ Error Loading Candidates</h3>
+                            <p>Could not fetch D-REAM candidates</p>
+                        </div>
+                    `;
+                });
+        }
+
+        function compareToBaseline(runId) {
+            const comparisonDiv = document.getElementById(`comparison-${runId}`);
+
+            // Toggle if already open
+            if (comparisonDiv.classList.contains('active')) {
+                comparisonDiv.classList.remove('active');
+                return;
+            }
+
+            comparisonDiv.innerHTML = '<p>Loading comparison...</p>';
+            comparisonDiv.classList.add('active');
+
+            fetch(`/api/compare?run_id=${runId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.ok) {
+                        comparisonDiv.innerHTML = `<p>❌ Error: ${data.error}</p>`;
+                        return;
+                    }
+
+                    const formatDelta = (value, metric) => {
+                        if (value === null || value === undefined) return 'N/A';
+                        const sign = value > 0 ? '+' : '';
+                        let className = 'delta-neutral';
+
+                        // For WER, lower is better
+                        if (metric === 'wer' || metric === 'latency_ms' || metric === 'vad_boundary_ms') {
+                            className = value < 0 ? 'delta-positive' : value > 0 ? 'delta-negative' : 'delta-neutral';
+                        } else {
+                            // For score, higher is better
+                            className = value > 0 ? 'delta-positive' : value < 0 ? 'delta-negative' : 'delta-neutral';
+                        }
+
+                        return `<span class="${className}">${sign}${value}</span>`;
+                    };
+
+                    comparisonDiv.innerHTML = `
+                        <h5>📊 Baseline Comparison</h5>
+                        <table style="width: 100%; font-family: 'Courier New', monospace; font-size: 0.85em;">
+                            <tr>
+                                <th style="text-align: left;">Metric</th>
+                                <th style="text-align: right;">Current</th>
+                                <th style="text-align: right;">Baseline</th>
+                                <th style="text-align: right;">Delta</th>
+                            </tr>
+                            <tr>
+                                <td>WER</td>
+                                <td style="text-align: right;">${data.current.wer || 'N/A'}</td>
+                                <td style="text-align: right;">${data.baseline.wer || 'N/A'}</td>
+                                <td style="text-align: right;">${formatDelta(data.delta.wer, 'wer')}</td>
+                            </tr>
+                            <tr>
+                                <td>Latency (ms)</td>
+                                <td style="text-align: right;">${data.current.latency_ms || 'N/A'}</td>
+                                <td style="text-align: right;">${data.baseline.latency_ms || 'N/A'}</td>
+                                <td style="text-align: right;">${formatDelta(data.delta.latency_ms, 'latency_ms')}</td>
+                            </tr>
+                            <tr>
+                                <td>VAD Boundary (ms)</td>
+                                <td style="text-align: right;">${data.current.vad_boundary_ms || 'N/A'}</td>
+                                <td style="text-align: right;">${data.baseline.vad_boundary_ms || 'N/A'}</td>
+                                <td style="text-align: right;">${formatDelta(data.delta.vad_boundary_ms, 'vad_boundary_ms')}</td>
+                            </tr>
+                            <tr>
+                                <td>Score</td>
+                                <td style="text-align: right;">${data.current.score || 'N/A'}</td>
+                                <td style="text-align: right;">${data.baseline.score || 'N/A'}</td>
+                                <td style="text-align: right;">${formatDelta(data.delta.score, 'score')}</td>
+                            </tr>
+                        </table>
+                        <p style="margin-top: 10px; font-size: 0.8em; opacity: 0.7;">
+                            Baseline: Run ${data.baseline.run_id} (${data.baseline.timestamp})
+                        </p>
+                    `;
+                })
+                .catch(error => {
+                    comparisonDiv.innerHTML = `<p>❌ Error loading comparison: ${error}</p>`;
+                });
+        }
+
+        // Load dashboard on page load
+        document.addEventListener('DOMContentLoaded', loadDashboard);
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboard, 30000);
+    </script>
+</body>
+</html>
+"""
+
+class DreamDashboard:
+    """Web dashboard for D-REAM improvement approvals."""
+
+    def __init__(self):
+        # Use shared D-REAM instance for consistency
+        from shared_dream_instance import get_shared_dream_manager
+        self.alert_manager = get_shared_dream_manager()
+        print("[dashboard] Using shared D-REAM alert manager")
+
+    def get_pending_improvements(self) -> List[Dict[str, Any]]:
+        """Get list of pending improvements for display."""
+        try:
+            alerts = self.alert_manager.get_pending_alerts()
+
+            improvements = []
+            for alert in alerts:
+                # Convert alert to dict for JSON serialization
+                improvement = {
+                    'task_id': getattr(alert, 'request_id', 'unknown'),  # Use request_id not task_id
+                    'component': getattr(alert, 'component', 'System'),
+                    'description': getattr(alert, 'description', 'No description'),
+                    'expected_benefit': getattr(alert, 'expected_benefit', 'Performance improvement'),
+                    'risk_level': getattr(alert, 'risk_level', 'unknown'),
+                    'confidence': getattr(alert, 'confidence', 0.0),
+                    'urgency': getattr(alert, 'urgency', 'medium'),
+                    'detected_at': getattr(alert, 'detected_at', 'Unknown')
+                }
+                improvements.append(improvement)
+
+            return improvements
+        except Exception as e:
+            print(f"Error getting pending improvements: {e}")
+            return []
+
+    def get_system_status(self) -> Dict[str, Any]:
+        """Get overall system status."""
+        try:
+            status = self.alert_manager.get_system_status()
+            pending_count = len(self.alert_manager.get_pending_alerts())
+
+            return {
+                'status': 'Operational',
+                'pending_count': pending_count,
+                'last_check': datetime.now().isoformat()
+            }
+        except Exception as e:
+            return {
+                'status': f'Error: {e}',
+                'pending_count': 0,
+                'last_check': datetime.now().isoformat()
+            }
+
+    def process_user_response(self, response: str, channel: str) -> Dict[str, Any]:
+        """Process user approval/rejection."""
+        try:
+            return self.alert_manager.process_user_response(response, channel)
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+# Initialize dashboard
+dashboard = DreamDashboard()
+
+@app.route('/')
+def index():
+    """Main dashboard page."""
+    return render_template_string(DASHBOARD_HTML)
+
+@app.route('/api/pending')
+def api_pending():
+    """API endpoint for pending improvements."""
+    improvements = dashboard.get_pending_improvements()
+    return jsonify({
+        'success': True,
+        'improvements': improvements
+    })
+
+@app.route('/api/status')
+def api_status():
+    """API endpoint for system status."""
+    status = dashboard.get_system_status()
+    return jsonify(status)
+
+@app.route('/api/process_response', methods=['POST'])
+def api_process_response():
+    """API endpoint for processing approvals/rejections."""
+    data = request.get_json()
+    response = data.get('response', '')
+    channel = data.get('channel', 'web_dashboard')
+
+    result = dashboard.process_user_response(response, channel)
+    return jsonify(result)
+
+
+@app.route('/api/inject_test', methods=['POST'])
+def api_inject_test():
+    """API endpoint for injecting test improvements."""
+    from shared_dream_instance import inject_test_improvement
+
+    try:
+        task_id = inject_test_improvement()
+        if task_id:
+            return jsonify({
+                'success': True,
+                'message': f'Test improvement injected: {task_id}',
+                'task_id': task_id,
+                'pending_count': len(dashboard.alert_manager.get_pending_alerts())
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to inject test improvement'
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+if __name__ == '__main__':
+    print("🌐 Starting KLoROS D-REAM Web Dashboard...")
+    print("📱 Access from your phone: http://[server-ip]:5000")
+    print("💻 Local access: http://localhost:5000")
+
+    # Run on all interfaces so you can access from phone
+    app.run(host='0.0.0.0', port=5000, debug=False)

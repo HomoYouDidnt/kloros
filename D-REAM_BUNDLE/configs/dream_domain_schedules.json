@@ -1,0 +1,72 @@
+{
+  "cpu": {
+    "interval": 5,
+    "priority": "high",
+    "enabled": true,
+    "apply_best": false,
+    "description": "CPU governor and performance optimization - lightweight default"
+  },
+  "gpu": {
+    "interval": 10,
+    "priority": "high",
+    "enabled": true,
+    "apply_best": false,
+    "description": "GPU compute and LLM inference optimization - lightweight default"
+  },
+  "audio": {
+    "interval": 15,
+    "priority": "medium",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Audio pipeline and xrun minimization"
+  },
+  "memory": {
+    "interval": 20,
+    "priority": "high",
+    "enabled": true,
+    "apply_best": false,
+    "description": "DDR5 timing and stability optimization - lightweight default"
+  },
+  "storage": {
+    "interval": 30,
+    "priority": "medium",
+    "enabled": true,
+    "apply_best": false,
+    "description": "NVMe/SATA I/O performance tuning"
+  },
+  "asr_tts": {
+    "interval": 25,
+    "priority": "medium",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Speech recognition and TTS accuracy"
+  },
+  "power_thermal": {
+    "interval": 5,
+    "priority": "critical",
+    "enabled": false,
+    "apply_best": false,
+    "description": "Power limits and thermal management - OVERNIGHT AGGRESSIVE"
+  },
+  "os_scheduler": {
+    "interval": 35,
+    "priority": "medium",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Kernel scheduler and VM tuning"
+  },
+  "conversation": {
+    "interval": 20,
+    "priority": "high",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Conversation quality, pronunciation, tone, and sarcasm optimization using GLaDOS reference samples"
+  },
+  "rag_context": {
+    "interval": 15,
+    "priority": "high",
+    "enabled": true,
+    "apply_best": false,
+    "description": "RAG memory retrieval and context continuity optimization - improves follow-up question handling and conversation coherence"
+  }
+}

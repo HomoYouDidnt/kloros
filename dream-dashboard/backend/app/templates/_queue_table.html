@@ -1,0 +1,32 @@
+<div class="overflow-x-auto">
+  <table id="queue-table" class="min-w-full text-sm">
+    <thead class="bg-slate-800 text-slate-300">
+      <tr>
+        <th class="text-left px-4 py-2">ID</th>
+        <th class="text-left px-4 py-2">Type</th>
+        <th class="text-left px-4 py-2">Status</th>
+        <th class="text-left px-4 py-2">Note</th>
+        <th class="text-left px-4 py-2">Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for q in queue %}
+      <tr class="border-b border-slate-800">
+        <td class="px-4 py-2">{{q.id}}</td>
+        <td class="px-4 py-2">
+          <div class="font-semibold">{{q.type_key}}</div>
+          <div class="text-slate-400 text-xs">{{q.params}}</div>
+        </td>
+        <td class="px-4 py-2">
+          <span class="rounded-lg px-2 py-1 bg-slate-800 border border-slate-700">{{q.status}}</span>
+        </td>
+        <td class="px-4 py-2">{{q.note or ''}}</td>
+        <td class="px-4 py-2">{{q.created_at}}</td>
+      </tr>
+      {% endfor %}
+      {% if queue|length == 0 %}
+      <tr><td colspan="5" class="px-4 py-6 text-center text-slate-400">Queue is empty.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,20 @@
+[Unit]
+Description=Run KLoROS Orchestrator Tick Every Minute
+Requires=kloros-orchestrator.service
+Documentation=https://github.com/kloros/orchestration
+
+[Timer]
+# Start 2 minutes after boot
+OnBootSec=2min
+
+# Run every 60 seconds after previous completion
+OnUnitActiveSec=60
+
+# Allow 5 second drift for system load
+AccuracySec=5s
+
+# Persist across reboots
+Persistent=true
+
+[Install]
+WantedBy=timers.target

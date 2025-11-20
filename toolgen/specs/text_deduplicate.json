@@ -1,0 +1,27 @@
+{
+  "tool_id": "text_deduplicate",
+  "description": "Remove duplicate lines from text using Jaccard similarity threshold",
+  "signature": "def deduplicate_lines(text: str, threshold: float = 0.8) -> str",
+  "docstring": "Remove lines that exceed Jaccard similarity threshold. Return deduplicated text.",
+  "test_cases": [
+    {
+      "input": {"text": "hello\nhello\nworld", "threshold": 1.0},
+      "expected_output": "hello\nworld",
+      "description": "Exact duplicate removal"
+    },
+    {
+      "input": {"text": "the quick brown fox\nthe quick brown dog\nunique line", "threshold": 0.6},
+      "expected_output": "the quick brown fox\nunique line",
+      "description": "High similarity threshold"
+    }
+  ],
+  "constraints": {
+    "forbidden_apis": ["os.system", "subprocess", "eval", "exec"],
+    "max_runtime_sec": 2.0,
+    "max_memory_mb": 128
+  },
+  "performance_targets": {
+    "lines_per_sec": 1000,
+    "memory_overhead_mb": 50
+  }
+}

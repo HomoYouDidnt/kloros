@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+#
+# KLoROS Lifecycle System Production Deployment
+#
+# This script deploys the lifecycle management system to production.
+#
+
+set -euo pipefail
+
+BOLD="\033[1m"
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+RESET="\033[0m"
+
+echo -e "${BOLD}========================================${RESET}"
+echo -e "${BOLD}KLoROS Lifecycle System Deployment${RESET}"
+echo -e "${BOLD}========================================${RESET}"
+echo ""
+
+# Check if running as root
+if [[ $EUID -eq 0 ]]; then
+   echo -e "${RED}❌ Do not run this script as root${RESET}"
+   exit 1
+fi
+
+# Step 1: Verify prerequisites
+echo -e "${BOLD}[1/6] Verifying Prerequisites${RESET}"
+if [[ ! -f ~/.kloros/config/lifecycle_policy.json ]]; then
+    echo -e "${RED}❌ Missing lifecycle_policy.json${RESET}"
+    exit 1
+fi
+if [[ ! -f ~/.kloros/keys/hmac.key ]]; then
+    echo -e "${RED}❌ Missing HMAC key${RESET}"
+    exit 1
+fi
+if [[ ! -f ~/.kloros/registry/niche_map.json ]]; then
+    echo -e "${RED}❌ Missing registry${RESET}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Prerequisites verified${RESET}"
+echo ""
+
+# Step 2: Run DoD verification
+echo -e "${BOLD}[2/6] Running DoD Verification${RESET}"
+if PYTHONPATH=/home/kloros/src /home/kloros/.venv/bin/python3 /home/kloros/bin/klr_verify_dod; then
+    echo -e "${GREEN}✓ DoD verification passed${RESET}"
+else
+    echo -e "${RED}❌ DoD verification failed${RESET}"
+    exit 1
+fi
+echo ""
+
+# Step 3: Install systemd services
+echo -e "${BOLD}[3/6] Installing Systemd Services${RESET}"
+sudo cp /home/kloros/systemd/klr-ledger-writer.service /etc/systemd/system/
+sudo cp /home/kloros/systemd/klr-lifecycle-cycle.service /etc/systemd/system/
+sudo cp /home/kloros/systemd/klr-lifecycle-cycle.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+echo -e "${GREEN}✓ Systemd units installed${RESET}"
+echo ""
+
+# Step 4: Enable and start ledger writer
+echo -e "${BOLD}[4/6] Starting Ledger Writer Daemon${RESET}"
+sudo systemctl enable klr-ledger-writer.service
+sudo systemctl restart klr-ledger-writer.service
+sleep 2
+if sudo systemctl is-active --quiet klr-ledger-writer.service; then
+    echo -e "${GREEN}✓ Ledger writer is running${RESET}"
+else
+    echo -e "${RED}❌ Ledger writer failed to start${RESET}"
+    sudo journalctl -u klr-ledger-writer.service -n 20
+    exit 1
+fi
+echo ""
+
+# Step 5: Enable lifecycle cycle timer
+echo -e "${BOLD}[5/6] Enabling Lifecycle Cycle Timer${RESET}"
+sudo systemctl enable klr-lifecycle-cycle.timer
+sudo systemctl start klr-lifecycle-cycle.timer
+if sudo systemctl is-active --quiet klr-lifecycle-cycle.timer; then
+    echo -e "${GREEN}✓ Lifecycle cycle timer enabled${RESET}"
+    echo -e "  Next run: $(sudo systemctl status klr-lifecycle-cycle.timer | grep 'Trigger:' || echo 'Check with: systemctl list-timers')"
+else
+    echo -e "${YELLOW}⚠ Timer status unclear, check manually${RESET}"
+fi
+echo ""
+
+# Step 6: Final verification
+echo -e "${BOLD}[6/6] Final System Check${RESET}"
+echo "Services:"
+sudo systemctl status klr-ledger-writer.service --no-pager -l | head -3
+echo ""
+echo "Timers:"
+sudo systemctl list-timers klr-lifecycle-cycle.timer --no-pager
+echo ""
+
+echo -e "${BOLD}========================================${RESET}"
+echo -e "${GREEN}✅ Lifecycle System Deployed${RESET}"
+echo -e "${BOLD}========================================${RESET}"
+echo ""
+echo "Next steps:"
+echo "  1. Monitor ledger: tail -f ~/.kloros/lineage/fitness_ledger.jsonl"
+echo "  2. Check logs: sudo journalctl -u klr-ledger-writer.service -f"
+echo "  3. Test cycle: sudo systemctl start klr-lifecycle-cycle.service"
+echo ""

@@ -1,0 +1,26 @@
+groups:
+- name: kloros-canary
+  rules:
+  - alert: KLoROS_EscalationRequested
+    expr: max_over_time(kloros_escalation_flag{kind="vllm_oom"}[5m]) == 1
+    for: 2m
+    labels: {severity: warning}
+    annotations:
+      summary: "KLoROS escalation requested for VLLM"
+      description: "Observer reached symptom threshold; canary escalation armed."
+
+  - alert: KLoROS_CanaryBudgetLow
+    expr: kloros_gpu_budget_seconds_remaining < 10
+    for: 1m
+    labels: {severity: warning}
+    annotations:
+      summary: "GPU canary budget low"
+      description: "Remaining nightly canary budget under 10 seconds."
+
+  - alert: KLoROS_CanaryEligible
+    expr: kloros_gpu_canary_cooldown_seconds <= 0
+    for: 5m
+    labels: {severity: info}
+    annotations:
+      summary: "GPU canary eligible"
+      description: "Cooldown complete; canary may run during window if needed."

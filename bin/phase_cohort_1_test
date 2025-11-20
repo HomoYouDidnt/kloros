@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""
+PHASE Testing - Cohort 1 (maintenance_housekeeping, observability_logging)
+
+Executes two-track testing comparing legacy implementations with v0 wrapper zooids.
+"""
+
+import sys
+import time
+import logging
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / 'src'))
+
+from kloros.dream.phase_two_track import TwoTrackComparator, PHASECycleTracker, PHASEResult, TestClass
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def test_maintenance_housekeeping():
+    """
+    Test maintenance_housekeeping wrapper vs HousekeepingScheduler.
+    """
+    from housekeeping_scheduler import HousekeepingScheduler
+    from zooids.wrappers.maintenance_housekeeping_v0_wrapper import HousekeepingZooid
+
+    comparator = TwoTrackComparator()
+    results = []
+
+    logger.info("=" * 80)
+    logger.info("PHASE Testing: maintenance_housekeeping")
+    logger.info("=" * 80)
+
+    # Test Scenario 1: Instantiation
+    logger.info("\nTest 1: Instantiation")
+    try:
+        # Legacy instantiation
+        class MockKLoROS:
+            def __init__(self):
+                self.memory_system = None
+
+        legacy_instance = HousekeepingScheduler(kloros_instance=MockKLoROS())
+        legacy_instantiation = {"status": "success", "type": type(legacy_instance).__name__}
+    except Exception as e:
+        legacy_instantiation = {"status": "error", "error": str(e)}
+
+    try:
+        # Wrapper instantiation
+        wrapper_instance = HousekeepingZooid()
+        wrapper_instantiation = {"status": "success", "type": type(wrapper_instance).__name__}
+    except Exception as e:
+        wrapper_instantiation = {"status": "error", "error": str(e)}
+
+    result1 = comparator.execute_test(
+        niche="maintenance_housekeeping",
+        test_scenario="instantiation",
+        test_class=TestClass.BEHAVIORAL,
+        legacy_callable=lambda: legacy_instantiation,
+        wrapper_callable=lambda: wrapper_instantiation,
+    )
+    results.append(result1)
+    logger.info(f"  Match: {result1.behavioral_match}, Drift: {result1.drift_percentage:.2f}% [{result1.test_class.value.upper()}]")
+
+    # Test Scenario 2: Tick execution (wrapper only)
+    logger.info("\nTest 2: Tick execution")
+    try:
+        tick_result = wrapper_instance.tick(time.time())
+        result2_status = "success" if tick_result.get("status") == "success" else "error"
+    except Exception as e:
+        result2_status = "error"
+
+    # For tick execution, we just verify wrapper works (legacy doesn't have tick interface)
+    result2 = PHASEResult(
+        niche="maintenance_housekeeping",
+        test_scenario="tick_execution",
+        test_class=TestClass.BEHAVIORAL,
+        timestamp=time.time(),
+        legacy_result={"note": "legacy uses different interface"},
+        wrapper_result={"status": result2_status},
+        legacy_error=None,
+        wrapper_error=None,
+        behavioral_match=result2_status == "success",
+        drift_percentage=0.0 if result2_status == "success" else 100.0,
+        comparison_details={"wrapper_callable": result2_status == "success"},
+    )
+    results.append(result2)
+    logger.info(f"  Match: {result2.behavioral_match}, Drift: {result2.drift_percentage:.2f}% [{result2.test_class.value.upper()}]")
+
+    # Test Scenario 3: Configuration parameters
+    logger.info("\nTest 3: Configuration parameters")
+    legacy_config = {
+        "has_run_scheduled_maintenance": hasattr(legacy_instance, "run_scheduled_maintenance"),
+        "is_daemon": True,
+    }
+    wrapper_config = {
+        "has_tick": hasattr(wrapper_instance, "tick"),
+        "has_genome_id": hasattr(wrapper_instance, "genome_id"),
+        "niche": getattr(wrapper_instance, "niche", None),
+        "generation": getattr(wrapper_instance, "generation", None),
+    }
+
+    result3 = comparator.execute_test(
+        niche="maintenance_housekeeping",
+        test_scenario="configuration",
+        test_class=TestClass.STRUCTURAL,
+        legacy_callable=lambda: legacy_config,
+        wrapper_callable=lambda: wrapper_config,
+    )
+    results.append(result3)
+    logger.info(f"  Match: {result3.behavioral_match}, Drift: {result3.drift_percentage:.2f}% [{result3.test_class.value.upper()}]")
+
+    return results
+
+
+def test_observability_logging():
+    """
+    Test observability_logging wrapper vs LedgerWriterDaemon.
+    """
+    from kloros.observability.ledger_writer_daemon import LedgerWriterDaemon
+    from zooids.wrappers.observability_logging_v0_wrapper import LedgerWriterZooid
+
+    comparator = TwoTrackComparator()
+    results = []
+
+    logger.info("=" * 80)
+    logger.info("PHASE Testing: observability_logging")
+    logger.info("=" * 80)
+
+    # Test Scenario 1: Instantiation
+    logger.info("\nTest 1: Instantiation")
+    try:
+        legacy_instance = LedgerWriterDaemon()
+        legacy_instantiation = {"status": "success", "type": type(legacy_instance).__name__}
+    except Exception as e:
+        legacy_instantiation = {"status": "error", "error": str(e)}
+
+    try:
+        wrapper_instance = LedgerWriterZooid()
+        wrapper_instantiation = {"status": "success", "type": type(wrapper_instance).__name__}
+    except Exception as e:
+        wrapper_instantiation = {"status": "error", "error": str(e)}
+
+    result1 = comparator.execute_test(
+        niche="observability_logging",
+        test_scenario="instantiation",
+        test_class=TestClass.BEHAVIORAL,
+        legacy_callable=lambda: legacy_instantiation,
+        wrapper_callable=lambda: wrapper_instantiation,
+    )
+    results.append(result1)
+    logger.info(f"  Match: {result1.behavioral_match}, Drift: {result1.drift_percentage:.2f}% [{result1.test_class.value.upper()}]")
+
+    # Test Scenario 2: Tick execution
+    logger.info("\nTest 2: Tick execution")
+    try:
+        tick_result = wrapper_instance.tick(time.time())
+        result2_status = "success" if tick_result.get("status") == "success" else "error"
+    except Exception as e:
+        result2_status = "error"
+
+    result2 = PHASEResult(
+        niche="observability_logging",
+        test_scenario="tick_execution",
+        test_class=TestClass.BEHAVIORAL,
+        timestamp=time.time(),
+        legacy_result={"note": "legacy uses different interface"},
+        wrapper_result={"status": result2_status},
+        legacy_error=None,
+        wrapper_error=None,
+        behavioral_match=result2_status == "success",
+        drift_percentage=0.0 if result2_status == "success" else 100.0,
+        comparison_details={"wrapper_callable": result2_status == "success"},
+    )
+    results.append(result2)
+    logger.info(f"  Match: {result2.behavioral_match}, Drift: {result2.drift_percentage:.2f}% [{result2.test_class.value.upper()}]")
+
+    # Test Scenario 3: Configuration parameters
+    logger.info("\nTest 3: Configuration parameters")
+    legacy_config = {
+        "has_write_observation": hasattr(legacy_instance, "write_observation"),
+        "has_flush": hasattr(legacy_instance, "flush"),
+        "is_daemon": True,
+    }
+    wrapper_config = {
+        "has_tick": hasattr(wrapper_instance, "tick"),
+        "has_genome_id": hasattr(wrapper_instance, "genome_id"),
+        "niche": getattr(wrapper_instance, "niche", None),
+        "generation": getattr(wrapper_instance, "generation", None),
+    }
+
+    result3 = comparator.execute_test(
+        niche="observability_logging",
+        test_scenario="configuration",
+        test_class=TestClass.STRUCTURAL,
+        legacy_callable=lambda: legacy_config,
+        wrapper_callable=lambda: wrapper_config,
+    )
+    results.append(result3)
+    logger.info(f"  Match: {result3.behavioral_match}, Drift: {result3.drift_percentage:.2f}% [{result3.test_class.value.upper()}]")
+
+    return results
+
+
+def main():
+    """Run PHASE tests for Cohort 1 and record cycle."""
+    logger.info("Starting PHASE Testing for Cohort 1")
+    logger.info(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("")
+
+    tracker = PHASECycleTracker()
+
+    # Test maintenance_housekeeping
+    housekeeping_results = test_maintenance_housekeeping()
+    housekeeping_cycle = tracker.record_cycle("maintenance_housekeeping", housekeeping_results)
+
+    logger.info("\n" + "=" * 80)
+    logger.info(f"Cycle {housekeeping_cycle['cycle_number']} Summary: maintenance_housekeeping")
+    logger.info(f"  Total Tests: {housekeeping_cycle['test_count']} ({housekeeping_cycle['behavioral_test_count']} behavioral, {housekeeping_cycle['structural_test_count']} structural)")
+    logger.info(f"  Behavioral Tests Passed: {housekeeping_cycle['all_passed']}")
+    logger.info(f"  Behavioral Max Drift: {housekeeping_cycle['behavioral_max_drift']:.2f}%")
+    logger.info(f"  Behavioral Avg Drift: {housekeeping_cycle['behavioral_avg_drift']:.2f}%")
+    logger.info(f"  Structural Max Drift: {housekeeping_cycle['structural_max_drift']:.2f}% (informational only)")
+
+    readiness = tracker.get_readiness("maintenance_housekeeping")
+    logger.info(f"  Status: {readiness['status'].upper()}")
+    logger.info(f"  Consecutive Successes: {readiness['consecutive_successes']}/3")
+    if readiness['cycles_needed'] > 0:
+        logger.info(f"  Cycles Needed: {readiness['cycles_needed']}")
+    logger.info("=" * 80)
+
+    # Test observability_logging
+    logging_results = test_observability_logging()
+    logging_cycle = tracker.record_cycle("observability_logging", logging_results)
+
+    logger.info("\n" + "=" * 80)
+    logger.info(f"Cycle {logging_cycle['cycle_number']} Summary: observability_logging")
+    logger.info(f"  Total Tests: {logging_cycle['test_count']} ({logging_cycle['behavioral_test_count']} behavioral, {logging_cycle['structural_test_count']} structural)")
+    logger.info(f"  Behavioral Tests Passed: {logging_cycle['all_passed']}")
+    logger.info(f"  Behavioral Max Drift: {logging_cycle['behavioral_max_drift']:.2f}%")
+    logger.info(f"  Behavioral Avg Drift: {logging_cycle['behavioral_avg_drift']:.2f}%")
+    logger.info(f"  Structural Max Drift: {logging_cycle['structural_max_drift']:.2f}% (informational only)")
+
+    readiness = tracker.get_readiness("observability_logging")
+    logger.info(f"  Status: {readiness['status'].upper()}")
+    logger.info(f"  Consecutive Successes: {readiness['consecutive_successes']}/3")
+    if readiness['cycles_needed'] > 0:
+        logger.info(f"  Cycles Needed: {readiness['cycles_needed']}")
+    logger.info("=" * 80)
+
+    logger.info("\nPHASE Testing Complete")
+
+    # Overall readiness
+    logger.info("\n" + "=" * 80)
+    logger.info("COHORT 1 READINESS")
+    logger.info("=" * 80)
+    for niche in ["maintenance_housekeeping", "observability_logging"]:
+        status = tracker.get_readiness(niche)
+        logger.info(f"{niche}:")
+        logger.info(f"  Ready: {status['ready_for_shadow']}")
+        logger.info(f"  Cycles: {status['total_cycles']}")
+        logger.info(f"  Consecutive Successes: {status['consecutive_successes']}/3")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,256 @@
+import { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import './App.css';
+
+const API_URL = `http://${window.location.hostname}:8765`;
+const WS_URL = `ws://${window.location.hostname}:8765/ws/live`;
+
+function App() {
+  const [metaState, setMetaState] = useState(null);
+  const [klorosRunning, setKlorosRunning] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [ws, setWs] = useState(null);
+
+  // WebSocket connection
+  useEffect(() => {
+    let websocket;
+    let reconnectTimeout;
+
+    const connect = () => {
+      websocket = new WebSocket(WS_URL);
+
+      websocket.onopen = () => {
+        console.log('[dashboard] WebSocket connected');
+        setConnected(true);
+      };
+
+      websocket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'update' && message.data.meta_state) {
+          setMetaState(message.data.meta_state);
+          setKlorosRunning(message.data.kloros_running);
+
+          // Add to history (keep last 60 points = 1 minute)
+          setHistory(prev => {
+            const newHistory = [...prev, {
+              time: new Date().toLocaleTimeString(),
+              health: message.data.meta_state.conversation_health,
+              progress: message.data.meta_state.quality_scores.progress,
+              clarity: message.data.meta_state.quality_scores.clarity,
+            }].slice(-60);
+            return newHistory;
+          });
+        }
+      };
+
+      websocket.onerror = (error) => {
+        console.error('[dashboard] WebSocket error:', error);
+        setConnected(false);
+      };
+
+      websocket.onclose = () => {
+        console.log('[dashboard] WebSocket closed, reconnecting...');
+        setConnected(false);
+        reconnectTimeout = setTimeout(connect, 3000);
+      };
+
+      setWs(websocket);
+    };
+
+    connect();
+
+    return () => {
+      if (websocket) websocket.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+  }, []);
+
+  const formatPercent = (value) => `${Math.round(value * 100)}%`;
+  const getHealthColor = (value) => {
+    if (value >= 0.7) return 'text-green-400';
+    if (value >= 0.4) return 'text-yellow-400';
+    return 'text-red-400';
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">
+          KLoROS Meta-Cognitive Dashboard
+        </h1>
+        <div className="flex gap-4 items-center">
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${connected ? 'bg-green-900/30' : 'bg-red-900/30'}`}>
+            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+            <span className="text-sm">{connected ? 'LIVE' : 'DISCONNECTED'}</span>
+          </div>
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${klorosRunning ? 'bg-blue-900/30' : 'bg-gray-700/30'}`}>
+            <div className={`w-2 h-2 rounded-full ${klorosRunning ? 'bg-blue-400' : 'bg-gray-500'}`}></div>
+            <span className="text-sm">{klorosRunning ? 'KLoROS ACTIVE' : 'KLoROS OFFLINE'}</span>
+          </div>
+        </div>
+      </div>
+
+      {!metaState ? (
+        <div className="text-center text-gray-400 mt-20">
+          <p className="text-xl">Waiting for data...</p>
+          <p className="text-sm mt-2">Make sure KLoROS is running with meta-cognition enabled</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Conversation Health */}
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+            <h2 className="text-lg font-semibold mb-4">Conversation Health</h2>
+            <div className={`text-6xl font-bold ${getHealthColor(metaState.conversation_health)}`}>
+              {formatPercent(metaState.conversation_health)}
+            </div>
+            <div className="mt-4 h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  metaState.conversation_health >= 0.7 ? 'bg-green-400' :
+                  metaState.conversation_health >= 0.4 ? 'bg-yellow-400' : 'bg-red-400'
+                }`}
+                style={{ width: `${metaState.conversation_health * 100}%` }}
+              />
+            </div>
+            <p className="text-sm text-gray-400 mt-2">
+              Confidence: {formatPercent(metaState.meta_confidence)}
+            </p>
+          </div>
+
+          {/* Current Issues */}
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+            <h2 className="text-lg font-semibold mb-4">Current Issues</h2>
+            <div className="space-y-3">
+              {Object.entries(metaState.issues).map(([key, value]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="capitalize">{key.replace('_', ' ')}</span>
+                  <span className={`px-2 py-1 rounded text-xs ${value ? 'bg-red-900/40 text-red-300' : 'bg-gray-700 text-gray-400'}`}>
+                    {value ? 'DETECTED' : 'OK'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Active Interventions */}
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+            <h2 className="text-lg font-semibold mb-4">Active Interventions</h2>
+            <div className="space-y-3">
+              {Object.entries(metaState.interventions).map(([key, value]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="capitalize">{key.replace('_', ' ')}</span>
+                  <span className={`px-2 py-1 rounded text-xs ${value ? 'bg-blue-900/40 text-blue-300' : 'bg-gray-700 text-gray-400'}`}>
+                    {value ? 'ACTIVE' : 'IDLE'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quality Metrics */}
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+            <h2 className="text-lg font-semibold mb-4">Quality Metrics</h2>
+            <div className="space-y-4">
+              {Object.entries(metaState.quality_scores).map(([key, value]) => (
+                <div key={key}>
+                  <div className="flex justify-between mb-1">
+                    <span className="capitalize">{key}</span>
+                    <span className="font-semibold">{formatPercent(value)}</span>
+                  </div>
+                  <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-400 transition-all duration-500"
+                      style={{ width: `${value * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Consciousness State */}
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
+            <h2 className="text-lg font-semibold mb-4">Consciousness</h2>
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="text-gray-400">Valence:</span>
+                <span className={`ml-2 font-semibold ${metaState.affect.valence > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {metaState.affect.valence.toFixed(2)}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-400">Arousal:</span>
+                <span className="ml-2 font-semibold">{metaState.affect.arousal.toFixed(2)}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Uncertainty:</span>
+                <span className="ml-2 font-semibold">{formatPercent(metaState.affect.uncertainty)}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Fatigue:</span>
+                <span className="ml-2 font-semibold">{formatPercent(metaState.affect.fatigue)}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Curiosity:</span>
+                <span className="ml-2 font-semibold">{formatPercent(metaState.affect.curiosity)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Session Info */}
+          <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-3">
+            <h2 className="text-lg font-semibold mb-4">Session Information</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-gray-400 text-sm">Turn Count</p>
+                <p className="text-2xl font-bold">{metaState.session.turn_count}</p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Duration</p>
+                <p className="text-2xl font-bold">
+                  {Math.floor(metaState.session.duration_seconds / 60)}m {metaState.session.duration_seconds % 60}s
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Topics</p>
+                <p className="text-2xl font-bold">{metaState.session.topics.length}</p>
+                {metaState.session.topics.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">{metaState.session.topics.slice(0, 3).join(', ')}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-gray-400 text-sm">Entities</p>
+                <p className="text-2xl font-bold">{metaState.session.entities.length}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Quality Timeline */}
+          {history.length > 10 && (
+            <div className="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-3">
+              <h2 className="text-lg font-semibold mb-4">Quality Timeline (Last Minute)</h2>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={history}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                  <YAxis stroke="#9CA3AF" fontSize={12} domain={[0, 1]} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#1F2937', border: 'none', borderRadius: '8px' }}
+                    labelStyle={{ color: '#9CA3AF' }}
+                  />
+                  <Line type="monotone" dataKey="health" stroke="#10B981" strokeWidth={2} dot={false} name="Health" />
+                  <Line type="monotone" dataKey="progress" stroke="#3B82F6" strokeWidth={2} dot={false} name="Progress" />
+                  <Line type="monotone" dataKey="clarity" stroke="#F59E0B" strokeWidth={2} dot={false} name="Clarity" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;

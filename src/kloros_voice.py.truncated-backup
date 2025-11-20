@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+KLoROS voice loop: Vosk (offline STT) + Piper (TTS) + Ollama (LLM)
+- Auto-picks CMTECK mic (or set env KLR_INPUT_IDX)
+- Auto-detects device sample rate (48k typical) and uses it everywhere
+- VAD endpointing tuned to be patient (less premature "I didn't catch that")
+- Tight wake-grammar for "KLoROS" (optional variants via KLR_WAKE_PHRASES)
+- Energy & confidence gates to cut false wakes
+- Pronounces "KLoROS" as /klɔr-oʊs/ via eSpeak phonemes [[ 'klOroUs ]]
+"""
+
+import collections
+import json
+import os
+import platform
+import queue
+import re
+import subprocess  # nosec B404
+import sys
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
+
+import numpy as np
+import requests  # type: ignore
+import vosk
+
+if TYPE_CHECKING:
+    from src.rag import RAG as RAGType
+else:
+    RAGType = Any  # pragma: no cover
+
+_RAGClass: Optional[type["RAGType"]]
+
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
+from src.compat import webrtcvad  # noqa: E402
+from src.fuzzy_wakeword import fuzzy_wake_match  # noqa: E402
+try:
+    from src.kloros_memory.integration import create_memory_enhanced_kloros  # noqa: E402
+except ImportError:
+    create_memory_enhanced_kloros = None  # type: ignore
+from src.logic.kloros import log_event, protective_choice, should_prioritize  # noqa: E402
+from src.persona.kloros import PERSONA_PROMPT, get_line  # noqa: E402
+
+try:
+    from src.audio.calibration import load_profile  # noqa: E402
+except ImportError:
+    load_profile = None  # type: ignore
+
+try:
+    from src.stt.base import SttBackend, create_stt_backend  # noqa: E402
+except ImportError:
+    create_stt_backend = None  # type: ignore
+    SttBackend = None  # type: ignore
+
+try:
+    from src.audio.vad import detect_voiced_segments, select_primary_segment  # noqa: E402
+except ImportError:
+    detect_voiced_segments = None  # type: ignore
+    select_primary_segment = None  # type: ignore
+
+try:
+    from src.tts.base import TtsBackend, create_tts_backend  # noqa: E402
+except ImportError:
+    create_tts_backend = None  # type: ignore
+    TtsBackend = None  # type: ignore
+
+try:
+    from src.core.turn import new_trace_id, run_turn  # noqa: E402
+except ImportError:
+    run_turn = None  # type: ignore
+    new_trace_id = None  # type: ignore
+
+try:
+    from src.reasoning.base import create_reasoning_backend  # noqa: E402
+except ImportError:
+    create_reasoning_backend = None  # type: ignore
+
+try:
+    from src.rag import RAG as _ImportedRAG  # noqa: E402
+
+    _RAGClass = _ImportedRAG
+except Exception:
+    _RAGClass = None
+
+try:
+    from src.audio.capture import AudioInputBackend, create_audio_backend  # noqa: E402
+except ImportError:
+    create_audio_backend = None  # type: ignore
+    AudioInputBackend = None  # type: ignore
+
+try:
+    from src.logging.json_logger import JsonFileLogger, create_logger_from_env  # noqa: E402
+except ImportError:
+    create_logger_from_env = None  # type: ignore
+    JsonFileLogger = None  # type: ignore
+
+try:
+    from src.speaker.base import SpeakerBackend, create_speaker_backend  # noqa: E402
+    from src.speaker.enrollment import (  # noqa: E402
+        ENROLLMENT_SENTENCES,
+        parse_spelled_name,
+        verify_name_spelling,
+    )
+except ImportError:
+    create_speaker_backend = None  # type: ignore
+    SpeakerBackend = None  # type: ignore
+    ENROLLMENT_SENTENCES = None  # type: ignore
+    parse_spelled_name = None  # type: ignore
+    verify_name_spelling = None  # type: ignore
+
+
+class KLoROS:
+    def __init__(self) -> None:
+        # -------------------- Config --------------------
+        # system prompt defined in persona module to keep voice logic slim
+        self.system_prompt = PERSONA_PROMPT
+
+        self.memory_file = os.path.expanduser("~/KLoROS/kloros_memory.json")
+        self.ollama_model = "llama3.1:8b"
+        self.ollama_url = "http://localhost:11434/api/generate"
+        self.operator_id = os.getenv("KLR_OPERATOR_ID", "operator")
+
+        self.rag: Optional["RAGType"] = None
+
+        # ----------------- Audio device -----------------
+        self.input_device_index = None
+        idx_env = os.getenv("KLR_INPUT_IDX")
+        if idx_env is not None:
+            try:
+                self.input_device_index = int(idx_env)
+            except ValueError:
+                self.input_device_index = None
+        if self.input_device_index is None:
+            try:
+                import sounddevice as sd
+
+                for i, d in enumerate(sd.query_devices()):
+                    # d may be a mapping-like object or a string in some environments — handle both
+                    if isinstance(d, dict):
+                        name = d.get("name")
+                        max_in = d.get("max_input_channels", 0)
+                    else:
+                        name = str(d)
+                        max_in = 0
+                    if "pipewire" in (name or "").lower() and (max_in or 0) > 0:
+                        self.input_device_index = i
+                        break
+            except Exception as e:
+                print("[audio] failed to query devices:", e)
+                self.input_device_index = None
+
+        # Detect device default sample rate (fallback 48000)
+        try:
+            import sounddevice as sd
+
+            idev = sd.query_devices(
+                self.input_device_index
+                if self.input_device_index is not None
+                else sd.default.device[0],
+                "input",
+            )
+            # device entries can be mapping-like; attempt dict-like access, fallback to attribute access
+            if isinstance(idev, dict):
+                self.sample_rate = int(idev.get("default_samplerate") or 48000)
+            else:
+                # best-effort: some snd libs return objects with attribute access
+                self.sample_rate = int(getattr(idev, "default_samplerate", 48000) or 48000)
+        except Exception:
+            self.sample_rate = 48000
+        # Use configurable block size from environment, fallback to 16ms blocks
+        block_ms = int(os.getenv("KLR_AUDIO_BLOCK_MS", "8"))
+        self.blocksize = max(256, int(self.sample_rate * block_ms / 1000))
+        self.channels = 1
+        self.input_gain = float(os.getenv("KLR_INPUT_GAIN", "1.0"))  # 1.0–2.0
+
+        print(
+            f"[audio] input index={self.input_device_index}  SR={self.sample_rate}  block={self.blocksize}"
+        )
+
+        # Audio capture backend configuration
+        self.audio_backend_name = os.getenv("KLR_AUDIO_BACKEND", "sounddevice")
+        self.audio_device_index = None
+        device_env = os.getenv("KLR_AUDIO_DEVICE_INDEX")
+        if device_env:
+            try:
+                self.audio_device_index = int(device_env)
+            except ValueError:
+                pass
+        if self.audio_device_index is None:
+            self.audio_device_index = self.input_device_index
+
+        self.audio_sample_rate = int(os.getenv("KLR_AUDIO_SAMPLE_RATE", str(self.sample_rate)))
+        self.audio_block_ms = int(os.getenv("KLR_AUDIO_BLOCK_MS", "8"))
+        self.audio_channels = int(os.getenv("KLR_AUDIO_CHANNELS", "1"))
+        self.audio_ring_secs = float(os.getenv("KLR_AUDIO_RING_SECS", "2.0"))
+        self.audio_warmup_ms = int(os.getenv("KLR_AUDIO_WARMUP_MS", "200"))
+        self.enable_wakeword = int(os.getenv("KLR_ENABLE_WAKEWORD", "1"))
+
+        # Audio backend will be initialized later
+        self.audio_backend: Optional[AudioInputBackend] = None
+
+        # -------------------- Models --------------------
+        self.piper_model = os.path.expanduser("~/KLoROS/models/piper/glados_piper_medium.onnx")
+        self.piper_config = os.path.expanduser(
+            "~/KLoROS/models/piper/glados_piper_medium.onnx.json"
+        )
+        # Load Vosk model defensively — missing model should not crash the process.
+        self.vosk_model = None
+        try:
+            vosk_path = os.path.expanduser("~/KLoROS/models/vosk/model")
+            if os.path.exists(vosk_path):
+                self.vosk_model = vosk.Model(vosk_path)
+            else:
+                print(f"[vosk] model path not found: {vosk_path}")
+        except Exception as e:
+            print("[vosk] model load failed:", e)
+
+        # -------- Wake phrase grammar (KLoROS + optional variants) --------
+        # Keep default tight to just 'kloros' to avoid 'hey' false triggers.
+        base_list = os.getenv("KLR_WAKE_PHRASES", "kloros")
+        self.wake_phrases = [s.strip().lower() for s in base_list.split(",") if s.strip()]
+
+        # thresholds you can tune via env
+        self.wake_conf_min = float(os.getenv("KLR_WAKE_CONF_MIN", "0.65"))  # 0.0–1.0
+        self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))  # 16-bit RMS energy gate
+        self.fuzzy_threshold = float(
+            os.getenv("KLR_FUZZY_THRESHOLD", "0.8")
+        )  # fuzzy matching threshold
+        self.wake_debounce_ms = int(
+            os.getenv("KLR_WAKE_DEBOUNCE_MS", "400")
+        )  # debounce within utterance
+        self.wake_cooldown_ms = int(
+            os.getenv("KLR_WAKE_COOLDOWN_MS", "2000")
+        )  # cooldown between wakes
+        self._last_wake_ms: float = 0
+        self._last_emit_ms = 0
+
+        # Calibration-derived thresholds (will be set by _load_calibration_profile)
+        self.vad_threshold_dbfs: Optional[float] = None  # VAD threshold in dBFS, if calibrated
+        self.agc_gain_db: float = 0.0  # AGC gain in dB, if calibrated
+
+        # STT configuration
+        self.enable_stt = int(os.getenv("KLR_ENABLE_STT", "0"))
+        self.stt_backend_name = os.getenv("KLR_STT_BACKEND", "mock")
+        self.stt_lang = os.getenv("KLR_STT_LANG", "en-US")
+        self.max_turn_seconds = float(os.getenv("KLR_MAX_TURN_SECONDS", "30.0"))
+        self.stt_backend: Optional[Any] = None  # Will be initialized later if needed
+
+        # VAD configuration
+        self.vad_use_calibration = int(os.getenv("KLR_VAD_USE_CALIBRATION", "1"))
+        self.vad_threshold_dbfs_fallback = float(os.getenv("KLR_VAD_THRESHOLD_DBFS", "-48.0"))
+        self.vad_frame_ms = int(os.getenv("KLR_VAD_FRAME_MS", "30"))
+        self.vad_hop_ms = int(os.getenv("KLR_VAD_HOP_MS", "10"))
+        self.vad_attack_ms = int(os.getenv("KLR_VAD_ATTACK_MS", "50"))
+        self.vad_release_ms = int(os.getenv("KLR_VAD_RELEASE_MS", "200"))
+        self.vad_min_active_ms = int(os.getenv("KLR_VAD_MIN_ACTIVE_MS", "200"))
+        self.vad_margin_db = float(os.getenv("KLR_VAD_MARGIN_DB", "2.0"))
+        self.log_vad_frames = int(os.getenv("KLR_LOG_VAD_FRAMES", "0"))
+
+        # TTS configuration
+        self.enable_tts = int(os.getenv("KLR_ENABLE_TTS", "1"))
+        self.tts_backend_name = os.getenv("KLR_TTS_BACKEND", "piper")
+        self.tts_sample_rate = int(os.getenv("KLR_TTS_SAMPLE_RATE", "22050"))
+        self.tts_out_dir = os.getenv("KLR_TTS_OUT_DIR")
+        self.fail_open_tts = int(os.getenv("KLR_FAIL_OPEN_TTS", "1"))
+        self.tts_backend: Optional[Any] = None  # Will be initialized later if needed
+
+        # Reasoning configuration
+        self.reason_backend_name = os.getenv("KLR_REASON_BACKEND", "mock")
+        self.reason_backend: Optional[Any] = None  # Will be initialized later if needed
+
+        # Speaker recognition configuration
+        self.enable_speaker_id = int(os.getenv("KLR_ENABLE_SPEAKER_ID", "0"))  # Default disabled
+        self.speaker_backend_name = os.getenv("KLR_SPEAKER_BACKEND", "mock")
+        self.speaker_threshold = float(os.getenv("KLR_SPEAKER_THRESHOLD", "0.8"))
+        self.speaker_backend: Optional[Any] = None  # Will be initialized later if needed
+        self.enrollment_mode = False  # Track if currently enrolling a user
+        self.enrollment_state: Optional[dict] = None  # Enrollment session state
+
+        # Enhanced phonetic variants that closely match "kloros" pronunciation
+        # These words are in the Vosk vocabulary and will eliminate the warning
+        # Get custom phonetic variants from environment or use defaults
+        env_variants = os.getenv("KLR_PHONETIC_VARIANTS", "")
+        if env_variants:
+            phonetic_variants = [v.strip().lower() for v in env_variants.split(",") if v.strip()]
+        else:
+            phonetic_variants = [
+            "colors", "chorus", "close", "clear", "clears", "clause", "course",
+            "coral", "choral", "cross", "calls", "crawls", "rows", "clothes",
+            "carlos", "corals", "closes", "gross", "loss", "boss", "moss"
+            ]
+        # Use only phonetic variants in Vosk grammar to eliminate "kloros" vocabulary warning
+        # The fuzzy matching will still work with the original wake_phrases
+        self.wake_grammar = json.dumps(phonetic_variants + ["[unk]"])
+        # Create recognizers only if the model loaded successfully
+        if self.vosk_model is not None:
+            self.wake_rec = vosk.KaldiRecognizer(
+                self.vosk_model, self.sample_rate, self.wake_grammar
+            )
+            self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+        else:
+            self.wake_rec = None
+            self.vosk_rec = None
+
+        # -------------------- VAD (more patient) -----------------
+        self.vad = webrtcvad.Vad(1)  # less aggressive than 2
+        self.frame_ms = 20  # 10/20/30 supported
+        self.max_cmd_s = 12.0  # allow a bit longer
+        self.silence_end_ms = 1400  # wait longer before stopping
+        self.preroll_ms = 600  # include some audio before start
+        self.start_timeout_ms = 3500  # time to begin speaking after wake
+        self.min_cmd_ms = 900  # require ~0.9s of speech before ending
+
+        # -------------------- State ---------------------
+        self.audio_queue: "queue.Queue[bytes]" = queue.Queue(maxsize=64)
+        self.listening = False
+        self._heartbeat = 0
+        self.conversation_history: List[str] = []
+        self.json_logger: Optional[Any] = None
+
+        # Keep BT sink awake to avoid first-sample drop
+
+        self._load_memory()
+        self._load_calibration_profile()
+        self._init_json_logger()
+        self._init_stt_backend()
+        self._init_tts_backend()
+        self._init_reasoning_backend()
+        self._init_speaker_backend()
+        self._init_audio_backend()
+        log_event(
+            "boot_ready",
+            operator=self.operator_id,
+            sample_rate=self.sample_rate,
+            
+            wake_phrases=self.wake_phrases,
+        )
+        self._emit_persona(
+            "boot",
+            {"detail": "Systems nominal. Say 'KLoROS' to wake me."},
+        )
+
+    # ====================== Memory ======================

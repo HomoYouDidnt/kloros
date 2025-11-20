@@ -1,0 +1,2865 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+KLoROS voice loop: Vosk (offline STT) + Piper (TTS) + Ollama (LLM)
+- Auto-picks CMTECK mic (or set env KLR_INPUT_IDX)
+- Auto-detects device sample rate (48k typical) and uses it everywhere
+- VAD endpointing tuned to be patient (less premature "I didn't catch that")
+- Tight wake-grammar for "KLoROS" (optional variants via KLR_WAKE_PHRASES)
+- Energy & confidence gates to cut false wakes
+- Pronounces "KLoROS" as /klɔr-oʊs/ via eSpeak phonemes [[ 'klOroUs ]]
+"""
+
+import collections
+import json
+import os
+import platform
+import queue
+import re
+import subprocess  # nosec B404
+import sys
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
+
+import numpy as np
+import requests  # type: ignore
+import vosk
+
+from src.config.models_config import get_ollama_context_size
+
+if TYPE_CHECKING:
+    from src.simple_rag import RAG as RAGType
+else:
+    RAGType = Any  # pragma: no cover
+
+_RAGClass: Optional[type["RAGType"]]
+
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
+from src.compat import webrtcvad  # noqa: E402
+from src.fuzzy_wakeword import fuzzy_wake_match  # noqa: E402
+from src.logic.kloros import log_event, protective_choice, should_prioritize  # noqa: E402
+from src.persona.kloros import PERSONA_PROMPT, get_line  # noqa: E402
+
+# Phase 4: Natural Endpoints - Import semantic endpoint detector
+try:
+    from src.audio.endpoint_detector import SemanticEndpointDetector, EndpointType
+    ENDPOINT_DETECTOR_AVAILABLE = True
+except ImportError:
+    print("[kloros_voice] Phase 4 endpoint detector not available, using legacy logic")
+    ENDPOINT_DETECTOR_AVAILABLE = False
+
+try:
+    from src.audio.calibration import load_profile  # noqa: E402
+except ImportError:
+    load_profile = None  # type: ignore
+
+try:
+    from src.stt.base import SttBackend, create_stt_backend  # noqa: E402
+except ImportError:
+    create_stt_backend = None  # type: ignore
+    SttBackend = None  # type: ignore
+
+try:
+    from src.audio.vad import detect_voiced_segments, select_primary_segment  # noqa: E402
+except ImportError:
+    detect_voiced_segments = None  # type: ignore
+    select_primary_segment = None  # type: ignore
+
+try:
+    from src.tts.base import TtsBackend, create_tts_backend  # noqa: E402
+except ImportError:
+    create_tts_backend = None  # type: ignore
+    TtsBackend = None  # type: ignore
+
+try:
+    from src.core.turn import new_trace_id, run_turn  # noqa: E402
+except ImportError:
+    run_turn = None  # type: ignore
+    new_trace_id = None  # type: ignore
+
+try:
+    from src.reasoning.base import create_reasoning_backend  # noqa: E402
+except ImportError:
+    create_reasoning_backend = None  # type: ignore
+
+try:
+    from src.simple_rag import RAG as _ImportedRAG  # noqa: E402
+
+    _RAGClass = _ImportedRAG
+except Exception:
+    _RAGClass = None
+
+try:
+    from src.audio.capture import AudioInputBackend, create_audio_backend  # noqa: E402
+except ImportError:
+    create_audio_backend = None  # type: ignore
+    AudioInputBackend = None  # type: ignore
+
+try:
+    from src.logging.json_logger import JsonFileLogger, create_logger_from_env  # noqa: E402
+except ImportError:
+    create_logger_from_env = None  # type: ignore
+    JsonFileLogger = None  # type: ignore
+
+try:
+    from src.speaker.base import SpeakerBackend, create_speaker_backend  # noqa: E402
+    from src.speaker.enrollment import (  # noqa: E402
+        ENROLLMENT_SENTENCES,
+        parse_spelled_name,
+        verify_name_spelling,
+        generate_enrollment_tone,
+    )
+except ImportError:
+    create_speaker_backend = None  # type: ignore
+    SpeakerBackend = None  # type: ignore
+    ENROLLMENT_SENTENCES = None  # type: ignore
+    parse_spelled_name = None  # type: ignore
+    verify_name_spelling = None  # type: ignore
+    generate_enrollment_tone = None  # type: ignore
+
+try:
+    from src.audio.cues import play_wake_chime  # noqa: E402
+except ImportError:
+    def play_wake_chime():
+        pass  # Fallback if cues module not available
+
+
+try:
+    from src.kloros_idle_reflection import IdleReflectionManager
+except ImportError:
+    IdleReflectionManager = None
+
+try:
+    from src.kloros_memory.integration import create_memory_enhanced_kloros  # noqa: E402
+except ImportError:
+    create_memory_enhanced_kloros = None  # type: ignore
+
+
+class KLoROS:
+    def __init__(self) -> None:
+        # -------------------- Config --------------------
+        # system prompt defined in persona module to keep voice logic slim
+        self.system_prompt = PERSONA_PROMPT
+
+        self.memory_file = os.path.expanduser("~/KLoROS/kloros_memory.json")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+        self.ollama_url = "http://localhost:11434/api/generate"
+        self.operator_id = os.getenv("KLR_OPERATOR_ID", "operator")
+
+        self.rag: Optional["RAGType"] = None
+
+        # Audio playback configuration
+        # Use pw-play (PipeWire native) instead of aplay to avoid hardware locking
+        # Override with KLR_PLAYBACK_CMD env var
+        self.playback_cmd = os.getenv("KLR_PLAYBACK_CMD", "pw-play")
+        self.playback_target = os.getenv("KLR_PLAYBACK_TARGET", "alsa_output.pci-0000_09_00.4.iec958-stereo")
+
+        # ----------------- Audio device -----------------
+        self.input_device_index = None
+        idx_env = os.getenv("KLR_INPUT_IDX")
+        if idx_env is not None:
+            try:
+                self.input_device_index = int(idx_env)
+            except ValueError:
+                self.input_device_index = None
+        if self.input_device_index is None:
+            try:
+                import sounddevice as sd
+
+                # Priority order for microphone detection
+                preferred_mics = ["CMTECK", "USB Audio", "Blue Snowball", "Audio-Technica"]
+                fallback_device = None
+                
+                for i, d in enumerate(sd.query_devices()):
+                    # d may be a mapping-like object or a string in some environments — handle both
+                    if isinstance(d, dict):
+                        name = d.get("name", "")
+                        max_in = d.get("max_input_channels", 0)
+                    else:
+                        name = str(d)
+                        max_in = 0
+                    
+                    if max_in > 0:  # Must have input channels
+                        # Check for preferred microphones first
+                        for preferred in preferred_mics:
+                            if preferred in name:
+                                self.input_device_index = i
+                                print(f"[audio] auto-detected preferred mic: {name} (device {i})")
+                                break
+                        
+                        if self.input_device_index is not None:
+                            break
+                            
+                        # Store first available input device as fallback
+                        if fallback_device is None:
+                            fallback_device = i
+                
+                # Use fallback if no preferred mic found
+                if self.input_device_index is None and fallback_device is not None:
+                    self.input_device_index = fallback_device
+                    print(f"[audio] using fallback input device {fallback_device}")
+                    
+            except Exception as e:
+                print("[audio] failed to query devices:", e)
+                self.input_device_index = None
+
+        # Request 16kHz for optimal Whisper performance, detect device native rate for fallback
+        try:
+            import sounddevice as sd
+
+            idev = sd.query_devices(
+                self.input_device_index
+                if self.input_device_index is not None
+                else self.input_device_index if self.input_device_index is not None else sd.default.device[0],
+                "input",
+            )
+            # device entries can be mapping-like; attempt dict-like access, fallback to attribute access
+            if isinstance(idev, dict):
+                self.device_native_rate = int(idev.get("default_samplerate") or 48000)
+            else:
+                # best-effort: some snd libs return objects with attribute access
+                self.device_native_rate = int(getattr(idev, "default_samplerate", 48000) or 48000)
+        except Exception:
+            self.device_native_rate = 48000
+
+        # Application-level preference: 16kHz (optimal for Whisper, avoids resampling overhead)
+        self.sample_rate = 16000
+        # Use configurable block size from environment, fallback to 16ms blocks
+        block_ms = int(os.getenv("KLR_AUDIO_BLOCK_MS", "8"))
+        self.blocksize = max(256, int(self.sample_rate * block_ms / 1000))
+        self.channels = 1
+        self.input_gain = float(os.getenv("KLR_INPUT_GAIN", "1.0"))  # 1.0–2.0
+
+        # Only show audio config once at startup, not repeatedly
+        if not hasattr(self, '_audio_config_shown'):
+            print(
+                f"[audio] input index={self.input_device_index}  SR={self.sample_rate}  block={self.blocksize}"
+            )
+            self._audio_config_shown = True
+
+        # Audio capture backend configuration
+        self.audio_backend_name = os.getenv("KLR_AUDIO_BACKEND", "pulseaudio")
+        self.audio_device_index = None
+        device_env = os.getenv("KLR_AUDIO_DEVICE_INDEX")
+        if device_env:
+            try:
+                self.audio_device_index = int(device_env)
+            except ValueError:
+                pass
+        if self.audio_device_index is None:
+            self.audio_device_index = self.input_device_index
+
+        self.audio_sample_rate = int(os.getenv("KLR_AUDIO_SAMPLE_RATE", str(self.sample_rate)))
+        self.audio_block_ms = int(os.getenv("KLR_AUDIO_BLOCK_MS", "8"))
+        self.audio_channels = int(os.getenv("KLR_AUDIO_CHANNELS", "1"))
+        self.audio_ring_secs = float(os.getenv("KLR_AUDIO_RING_SECS", "2.0"))
+        self.audio_warmup_ms = int(os.getenv("KLR_AUDIO_WARMUP_MS", "200"))
+        self.enable_wakeword = int(os.getenv("KLR_ENABLE_WAKEWORD", "1"))
+
+
+        # VOSK model for wake word detection and hybrid STT
+        self.vosk_model = None
+        try:
+            vosk_path = os.getenv("KLR_VOSK_MODEL_DIR") or os.path.expanduser("~/models/vosk/model")
+            if os.path.exists(vosk_path) and self.enable_wakeword:
+                import vosk
+                self.vosk_model = vosk.Model(vosk_path)
+                print(f"[vosk] Wake word model loaded from {vosk_path}")
+        except Exception as e:
+            print(f"[vosk] Wake word model load failed: {e}")
+        # Audio backend will be initialized later
+        self.audio_backend: Optional[AudioInputBackend] = None
+
+        # -------------------- Models --------------------
+        self.piper_model = os.path.expanduser("~/KLoROS/models/piper/glados_piper_medium.onnx")
+        self.piper_config = os.path.expanduser(
+            "~/KLoROS/models/piper/glados_piper_medium.onnx.json"
+        )
+
+        # -------- Wake phrase grammar (KLoROS + optional variants) --------
+        # Keep default tight to just 'kloros' to avoid 'hey' false triggers.
+        base_list = os.getenv("KLR_WAKE_PHRASES", "kloros")
+        self.wake_phrases = [s.strip().lower() for s in base_list.split(",") if s.strip()]
+
+        # thresholds you can tune via env
+        self.wake_conf_min = float(os.getenv("KLR_WAKE_CONF_MIN", "0.65"))  # 0.0–1.0
+        self.wake_rms_min = int(os.getenv("KLR_WAKE_RMS_MIN", "350"))  # 16-bit RMS energy gate
+        self.fuzzy_threshold = float(
+            os.getenv("KLR_FUZZY_THRESHOLD", "0.8")
+        )  # fuzzy matching threshold
+        self.wake_debounce_ms = int(
+            os.getenv("KLR_WAKE_DEBOUNCE_MS", "400")
+        )  # debounce within utterance
+        self.wake_cooldown_ms = int(
+            os.getenv("KLR_WAKE_COOLDOWN_MS", "2000")
+        )  # cooldown between wakes
+        self._last_wake_ms: float = 0
+        self._last_emit_ms = 0
+
+        # Calibration-derived thresholds (will be set by _load_calibration_profile)
+        self.vad_threshold_dbfs: Optional[float] = None  # VAD threshold in dBFS, if calibrated
+        self.agc_gain_db: float = 0.0  # AGC gain in dB, if calibrated
+
+        # STT configuration
+        self.enable_stt = int(os.getenv("KLR_ENABLE_STT", "0"))
+        self.stt_backend_name = os.getenv("KLR_STT_BACKEND", "mock")
+        self.stt_lang = os.getenv("KLR_STT_LANG", "en-US")
+        self.max_turn_seconds = float(os.getenv("KLR_MAX_TURN_SECONDS", "30.0"))
+        self.stt_backend: Optional[Any] = None  # Will be initialized later if needed
+
+
+        # VAD configuration
+        self.vad_use_calibration = int(os.getenv("KLR_VAD_USE_CALIBRATION", "1"))
+        self.vad_threshold_dbfs_fallback = float(os.getenv("KLR_VAD_THRESHOLD_DBFS", "-48.0"))
+        self.vad_frame_ms = int(os.getenv("KLR_VAD_FRAME_MS", "30"))
+        self.vad_hop_ms = int(os.getenv("KLR_VAD_HOP_MS", "10"))
+        self.vad_attack_ms = int(os.getenv("KLR_VAD_ATTACK_MS", "50"))
+        self.vad_release_ms = int(os.getenv("KLR_VAD_RELEASE_MS", "200"))
+        self.vad_min_active_ms = int(os.getenv("KLR_VAD_MIN_ACTIVE_MS", "200"))
+        self.vad_margin_db = float(os.getenv("KLR_VAD_MARGIN_DB", "2.0"))
+        self.log_vad_frames = int(os.getenv("KLR_LOG_VAD_FRAMES", "0"))
+
+        # TTS configuration
+        self.enable_tts = int(os.getenv("KLR_ENABLE_TTS", "1"))
+        self.tts_backend_name = os.getenv("KLR_TTS_BACKEND", "piper")
+        self.tts_sample_rate = int(os.getenv("KLR_TTS_SAMPLE_RATE", "22050"))
+        self.tts_out_dir = os.getenv("KLR_TTS_OUT_DIR")
+        self.fail_open_tts = int(os.getenv("KLR_FAIL_OPEN_TTS", "1"))
+        self.tts_backend: Optional[Any] = None  # Will be initialized later if needed
+
+        # Reasoning configuration
+        self.reason_backend_name = os.getenv("KLR_REASON_BACKEND", "mock")
+        self.reason_backend: Optional[Any] = None  # Will be initialized later if needed
+
+        # Speaker recognition configuration
+        self.enable_speaker_id = int(os.getenv("KLR_ENABLE_SPEAKER_ID", "0"))  # Default disabled
+        self.speaker_backend_name = os.getenv("KLR_SPEAKER_BACKEND", "mock")
+        self.speaker_threshold = float(os.getenv("KLR_SPEAKER_THRESHOLD", "0.8"))
+        self.speaker_backend: Optional[Any] = None  # Will be initialized later if needed
+        self.enrollment_mode = False  # Track if currently enrolling a user
+        self.enrollment_state: Optional[dict] = None  # Enrollment session state
+        self.enrollment_beep_pending = False  # Flag to play beep after next TTS
+
+        # TTS suppression to prevent audio feedback loops
+        self.tts_playing = False  # Flag to suppress VAD during TTS output
+        self.tts_suppression_enabled = int(os.getenv("KLR_TTS_SUPPRESSION", "1"))  # Enable/disable TTS suppression
+
+        # Enhanced phonetic variants that closely match "kloros" pronunciation
+        # These words are in the Vosk vocabulary and will eliminate the warning
+        # Get custom phonetic variants from environment or use defaults
+        env_variants = os.getenv("KLR_PHONETIC_VARIANTS", "")
+        if env_variants:
+            phonetic_variants = [v.strip().lower() for v in env_variants.split(",") if v.strip()]
+        else:
+            phonetic_variants = [
+            "colors", "chorus", "close", "clear", "clears", "clause", "course",
+            "coral", "choral", "cross", "calls", "crawls", "rows", "clothes",
+            "carlos", "corals", "closes", "gross", "loss", "boss", "moss"
+            ]
+        # Use only phonetic variants in Vosk grammar to eliminate "kloros" vocabulary warning
+        # The fuzzy matching will still work with the original wake_phrases
+        self.wake_grammar = json.dumps(phonetic_variants + ["[unk]"])
+        # Create recognizers only if the model loaded successfully
+        if self.vosk_model is not None:
+            self.wake_rec = vosk.KaldiRecognizer(
+                self.vosk_model, self.sample_rate, self.wake_grammar
+            )
+            self.vosk_rec = vosk.KaldiRecognizer(self.vosk_model, self.sample_rate)
+        else:
+            self.wake_rec = None
+            self.vosk_rec = None
+
+        # -------------------- VAD (more patient) -----------------
+        self.vad = webrtcvad.Vad(1)  # less aggressive than 2
+
+        # Use environmental configuration with sensible defaults
+        self.frame_ms = int(os.getenv("KLR_VAD_FRAME_MS", "20"))  # 10/20/30 supported
+        self.max_cmd_s = float(os.getenv("KLR_MAX_CMD_S", "12.0"))  # allow a bit longer
+        self.silence_end_ms = int(os.getenv("KLR_VAD_MAX_SILENCE_MS", "1500"))  # Use environmental setting
+        self.preroll_ms = int(os.getenv("KLR_VAD_PREROLL_MS", "600"))  # include some audio before start
+        self.start_timeout_ms = int(os.getenv("KLR_STT_TIMEOUT_MS", "6000"))  # time to begin speaking after wake
+        self.min_cmd_ms = int(os.getenv("KLR_VAD_MIN_SPEECH_MS", "300"))  # minimum speech duration
+
+        # -------------------- State ---------------------
+        # Audio queue with expanded buffer and drop tracking
+        self.audio_queue: "queue.Queue[bytes]" = queue.Queue(maxsize=256)
+        self.queue_drops = 0
+        self._start_time = time.time()
+        self.listening = False
+        self._heartbeat = 0
+        self.conversation_history: List[str] = []
+        # Conversation flow for multi-turn context
+        from src.core.conversation_flow import ConversationFlow
+        from src.core.policies import DialoguePolicy
+        self.conversation_flow = ConversationFlow(idle_cutoff_s=180)
+        self.dialogue_policy = DialoguePolicy()
+        self.json_logger: Optional[Any] = None
+
+        # LLM timeout circuit breaker state
+        self.llm_timeout_threshold = 3  # consecutive timeouts before circuit opens
+        self.llm_circuit_open_duration = 60.0  # seconds to keep circuit open
+        self.llm_consecutive_timeouts = 0
+        self.llm_circuit_open_until = 0.0  # timestamp when circuit can close
+
+        # Partial result fallback tracking for Natural Endpoints
+        self._last_partial_transcript = ""
+        self._last_successful_transcript = ""
+        self._last_transcript_time = 0.0
+
+        self._load_memory()
+        self._init_memory_enhancement()
+        self._load_calibration_profile()
+        self._init_json_logger()
+        self._init_stt_backend()
+        self._init_tts_backend()
+        self._init_endpoint_detector()
+        self._init_reasoning_backend()
+
+        # Initialize consciousness system (Phase 1 + Phase 2) with expression filter
+        from src.consciousness.integration import integrate_consciousness
+        integrate_consciousness(self, cooldown=5.0, max_expressions=10)
+
+        # Stagger GPU-heavy backend initialization to prevent cuDNN conflicts
+        if self.enable_speaker_id:
+            print("[init] Staggering speaker backend initialization (cuDNN conflict prevention)")
+            time.sleep(2.0)  # 2-second delay for GPU context stabilization
+        self._init_speaker_backend()
+        self._init_audio_backend()
+
+        # -------------------- Introspection Tools ---------------------
+        from src.introspection_tools import IntrospectionToolRegistry
+        self.tool_registry = IntrospectionToolRegistry()
+
+        # Initialize idle reflection manager
+        self.reflection_manager = None
+        if IdleReflectionManager is not None:
+            try:
+                self.reflection_manager = IdleReflectionManager(self)
+                print("[reflection] Idle reflection system initialized")
+            except Exception as e:
+                print(f"[reflection] Failed to initialize reflection manager: {e}")
+
+        # Run configuration consistency checks
+        self._validate_configuration()
+
+        log_event(
+            "boot_ready",
+            operator=self.operator_id,
+            sample_rate=self.sample_rate,
+            blocksize=self.blocksize,
+            wake_phrases=self.wake_phrases,
+        )
+        self._emit_persona(
+            "boot",
+            {"detail": "Systems nominal. Say 'KLoROS' to wake me."},
+        )
+
+    # ====================== Memory ======================
+    def _load_memory(self) -> None:
+        try:
+            if os.path.exists(self.memory_file):
+                with open(self.memory_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.conversation_history = data.get("conversations", [])
+        except Exception as e:
+            print("[mem] load failed:", e)
+
+    def _save_memory(self) -> None:
+        try:
+            data = {
+                "conversations": self.conversation_history,
+                "last_updated": datetime.now().isoformat(),
+            }
+            os.makedirs(os.path.dirname(self.memory_file), exist_ok=True)
+            with open(self.memory_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print("[mem] save failed:", e)
+
+    def _init_memory_enhancement(self) -> None:
+        """Initialize episodic-semantic memory enhancement if available."""
+        if create_memory_enhanced_kloros is None:
+            print("[memory] Advanced memory system not available")
+            self.memory_enhanced = None
+            return
+
+        try:
+            self.memory_enhanced = create_memory_enhanced_kloros(self)
+            if self.memory_enhanced.enable_memory:
+                print("[memory] Episodic-semantic memory system initialized")
+            else:
+                print("[memory] Advanced memory disabled by configuration")
+        except Exception as e:
+            print(f"[memory] Failed to initialize advanced memory: {e}")
+            self.memory_enhanced = None
+
+    def _load_calibration_profile(self) -> None:
+        """Load microphone calibration profile if available."""
+        if load_profile is None:
+            return  # Calibration module not available
+
+        try:
+            profile = load_profile()
+            if profile is not None:
+                self.vad_threshold_dbfs = profile.vad_threshold_dbfs
+                self.agc_gain_db = profile.agc_gain_db
+
+                log_event(
+                    "calibration_profile_loaded",
+                    vad_threshold_dbfs=profile.vad_threshold_dbfs,
+                    agc_gain_db=profile.agc_gain_db,
+                    noise_floor_dbfs=profile.noise_floor_dbfs,
+                    speech_rms_dbfs=profile.speech_rms_dbfs,
+                    spectral_tilt=profile.spectral_tilt,
+                    recommended_wake_conf_min=profile.recommended_wake_conf_min,
+                )
+                print(
+                    f"[calib] Loaded profile: VAD={profile.vad_threshold_dbfs:.1f}dBFS, AGC={profile.agc_gain_db:.1f}dB"
+                )
+        except Exception as e:
+            print(f"[calib] Failed to load profile: {e}")
+
+    def _get_vad_threshold(self) -> float:
+        """Resolve VAD threshold: calibration profile or environment fallback."""
+        if self.vad_use_calibration and self.vad_threshold_dbfs is not None:
+            return self.vad_threshold_dbfs
+        return self.vad_threshold_dbfs_fallback
+
+    def _init_stt_backend(self) -> None:
+        """Initialize STT backend if enabled."""
+        if not self.enable_stt or create_stt_backend is None:
+            return
+
+        try:
+            # Prepare backend-specific configuration
+            backend_kwargs = {}
+            
+            if self.stt_backend_name == "hybrid":
+                # Configure hybrid backend with ASR environment variables
+                backend_kwargs.update({
+                    "vosk_model_dir": os.getenv("ASR_VOSK_MODEL"),
+                    "whisper_model_size": os.getenv("ASR_WHISPER_SIZE", "medium"),
+                    "whisper_device": "auto",  # Will auto-detect
+                    "whisper_device_index": int(os.getenv("ASR_PRIMARY_GPU", "0")),
+                    "correction_threshold": float(os.getenv("ASR_CORRECTION_THRESHOLD", "0.75")),
+                    "confidence_boost_threshold": float(os.getenv("ASR_CONFIDENCE_BOOST_THRESHOLD", "0.9")),
+                    "enable_corrections": bool(int(os.getenv("ASR_ENABLE_CORRECTIONS", "1"))),
+                })
+                print(f"[stt] Configuring hybrid ASR: VOSK + Whisper-{backend_kwargs['whisper_model_size']}")
+                print(f"[stt] Correction threshold: {backend_kwargs['correction_threshold']}, GPU: {backend_kwargs['whisper_device_index']}")
+            elif self.stt_backend_name == "vosk":
+                # Configure VOSK with model directory
+                if os.getenv("ASR_VOSK_MODEL"):
+                    backend_kwargs["model_dir"] = os.getenv("ASR_VOSK_MODEL")
+            elif self.stt_backend_name == "whisper":
+                # Configure Whisper with ASR settings
+                backend_kwargs.update({
+                    "model_size": os.getenv("ASR_WHISPER_SIZE", "medium"),
+                    "device": "auto",
+                    "device_index": int(os.getenv("ASR_PRIMARY_GPU", "0")),
+                    "model_dir": os.getenv("ASR_WHISPER_MODEL"),
+                })
+
+            # Try to create the requested backend
+            self.stt_backend = create_stt_backend(self.stt_backend_name, **backend_kwargs)  # type: ignore
+            print(f"[stt] ✅ Initialized {self.stt_backend_name} backend")
+            
+            # Show backend info for hybrid systems
+            if hasattr(self.stt_backend, 'get_info') and self.stt_backend_name == "hybrid":
+                info = self.stt_backend.get_info()
+                print(f"[stt] 🔀 Hybrid strategy ready - corrections: {info.get('enable_corrections', False)}")
+                
+        except Exception as e:
+            print(f"[stt] ❌ Failed to initialize {self.stt_backend_name} backend: {e}")
+            import traceback
+            print(f"[stt] Error details: {traceback.format_exc()}")
+
+            # Fallback to mock backend if primary backend fails
+            if self.stt_backend_name != "mock":
+                try:
+                    self.stt_backend = create_stt_backend("mock")  # type: ignore
+                    print("[stt] 🔄 Falling back to mock backend")
+                except Exception as fallback_e:
+                    print(f"[stt] Fallback to mock backend also failed: {fallback_e}")
+                    self.stt_backend = None
+
+    def _init_tts_backend(self) -> None:
+        """Initialize TTS backend if enabled."""
+        if not self.enable_tts or create_tts_backend is None:
+            return
+
+        try:
+            self.tts_backend = create_tts_backend(self.tts_backend_name, out_dir=self.tts_out_dir)  # type: ignore
+            print(f"[tts] Initialized {self.tts_backend_name} backend")
+        except Exception as e:
+            print(f"[tts] Failed to initialize {self.tts_backend_name} backend: {e}")
+
+            # Try fallback to mock if not already using mock
+            if self.tts_backend_name != "mock":
+                try:
+                    self.tts_backend = create_tts_backend("mock", out_dir=self.tts_out_dir)  # type: ignore
+                    print("[tts] Falling back to mock backend")
+                except Exception as fallback_e:
+                    print(f"[tts] Fallback to mock backend also failed: {fallback_e}")
+                    self.tts_backend = None
+
+    def _init_endpoint_detector(self) -> None:
+        """Initialize Phase 4 semantic endpoint detector."""
+        if ENDPOINT_DETECTOR_AVAILABLE:
+            try:
+                self.endpoint_detector = SemanticEndpointDetector()
+                print("[endpoint] Phase 4 semantic endpoint detector initialized")
+
+                # Check for natural endpoints configuration
+                if int(os.getenv("KLR_NATURAL_ENDPOINTS", "1")):
+                    self.use_natural_endpoints = True
+                    print("[endpoint] Natural endpoint detection enabled")
+                else:
+                    self.use_natural_endpoints = False
+                    print("[endpoint] Natural endpoint detection disabled")
+
+            except Exception as e:
+                print(f"[endpoint] Failed to initialize endpoint detector: {e}")
+                self.endpoint_detector = None
+                self.use_natural_endpoints = False
+        else:
+            self.endpoint_detector = None
+            self.use_natural_endpoints = False
+            print("[endpoint] Using legacy silence detection")
+
+    def _init_reasoning_backend(self) -> None:
+        """Initialize reasoning backend if available."""
+        if create_reasoning_backend is None:
+            print("[reasoning] Reasoning module unavailable; using fallback")
+            return
+
+        try:
+            self.reason_backend = create_reasoning_backend(self.reason_backend_name)  # type: ignore
+            print(f"[reasoning] Initialized {self.reason_backend_name} backend")
+        except Exception as e:
+            print(f"[reasoning] Failed to initialize {self.reason_backend_name} backend: {e}")
+
+            # Try fallback to mock if not already using mock
+            if self.reason_backend_name != "mock":
+                try:
+                    self.reason_backend = create_reasoning_backend("mock")  # type: ignore
+                    print("[reasoning] Falling back to mock backend")
+                    self._log_event(
+                        "reason_backend_fallback",
+                        requested=self.reason_backend_name,
+                        fallback="mock",
+                        error=str(e),
+                    )
+                except Exception as fallback_e:
+                    print(f"[reasoning] Fallback to mock backend also failed: {fallback_e}")
+                    self.reason_backend = None
+
+    def _init_speaker_backend(self) -> None:
+        """Initialize speaker recognition backend if enabled."""
+        if not self.enable_speaker_id:
+            print("[speaker] Speaker identification disabled")
+            return
+
+        if create_speaker_backend is None:
+            print("[speaker] Speaker module unavailable; disabling speaker ID")
+            return
+
+        try:
+            self.speaker_backend = create_speaker_backend(self.speaker_backend_name)  # type: ignore
+            print(f"[speaker] Initialized {self.speaker_backend_name} backend")
+        except Exception as e:
+            print(f"[speaker] Failed to initialize {self.speaker_backend_name} backend: {e}")
+
+            # Try fallback to mock if not already using mock
+            if self.speaker_backend_name != "mock":
+                try:
+                    self.speaker_backend = create_speaker_backend("mock")  # type: ignore
+                    print("[speaker] Falling back to mock backend")
+                    log_event(
+                        "speaker_backend_fallback",
+                        requested=self.speaker_backend_name,
+                        fallback="mock",
+                        error=str(e),
+                    )
+                except Exception as fallback_e:
+                    print(f"[speaker] Fallback to mock backend also failed: {fallback_e}")
+                    self.speaker_backend = None
+
+    def _init_audio_backend(self) -> None:
+        """Initialize audio capture backend with comprehensive fallback chain."""
+        if create_audio_backend is None:
+            print("[audio] Audio capture module unavailable; using legacy audio")
+            return
+
+        # Define fallback chain: PulseAudio -> SoundDevice -> Mock
+        # Note: sounddevice marked as non-viable for production (comparative testing 2025-09-28)
+        fallback_chain = [
+            ("pulseaudio", "Primary: PulseAudio Backend (pacat subprocess)"),
+            ("sounddevice", "Fallback: SoundDevice (NON-VIABLE FOR PRODUCTION)"),
+            ("mock", "Emergency: Mock Backend")
+        ]
+
+        # Try each backend in chain starting with requested
+        backend_attempted = False
+        for backend_name, description in fallback_chain:
+            # Try requested backend first, then continue with chain
+            if not backend_attempted and backend_name == self.audio_backend_name:
+                backend_attempted = True
+            elif not backend_attempted:
+                continue
+
+            try:
+                print(f"[audio] Attempting {description}")
+                self.audio_backend = create_audio_backend(backend_name)  # type: ignore
+
+                # Try opening with 16kHz first (optimal for Whisper)
+                sample_rate_to_use = self.audio_sample_rate
+                try:
+                    self.audio_backend.open(
+                        sample_rate=self.audio_sample_rate,
+                        channels=self.audio_channels,
+                        device=self.audio_device_index,
+                    )
+                    print(f"[audio] ✓ Opened at requested {self.audio_sample_rate}Hz")
+                except Exception as sample_rate_error:
+                    # Fall back to device native rate
+                    if hasattr(self, 'device_native_rate') and self.device_native_rate != self.audio_sample_rate:
+                        print(f"[audio] ⚠ {self.audio_sample_rate}Hz failed, retrying with native {self.device_native_rate}Hz")
+                        self.audio_backend.open(
+                            sample_rate=self.device_native_rate,
+                            channels=self.audio_channels,
+                            device=self.audio_device_index,
+                        )
+                        sample_rate_to_use = self.device_native_rate
+                        print(f"[audio] ✓ Opened at device native {self.device_native_rate}Hz")
+                        self._log_event(
+                            "sample_rate_fallback",
+                            requested=self.audio_sample_rate,
+                            actual=self.device_native_rate,
+                            reason="device_incompatible"
+                        )
+                    else:
+                        raise
+
+                # Update audio_sample_rate to actual rate being used
+                self.audio_sample_rate = sample_rate_to_use
+
+                # Warmup period
+                if self.audio_warmup_ms > 0:
+                    print(f"[audio] Warming up for {self.audio_warmup_ms}ms...")
+                    time.sleep(self.audio_warmup_ms / 1000.0)
+
+                print(f"[audio] ✓ Initialized {backend_name} backend successfully")
+
+                # Log non-viable production warning
+                if backend_name == "sounddevice":
+                    print("[audio] ⚠ WARNING: SoundDevice backend marked NON-VIABLE for production")
+                    print("[audio] ⚠ This backend failed comparative testing (2025-09-28)")
+                    print("[audio] ⚠ Use only for emergency fallback scenarios")
+
+                self.audio_backend_name = backend_name  # Update to actual backend used
+                return
+
+            except Exception as e:
+                print(f"[audio] ✗ {backend_name} backend failed: {e}")
+
+                # Log fallback event
+                if backend_name != "mock":
+                    self._log_event(
+                        "audio_backend_fallback",
+                        requested=backend_name,
+                        error=str(e),
+                        fallback_available=True
+                    )
+
+                # Continue to next backend
+
+        # If we get here, all backends failed
+        print("[audio] ✗ All audio backends failed - no audio input available")
+        self.audio_backend = None
+
+    def _init_json_logger(self) -> None:
+        """Initialize JSON file logger."""
+        if create_logger_from_env is None:
+            print("[logging] JSON logger module unavailable; using print fallback")
+            self.json_logger = None
+            return
+
+        try:
+            self.json_logger = create_logger_from_env()
+            print(f"[logging] JSON logger initialized: {self.json_logger.log_dir}")
+        except Exception as e:
+            print(f"[logging] Failed to initialize JSON logger: {e}")
+            self.json_logger = None
+
+    def _validate_configuration(self) -> None:
+        """Validate configuration consistency for optimal Natural Endpoints operation."""
+        warnings = []
+        errors = []
+
+        # Check timeout configuration consistency
+        if self.silence_end_ms < 500:
+            warnings.append(f"Very short silence timeout ({self.silence_end_ms}ms) may interrupt natural speech")
+
+        if self.frame_ms not in [10, 20, 30]:
+            errors.append(f"Frame size {self.frame_ms}ms not supported by WebRTC VAD (use 10, 20, or 30)")
+
+        # Check Natural Endpoints configuration
+        if self.use_natural_endpoints:
+            if not hasattr(self, 'endpoint_detector') or not self.endpoint_detector:
+                warnings.append("Natural endpoints enabled but detector failed to initialize")
+
+            # Check STT backend compatibility
+            if self.stt_backend:
+                if not hasattr(self.stt_backend, 'get_partial_result'):
+                    warnings.append("STT backend lacks get_partial_result() - will use fallback mechanism")
+
+                if not hasattr(self.stt_backend, 'get_confidence'):
+                    warnings.append("STT backend lacks get_confidence() - will use default confidence")
+
+            # Check timeout compatibility
+            natural_timeout = float(os.getenv("KLR_ENDPOINT_CONFIDENCE_THRESHOLD", "0.7"))
+            if natural_timeout > 0.9:
+                warnings.append(f"High confidence threshold ({natural_timeout}) may delay endpoint detection")
+
+        # Check frame timing compatibility
+        if self.frame_ms * 4 > self.silence_end_ms:
+            warnings.append(f"Frame size ({self.frame_ms}ms) too large for silence timeout ({self.silence_end_ms}ms)")
+
+        # Check audio configuration
+        if self.sample_rate != 48000 and self.sample_rate != 16000:
+            warnings.append(f"Unusual sample rate {self.sample_rate}Hz - may cause compatibility issues")
+
+        # Report validation results
+        if errors:
+            print(f"[config] ❌ Configuration errors found:")
+            for error in errors:
+                print(f"  ERROR: {error}")
+
+        if warnings:
+            print(f"[config] ⚠️  Configuration warnings:")
+            for warning in warnings:
+                print(f"  WARNING: {warning}")
+
+        if not errors and not warnings:
+            print("[config] ✅ Configuration validation passed")
+
+        # Log validation results
+        self._log_event("config_validation", errors=errors, warnings=warnings)
+
+    def _log_event(self, name: str, **payload) -> None:
+        """Log event using JSON logger if available, otherwise fallback to original."""
+        if self.json_logger:
+            self.json_logger.log_event(name, payload)
+        else:
+            # Fallback to original log_event
+            log_event(name, **payload)
+
+    # ======================== LLM =======================
+    def _stream_llm_response(self, context: str) -> str:
+        """Stream LLM tokens and start TTS on sentence boundaries."""
+        buffer = ""
+        complete_response = ""
+        sentence_endings = {'.', '!', '?'}
+
+        try:
+            r = requests.post(
+                self.ollama_url,
+                json={
+                    "model": self.ollama_model,
+                    "prompt": context,
+                    "stream": True,
+                    "options": {"temperature": 0.8, "top_p": 0.9, "repeat_penalty": 1.1,
+                    "num_ctx": get_ollama_context_size(check_vram=False)
+                }
+                },
+                stream=True,
+                timeout=60,
+            )
+
+            if r.status_code != 200:
+                return f"Error: Ollama HTTP {r.status_code}"
+
+            for line in r.iter_lines():
+                if not line:
+                    continue
+
+                try:
+                    chunk = json.loads(line)
+                    token = chunk.get("response", "")
+                    buffer += token
+                    complete_response += token
+
+                    # Check for sentence boundary
+                    if token.strip() and token.strip()[-1] in sentence_endings:
+                        sentence = buffer.strip()
+                        # Only speak if sentence is substantial (>20 chars)
+                        if len(sentence) > 20:
+                            print(f"[LLM] Sentence complete, queuing TTS: {sentence[:50]}...")
+                            self.speak(sentence)
+                            buffer = ""
+
+                    if chunk.get("done", False):
+                        break
+
+                except json.JSONDecodeError as e:
+                    print(f"[LLM] JSON decode error: {e}")
+                    continue
+
+            # Speak any remaining buffer
+            if buffer.strip():
+                print(f"[LLM] Final buffer, queuing TTS: {buffer.strip()[:50]}...")
+                self.speak(buffer.strip())
+
+            return complete_response.strip()
+
+        except requests.RequestException as e:
+            return f"Ollama error: {e}"
+
+    def _unified_reasoning(self, transcript: str, confidence: float = 0.85) -> str:
+        """
+        Unified reasoning method used by both voice and text interfaces.
+
+        Handles: consciousness updates → reasoning → expression
+
+        Args:
+            transcript: User input text
+            confidence: Input confidence (0.95 for text, 0.85 for voice)
+
+        Returns:
+            Response text with optional affective expression
+        """
+        from src.consciousness.integration import (
+            process_event,
+            update_consciousness_signals,
+            process_consciousness_and_express
+        )
+        from src.middleware import filter_response, sanitize_output
+
+        if not transcript:
+            return ""
+
+        # Update consciousness with user interaction
+        process_event(self, "user_input", metadata={'transcript': transcript})
+        update_consciousness_signals(self, user_interaction=True, confidence=confidence)
+
+        # Log user input to memory system
+        if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
+            try:
+                self.memory_enhanced.memory_logger.log_user_input(
+                    transcript=transcript,
+                    confidence=confidence
+                )
+            except Exception as e:
+                print(f"[memory] User input logging failed: {e}")
+
+        # Use reasoning backend if available
+        if self.reason_backend is not None:
+            # Check circuit breaker state
+            now = time.time()
+            if now < self.llm_circuit_open_until:
+                remaining = self.llm_circuit_open_until - now
+                print(f"[reasoning] Circuit breaker OPEN ({remaining:.0f}s remaining) - using degraded mode")
+                self._log_event(
+                    "llm_circuit_breaker_open",
+                    remaining_seconds=round(remaining, 1),
+                    consecutive_timeouts=self.llm_consecutive_timeouts
+                )
+                return "I'm experiencing some technical difficulties right now. Please try again in a moment."
+
+            try:
+                # Wrap LLM call with timeout enforcement
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError
+                llm_timeout = float(os.getenv("KLR_LLM_TIMEOUT_S", "30.0"))
+
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(self.reason_backend.reply, transcript, kloros_instance=self)
+                    try:
+                        result = future.result(timeout=llm_timeout)
+                    except TimeoutError:
+                        self.llm_consecutive_timeouts += 1
+                        print(f"[reasoning] LLM timeout after {llm_timeout}s (consecutive: {self.llm_consecutive_timeouts})")
+                        self._log_event(
+                            "llm_timeout",
+                            timeout_seconds=llm_timeout,
+                            consecutive_timeouts=self.llm_consecutive_timeouts
+                        )
+
+                        # Open circuit breaker if threshold exceeded
+                        if self.llm_consecutive_timeouts >= self.llm_timeout_threshold:
+                            self.llm_circuit_open_until = now + self.llm_circuit_open_duration
+                            print(f"[reasoning] Circuit breaker OPENED for {self.llm_circuit_open_duration}s")
+                            self._log_event(
+                                "llm_circuit_breaker_opened",
+                                duration_seconds=self.llm_circuit_open_duration,
+                                consecutive_timeouts=self.llm_consecutive_timeouts
+                            )
+
+                        return "I'm taking a bit longer to think. Let me try to respond more quickly."
+
+                # Success - reset circuit breaker
+                self.llm_consecutive_timeouts = 0
+
+                # Store sources for later logging
+                self._last_reasoning_sources = getattr(result, "sources", [])
+
+                # Get raw reply
+                reply = result.reply_text
+
+                # Apply middleware pipeline: tool filtering → Portal sanitization
+                reply, _ = filter_response(reply, kloros_instance=self)
+                reply = sanitize_output(reply, aggressive=False)
+
+                # Process consciousness and add grounded expression if policy changed
+                reply = process_consciousness_and_express(
+                    self,
+                    response=reply,
+                    success=True,
+                    confidence=confidence,
+                    retries=0
+                )
+
+                # Log response to memory system
+                if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
+                    try:
+                        self.memory_enhanced.memory_logger.log_llm_response(
+                            response=reply,
+                            model=getattr(result, 'model', 'unknown')
+                        )
+                    except Exception as e:
+                        print(f"[memory] Response logging failed: {e}")
+
+                return reply
+
+            except Exception as e:
+                print(f"[reasoning] Backend failed: {e}")
+                # Fall through to fallback
+
+        # Fallback to basic chat if reasoning backend unavailable
+        return self._simple_chat_fallback(transcript)
+
+    def chat(self, user_message: str) -> str:
+        """Text-based chat interface that routes through the full KLoROS reasoning system."""
+
+        # Check for enrollment commands first
+        enrollment_response = self._handle_enrollment_commands(user_message)
+        if enrollment_response:
+            return enrollment_response
+
+        # Check for system introspection commands
+        introspection_response = self._handle_introspection_commands(user_message)
+        if introspection_response:
+            return introspection_response
+
+        # Route through unified reasoning (consciousness + reasoning + expression)
+        print(f"[chat] Routing through unified reasoning system")
+        return self._unified_reasoning(user_message, confidence=0.95)
+
+    def _simple_chat_fallback(self, user_message: str) -> str:
+        """Simple fallback chat when full reasoning system unavailable."""
+
+        self.conversation_history.append(f"User: {user_message}")
+
+        # Retrieve memory context to enhance conversation
+        memory_context = ""
+        if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
+            try:
+                context_result = self.memory_enhanced._retrieve_context(user_message)
+                if context_result:
+                    memory_context = self.memory_enhanced._format_context_for_prompt(context_result)
+                    if memory_context:
+                        memory_context = f"\n\nRelevant context from past conversations:\n{memory_context}\n"
+            except Exception as e:
+                print(f"[memory] Context retrieval failed: {e}")
+
+        # Add tool descriptions to system prompt
+        tools_desc = self.tool_registry.get_tools_description() if hasattr(self, "tool_registry") else ""
+        context = (
+            f"System: {self.system_prompt}{tools_desc}{memory_context}\n\n"
+            + "\n".join(self.conversation_history[-20:])
+            + "\n\nAssistant:"
+        )
+        try:
+            r = requests.post(
+                self.ollama_url,
+                json={"model": self.ollama_model, "prompt": context, "stream": False, "options": {"temperature": 0.8, "top_p": 0.9, "repeat_penalty": 1.1,
+                    "num_ctx": get_ollama_context_size(check_vram=False)
+                }},
+                timeout=60,
+            )
+            if r.status_code == 200:
+                resp = r.json().get("response", "").strip()
+
+                # Check if LLM requested a tool
+                if hasattr(self, "tool_registry"):
+                    from src.introspection_tools import parse_tool_call
+                    tool_name = parse_tool_call(resp)
+                    if tool_name:
+                        tool = self.tool_registry.get_tool(tool_name)
+                        if tool:
+                            try:
+                                # Execute the tool and get actual data
+                                tool_result = tool.execute(self)
+                                # Return the tool result directly
+                                resp = tool_result
+                            except Exception as e:
+                                resp = f"Tool execution failed: {e}"
+            else:
+                resp = f"Error: Ollama HTTP {r.status_code}"
+        except requests.RequestException as e:
+            resp = f"Ollama error: {e}"
+
+        self.conversation_history.append(f"Assistant: {resp}")
+
+        # Log assistant response to memory system
+        if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
+            try:
+                self.memory_enhanced.memory_logger.log_llm_response(
+                    response=resp,
+                    model=self.ollama_model,
+                )
+            except Exception as e:
+                print(f"[memory] LLM response logging failed: {e}")
+
+        self._save_memory()
+        return resp
+
+    # =============== Speaker enrollment helpers ===============
+    # =============== System Introspection ===============
+    def _handle_introspection_commands(self, user_message: str) -> Optional[str]:
+        """Handle system introspection queries."""
+        # Disable introspection during enrollment to prevent conflicts
+        if self.enrollment_mode:
+            return None
+        from src import system_introspection
+    
+        msg_lower = user_message.lower()
+    
+        # Full diagnostic report
+        if any(phrase in msg_lower for phrase in ["system diagnostic", "full diagnostic", "system status", "run diagnostic"]):
+            return system_introspection.generate_full_diagnostic(self)
+    
+        # Audio pipeline status
+        if any(phrase in msg_lower for phrase in ["audio pipeline", "audio status", "audio diagnostic"]):
+            return system_introspection.get_audio_diagnostics(self)
+    
+        # STT status
+        if any(phrase in msg_lower for phrase in ["stt status", "speech recognition", "stt diagnostic", "vosk"]):
+            return system_introspection.get_stt_diagnostics(self)
+    
+        # Memory system status
+        if any(phrase in msg_lower for phrase in ["memory status", "memory diagnostic", "memory system"]):
+            return system_introspection.get_memory_diagnostics(self)
+    
+        # Component status (JSON)
+        if any(phrase in msg_lower for phrase in ["component status", "list components"]):
+            import json
+            status = system_introspection.get_component_status(self)
+            return json.dumps(status, indent=2)
+    
+        return None
+    
+    def _handle_enrollment_commands(self, user_message: str, confidence: float = 1.0, audio_quality: dict = None) -> Optional[str]:
+        """Handle speaker enrollment commands and return response, or None if not an enrollment command.
+
+        Args:
+            user_message: Transcribed text
+            confidence: STT confidence score (0.0-1.0)
+            audio_quality: Optional audio quality metrics
+        """
+        if not self.enable_speaker_id or self.speaker_backend is None:
+            return None
+
+        message_lower = user_message.lower().strip()
+
+        # Start enrollment command
+        if any(
+            phrase in message_lower
+            for phrase in ["enroll me", "add my voice", "remember my voice", "learn my voice"]
+        ):
+            if self.enrollment_mode:
+                return (
+                    "I'm already in enrollment mode. Please say 'cancel enrollment' to start over."
+                )
+            return self._start_enrollment()
+
+        # Cancel enrollment
+        if self.enrollment_mode and any(
+            phrase in message_lower for phrase in ["cancel", "stop", "quit"]
+        ):
+            return self._cancel_enrollment()
+
+        # Speaker management commands (these work even during enrollment)
+        if "list users" in message_lower or "who do you know" in message_lower:
+            return self._list_enrolled_users()
+
+        # Handle enrollment flow
+        if self.enrollment_mode and self.enrollment_state:
+            return self._process_enrollment_step(user_message)
+
+        if "delete user" in message_lower or "remove user" in message_lower:
+            # Extract user name from command
+            words = user_message.split()
+            for i, word in enumerate(words):
+                if word.lower() in ["user", "voice"] and i + 1 < len(words):
+                    user_to_delete = words[i + 1].lower()
+                    return self._delete_user(user_to_delete)
+            return "Please specify which user to delete, like 'delete user alice'."
+
+        return None
+
+    def _start_enrollment(self) -> str:
+        """Start the voice enrollment process."""
+        if ENROLLMENT_SENTENCES is None:
+            return "Sorry, voice enrollment is not available right now."
+
+        self.enrollment_mode = True
+        self.enrollment_state = {
+            "step": "get_name",
+            "user_name": None,
+            "verified_name": None,
+            "samples": [],
+            "current_sentence": 0,
+        }
+        log_event("enrollment_started")
+        return "Let's set up your voice profile! First, please tell me your name."
+
+    def _cancel_enrollment(self) -> str:
+        """Cancel the current enrollment process."""
+        self.enrollment_mode = False
+        self.enrollment_state = None
+        log_event("enrollment_cancelled")
+        return "Voice enrollment cancelled. You can start again anytime by saying 'enroll me'."
+
+    def _process_enrollment_step(self, user_message: str, confidence: float = 1.0) -> str:
+        """Process the current step in the enrollment flow."""
+        # Define enrollment confidence thresholds
+        min_confidence = 0.7  # Minimum confidence for enrollment responses
+        if confidence < min_confidence:
+            return f"I didnt hear that clearly (confidence: {confidence:.2f}). Could you repeat that more clearly?"
+
+        # Validate transcript is not empty
+        if not user_message or not user_message.strip():
+            return "I didnt hear anything. Could you please speak more clearly?"
+
+        state = self.enrollment_state
+        if not state:
+            return self._cancel_enrollment()
+
+        if state["step"] == "get_name":
+            # Extract name from user message
+            name = user_message.strip()
+
+            # Validate name length and characters
+            if len(name) < 2:
+                return "That name seems too short. Could you tell me your full first name?"
+
+            if len(name) > 50:
+                return "That name seems quite long. Could you just tell me your first name?"
+
+            # Check for obvious invalid responses
+            invalid_responses = ["yes", "no", "what", "huh", "sorry", "i dont know", "cancel"]
+            if name.lower() in invalid_responses:
+                return "I need your actual name. Please tell me what you'd like me to call you."
+
+            state["user_name"] = name
+            state["step"] = "verify_name"
+            log_event("enrollment_name_provided", name=name)
+            return f"Nice to meet you, {name}! To make sure I heard correctly, please spell out your name letter by letter."
+
+        elif state["step"] == "verify_name":
+            # Parse spelled name and verify
+            if verify_name_spelling is not None and parse_spelled_name is not None:
+                # Check if user is trying to cancel or restart
+                if user_message.lower() in ["cancel", "stop", "restart", "start over"]:
+                    return self._cancel_enrollment()
+
+                # Try to verify the spelling
+                try:
+                    verified_name = verify_name_spelling(state["user_name"], user_message)
+
+                    # Validate the verified name
+                    if not verified_name or len(verified_name.strip()) < 2:
+                        return "I had trouble understanding the spelling. Could you try spelling your name again, saying each letter clearly?"
+
+                    # Check if verification failed (names are too different)
+                    original_name = state["user_name"].lower()
+                    verified_lower = verified_name.lower()
+                    if len(verified_lower) > 0 and verified_lower[0] != original_name[0]:
+                        return f"The spelling doesn't match what I heard earlier ('{state['user_name']}'). Please spell your name again, or say 'restart' to tell me your name again."
+
+                    state["verified_name"] = verified_name
+                    state["step"] = "record_samples"
+                    log_event(
+                        "enrollment_name_verified", original=state["user_name"], verified=verified_name
+                    )
+                except Exception as e:
+                    log_event("enrollment_verification_error", error=str(e))
+                    return "I had trouble processing the spelling. Please try spelling your name again, saying each letter clearly."
+
+                if ENROLLMENT_SENTENCES is not None:
+                    from src.speaker.enrollment import format_enrollment_sentences
+
+                    state["sentences"] = format_enrollment_sentences(verified_name)
+                    sentence = state["sentences"][0]
+                    # Schedule a beep after TTS completes
+                    self.enrollment_beep_pending = True
+                    return f"Perfect! I'll call you {verified_name}. Now I need you to repeat {len(state['sentences'])} sentences so I can learn your voice. After I say each sentence and you hear a tone, please repeat it clearly. Here's the first one: '{sentence}'. "
+                else:
+                    return "Sorry, enrollment sentences are not available."
+            else:
+                return "Sorry, name verification is not available right now."
+
+        elif state["step"] == "record_samples":
+            # Check if user is trying to cancel or restart
+            if user_message.lower() in ["cancel", "stop", "restart", "start over"]:
+                return self._cancel_enrollment()
+
+            # Validate that we received something that sounds like the expected sentence
+            current_sentence_idx = state["current_sentence"]
+            if current_sentence_idx < len(state.get("sentences", [])):
+                expected_sentence = state["sentences"][current_sentence_idx].lower()
+                user_response = user_message.lower()
+
+                # Check if user said something too short or obviously wrong
+                if len(user_response) < 5:
+                    return "That seemed too short. Please repeat the full sentence clearly."
+
+                # Check if response is completely unrelated (no common words)
+                expected_words = set(expected_sentence.split())
+                user_words = set(user_response.split())
+                common_words = expected_words & user_words
+
+                if len(common_words) == 0 and len(expected_words) > 2:
+                    return f"That doesn't seem to match the sentence. Please repeat: '{state['sentences'][current_sentence_idx]}'. "
+
+            # Audio recording logic
+            # This step is called after each sentence is spoken
+            # In the current flow, we're processing the text but we need the audio
+            # The actual audio recording happens in handle_conversation() before this method is called
+            # So we can access it via the last recorded audio_bytes
+
+            # Capture audio sample using dedicated enrollment method
+            audio_bytes = self._capture_enrollment_sample()
+
+            # Validate audio quality
+            audio_valid = False
+            if audio_bytes and len(audio_bytes) > 0:
+                # Check if audio is long enough (at least 1 second worth of data)
+                min_audio_length = self.sample_rate * 2  # 2 bytes per sample, 1 second
+                if len(audio_bytes) >= min_audio_length:
+                    state["samples"].append(audio_bytes)
+                    audio_valid = True
+                    print(f"[enrollment] Captured sample {state['current_sentence']+1}: {len(audio_bytes)} bytes")
+                else:
+                    return "The audio recording seemed too short. Please speak the sentence more slowly and clearly."
+            else:
+                return "I didn't capture any audio. Please make sure you're speaking clearly after the beep."
+
+            if audio_valid:
+                state["current_sentence"] += 1
+
+            if state["current_sentence"] < len(state.get("sentences", [])):
+                sentence = state["sentences"][state["current_sentence"]]
+                # Schedule a beep after TTS completes
+                self.enrollment_beep_pending = True
+                return f"Good! Sentence {state['current_sentence'] + 1} of {len(state['sentences'])}: '{sentence}'. "
+            else:
+                # Enrollment complete - save audio samples to backend
+                if self.speaker_backend and hasattr(self.speaker_backend, "enroll_user"):
+                    # Validate we have enough samples
+                    if len(state["samples"]) < len(state.get("sentences", [])):
+                        log_event("enrollment_insufficient_samples",
+                                 expected=len(state.get("sentences", [])),
+                                 received=len(state["samples"]))
+                        # Reset to collect missing samples
+                        state["current_sentence"] = len(state["samples"])
+                        missing_count = len(state.get("sentences", [])) - len(state["samples"])
+                        return f"I seem to be missing {missing_count} voice samples. Let's continue from where we left off."
+
+                    try:
+                        success = self.speaker_backend.enroll_user(
+                            state["verified_name"].lower(), state["samples"], self.sample_rate
+                        )
+                        if success:
+                            log_event("enrollment_completed", user_name=state["verified_name"])
+                            self.enrollment_mode = False
+                            self.enrollment_state = None
+                            return f"Excellent! I've learned your voice, {state['verified_name']}. I'll recognize you next time you speak to me."
+                        else:
+                            log_event("enrollment_backend_failed", user_name=state["verified_name"])
+                            return "Sorry, there was an error saving your voice profile. The enrollment process failed. Please try enrolling again by saying 'enroll me'."
+                    except Exception as e:
+                        log_event("enrollment_exception", user_name=state["verified_name"], error=str(e))
+                        return f"Sorry, there was an unexpected error during enrollment: {str(e)}. Please try again by saying 'enroll me'."
+                else:
+                    log_event("enrollment_no_backend")
+                    return "Sorry, voice enrollment is not available right now. The speaker recognition system is not configured."
+
+        return "I'm not sure what to do next. Say 'cancel' to start over."
+
+    def _list_enrolled_users(self) -> str:
+        """List all enrolled users."""
+        if not self.speaker_backend or not hasattr(self.speaker_backend, "list_users"):
+            return "Speaker recognition is not available."
+
+        try:
+            users = self.speaker_backend.list_users()
+            if not users:
+                return "No users are enrolled yet. Say 'enroll me' to add your voice."
+            else:
+                user_list = ", ".join(users)
+                return f"I know these voices: {user_list}"
+        except Exception as e:
+            return f"Error listing users: {e}"
+
+    def _play_enrollment_beep(self) -> None:
+        """Play an enrollment beep signal to indicate when to speak."""
+        if generate_enrollment_tone is None:
+            print("[enrollment] generate_enrollment_tone not available")
+            return
+
+        try:
+            print("[enrollment] Generating enrollment beep...")
+
+            # Generate the beep signal
+            beep_bytes = generate_enrollment_tone(freq=800, duration_ms=300, sample_rate=self.sample_rate)
+            print(f"[enrollment] Generated {len(beep_bytes)} bytes of beep audio")
+
+            # Write to temporary file
+            import tempfile
+            import wave
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+                with wave.open(tmp_file.name, "wb") as wav_file:
+                    wav_file.setnchannels(1)  # Mono
+                    wav_file.setsampwidth(2)  # 16-bit
+                    wav_file.setframerate(self.sample_rate)
+                    wav_file.writeframes(beep_bytes)
+
+                print(f"[enrollment] Created WAV file: {tmp_file.name}")
+
+                # Try multiple playback methods
+                success = False
+
+                # Method 1: PipeWire (original)
+                if platform.system() == "Linux" and not success:
+                    try:
+                        cmd = self._playback_cmd(tmp_file.name)
+                        print(f"[enrollment] Trying pw-play: {cmd}")
+                        result = subprocess.run(cmd, capture_output=True, check=False, timeout=5)
+                        if result.returncode == 0:
+                            success = True
+                            print("[enrollment] ✅ Beep played via pw-play")
+                        else:
+                            print(f"[enrollment] pw-play failed: {result.stderr.decode() if result.stderr else 'Unknown error'}")
+                    except Exception as e:
+                        print(f"[enrollment] pw-play exception: {e}")
+
+                # Method 2: ALSA aplay fallback
+                if not success:
+                    try:
+                        cmd = ["aplay", tmp_file.name]
+                        print(f"[enrollment] Trying aplay: {cmd}")
+                        result = subprocess.run(cmd, capture_output=True, check=False, timeout=5)
+                        if result.returncode == 0:
+                            success = True
+                            print("[enrollment] ✅ Beep played via aplay")
+                        else:
+                            print(f"[enrollment] aplay failed: {result.stderr.decode() if result.stderr else 'Unknown error'}")
+                    except Exception as e:
+                        print(f"[enrollment] aplay exception: {e}")
+
+                # Method 3: System beep fallback
+                if not success:
+                    try:
+                        print("[enrollment] Trying system beep fallback...")
+                        # Simple beep using system bell
+                        subprocess.run(["printf", "\\a"], check=False, timeout=1)
+                        success = True
+                        print("[enrollment] ✅ System beep sent")
+                    except Exception as e:
+                        print(f"[enrollment] System beep failed: {e}")
+
+                if not success:
+                    print("[enrollment] ❌ All beep methods failed")
+
+                # Clean up
+                os.unlink(tmp_file.name)
+                print("[enrollment] Temporary file cleaned up")
+
+        except Exception as e:
+            print(f"[enrollment] Beep generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _capture_enrollment_sample(self) -> bytes:
+        """Capture a clean audio sample for enrollment, bypassing normal conversation flow.
+
+        Returns:
+            Raw audio bytes of the user's speech, or empty bytes if no valid audio captured
+        """
+        print("[enrollment] Starting dedicated audio capture...")
+
+        # Wait a moment for any TTS audio to finish
+        time.sleep(0.5)
+
+        # Use the audio backend directly for clean capture
+        try:
+            audio_chunks = []
+            capture_duration = 5.0  # Maximum 5 seconds
+            chunk_size = int(self.sample_rate * 0.1)  # 100ms chunks
+            total_chunks = int(capture_duration / 0.1)
+
+            print(f"[enrollment] Listening for up to {capture_duration} seconds...")
+
+            # Capture audio in chunks and apply VAD
+            for i in range(total_chunks):
+                try:
+                    # Get audio chunk from backend
+                    if hasattr(self.audio_backend, 'capture_chunk'):
+                        chunk = self.audio_backend.capture_chunk(chunk_size)
+                    else:
+                        # Fallback: use the queue if available
+                        if hasattr(self, 'audio_queue') and not self.audio_queue.empty():
+                            chunk = self.audio_queue.get_nowait()
+                        else:
+                            # Create silence if no audio available
+                            chunk = b'\x00' * (chunk_size * 2)  # 16-bit silence
+
+                    if chunk and len(chunk) > 0:
+                        audio_chunks.append(chunk)
+
+                        # Simple voice activity detection using RMS
+                        import numpy as np
+                        audio_array = np.frombuffer(chunk, dtype=np.int16)
+                        rms = np.sqrt(np.mean(audio_array.astype(np.float32) ** 2))
+
+                        # If we detect significant voice activity, continue for a bit more
+                        if rms > 100:  # Adjust threshold as needed
+                            print(f"[enrollment] Voice detected (RMS: {rms:.0f})")
+
+                    time.sleep(0.1)  # 100ms chunk timing
+
+                except Exception as e:
+                    print(f"[enrollment] Chunk capture error: {e}")
+                    break
+
+            # Combine all chunks
+            if audio_chunks:
+                combined_audio = b''.join(audio_chunks)
+                print(f"[enrollment] Captured {len(combined_audio)} bytes total")
+                return combined_audio
+            else:
+                print("[enrollment] No audio chunks captured")
+                return b''
+
+        except Exception as e:
+            print(f"[enrollment] Audio capture failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return b''
+
+    def _delete_user(self, user_id: str) -> str:
+        """Delete a user's voice profile."""
+        if not self.speaker_backend or not hasattr(self.speaker_backend, "delete_user"):
+            return "Speaker recognition is not available."
+
+        try:
+            success = self.speaker_backend.delete_user(user_id)
+            if success:
+                log_event("user_deleted", user_id=user_id)
+                return f"I've forgotten {user_id}'s voice."
+            else:
+                return f"I don't know anyone named {user_id}."
+        except Exception as e:
+            return f"Error deleting user: {e}"
+
+    # =============== RAG integration helpers ===============
+    def load_rag(
+        self,
+        metadata_path: str | None = None,
+        embeddings_path: str | None = None,
+        faiss_index: str | None = None,
+        bundle_path: str | None = None,
+    ) -> None:
+        """Load RAG artifacts for later retrieval. Uses src.rag.RAG.
+
+        Either provide a secure .npz bundle via ``bundle_path`` (preferred) or supply
+        separate ``metadata_path`` + ``embeddings_path``. Paths should point to files on
+        the local filesystem. If a Faiss index is available, pass its path via
+        ``faiss_index`` (optional).
+        """
+        if _RAGClass is None:
+            raise RuntimeError("RAG module not available; ensure src/rag.py is present")
+        if bundle_path:
+            self.rag = _RAGClass(bundle_path=bundle_path)
+        else:
+            if metadata_path is None or embeddings_path is None:
+                raise ValueError(
+                    "metadata_path and embeddings_path are required when bundle_path is not provided"
+                )
+            self.rag = _RAGClass(metadata_path=metadata_path, embeddings_path=embeddings_path)
+        if faiss_index:
+            try:
+                import importlib
+
+                faiss = importlib.import_module("faiss")
+                idx = faiss.read_index(faiss_index)
+                if self.rag is not None:
+                    self.rag.faiss_index = idx  # type: ignore[attr-defined]
+            except Exception as e:
+                print("[RAG] failed to load faiss index:", e)
+
+    def answer_with_rag(
+        self,
+        question: str,
+        top_k: int = 5,
+        embedder: Optional[Callable[..., Any]] = None,
+        speak: bool = False,
+    ) -> str:
+        """Retrieve context and ask Ollama for a grounded response. Optionally speak result via Piper.
+
+        Provide either an embedder callable or ensure the RAG object can accept a precomputed query embedding.
+        """
+        if not hasattr(self, "rag") or self.rag is None:
+            raise RuntimeError("RAG not loaded. Call load_rag() first.")
+        if embedder is None:
+            raise ValueError("Provide an embedder callable for query embedding")
+        out = self.rag.answer(
+            question,
+            embedder=embedder,
+            top_k=top_k,
+            ollama_url=self.ollama_url,
+            model=self.ollama_model,
+        )
+        resp = out.get("response", "")
+        if speak and resp:
+            try:
+                self.speak(resp)
+            except Exception as e:
+                print("[RAG] speak failed:", e)
+        return resp
+
+    # =================== Output helpers =================
+    def _playback_cmd(self, audio_path: str) -> list:
+        """Build playback command using PipeWire."""
+        return [self.playback_cmd, "--target", self.playback_target, audio_path]
+
+    def _emit_persona(
+        self, kind: str, context: dict[str, Any] | None = None, *, speak: bool = False
+    ) -> str:
+        """Route persona phrasing and optionally synthesize it."""
+        try:
+            line = get_line(kind, context or {})
+        except ValueError:
+            line = get_line("quip", {"line": "Unsupported persona signal"})
+        print(f"KLoROS: {line}")
+        try:
+            log_event(
+                "persona_line",
+                kind=kind,
+                text=line,
+                context=context or {},
+            )
+        except Exception:
+            pass  # nosec B110
+        if speak:
+            try:
+                self.speak(line)
+            except Exception as exc:
+                print("[persona] speak failed:", exc)
+        return line
+
+    def _normalize_tts_text(self, text: str) -> str:
+        """
+        Force 'KLoROS' to be pronounced /klɔr-oʊs/ by injecting eSpeak phonemes.
+        eSpeak phoneme input uses [[ ... ]] with primary stress marked by ' .
+        """
+        return re.sub(r"\bkloros\b", "[[ 'klOroUs ]]", text, flags=re.IGNORECASE)
+
+    def speak(self, text: str) -> None:
+        """Synthesize and play speech via TTS backend."""
+        from src.middleware import sanitize_output
+        
+        # Sanitize output before TTS (remove Portal references)
+        text = sanitize_output(text, aggressive=False)
+        text = self._normalize_tts_text(text)
+
+        if not self.enable_tts or self.tts_backend is None:
+            if self.fail_open_tts:
+                print(f"[TTS] Backend unavailable; printing to console: {text}")
+                return
+            else:
+                print("[TTS] Backend unavailable and fail_open disabled")
+                return
+
+        try:
+            # Synthesize audio using TTS backend
+            result = self.tts_backend.synthesize(
+                text,
+                sample_rate=self.tts_sample_rate,
+                voice=os.getenv("KLR_PIPER_VOICE"),
+                out_dir=self.tts_out_dir,
+            )
+
+            # Log TTS completion
+            log_event(
+                "tts_done",
+                audio_path=result.audio_path,
+                duration_s=result.duration_s,
+                sample_rate=result.sample_rate,
+                voice=result.voice,
+            )
+
+            print(f"[TTS] Synthesized: {result.audio_path} ({result.duration_s:.2f}s)")
+
+            # Log TTS to memory system
+            if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
+                try:
+                    self.memory_enhanced.log_tts_output(
+                        text=text,
+                        voice_model=result.voice or "piper"
+                    )
+                except Exception as e:
+                    print(f"[memory] TTS logging failed: {e}")
+
+            # Play audio on Linux hosts
+            if platform.system() == "Linux":
+                try:
+                    # Set TTS suppression flag to prevent audio feedback (software-level)
+                    if self.tts_suppression_enabled:
+                        self.tts_playing = True
+                        print(f"[TTS] VAD suppression enabled during playback")
+
+                    # Hardware-level mic muting (if enabled)
+                    use_hardware_mute = int(os.getenv("KLR_TTS_MUTE", "0"))
+                    if use_hardware_mute:
+                        try:
+                            from src.audio.mic_mute import mute_during_playback
+                            # Use audio backend pause/resume with flush (prevents echo)
+                            audio_backend_value = getattr(self, 'audio_backend', None)
+                            has_pause = hasattr(audio_backend_value, 'pause') if audio_backend_value else False
+                            print(f"[debug] audio_backend={audio_backend_value}, has_pause={has_pause}, type={type(audio_backend_value).__name__ if audio_backend_value else 'None'}")
+                            with mute_during_playback(result.duration_s, buffer_ms=500, audio_backend=audio_backend_value):
+                                cmd = self._playback_cmd(result.audio_path)
+                                print(f"[playback] Running with {'pause/resume' if has_pause else 'hardware'} mute: {" ".join(cmd)}")
+                                proc = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603, B607
+                        except ImportError:
+                            print(f"[TTS] Hardware mute unavailable, using software suppression only")
+                            use_hardware_mute = False
+
+                    if not use_hardware_mute:
+                        # Standard playback without hardware muting
+                        cmd = self._playback_cmd(result.audio_path)
+                        print(f"[playback] Running: {" ".join(cmd)}")
+                        proc = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603, B607
+
+                    if proc.returncode != 0:
+                        print(f"[playback] Failed with code {proc.returncode}: {proc.stderr.decode()}")
+                    else:
+                        print(f"[playback] Success")
+
+                except Exception as e:
+                    print(f"[TTS] Audio playback failed: {e}")
+                finally:
+                    # Clear TTS suppression flag after playback (software-level)
+                    if self.tts_suppression_enabled:
+                        self.tts_playing = False
+                        print(f"[TTS] VAD suppression disabled after playback")
+
+        except Exception as e:
+            print(f"[TTS] Synthesis failed: {e}")
+            if self.fail_open_tts:
+                print(f"[TTS] Falling back to console: {text}")
+            else:
+                print("[TTS] Fail_open disabled; no fallback")
+
+    # ================== Input / STT side =================
+    def audio_callback(self, indata, frames, _time_info, status) -> None:
+        if status:
+            print(f"[audio] {status}")
+        # optional software preamp (keep modest)
+        if self.input_gain != 1.0:
+            arr = np.frombuffer(indata, dtype=np.int16).astype(np.int32)
+            arr = np.clip(arr * self.input_gain, -32768, 32767).astype(np.int16)
+            payload = arr.tobytes()
+        else:
+            payload = bytes(indata)
+        try:
+            self.audio_queue.put_nowait(payload)
+        except queue.Full:
+            self.queue_drops += 1
+            if self.queue_drops % 10 == 0:
+                drop_rate = self.queue_drops / (time.time() - self._start_time)
+                print(f"[AUDIO] Queue overflow: {self.queue_drops} total drops (rate: {drop_rate:.2f}/s)", flush=True)
+                log_event(
+                    "queue_overflow",
+                    total_drops=self.queue_drops,
+                    drop_rate=drop_rate
+                )
+
+        # heartbeat roughly every ~1s (blocksize ~200ms → 5 blocks)
+        self._heartbeat += 1
+        if self._heartbeat % 5 == 0:
+            print(".", end="", flush=True)
+
+    def _chunker(self, data: bytes, sr: int, frame_ms: int):
+        """Yield fixed-size frames for VAD from arbitrary-sized input bytes."""
+        frame_bytes = int(sr * (frame_ms / 1000.0)) * 2  # int16 mono
+        buf = getattr(self, "_chunkbuf", b"") + data
+        pos = 0
+        frames = []
+        while pos + frame_bytes <= len(buf):
+            frames.append(buf[pos : pos + frame_bytes])
+            pos += frame_bytes
+        self._chunkbuf = buf[pos:]
+        return frames
+
+    def record_until_silence(self) -> bytes:
+        """
+        Wait start_timeout_ms for speech to begin, then record until trailing
+        silence_end_ms is observed. Ensure we captured at least min_cmd_ms of speech.
+        Returns raw int16 mono bytes at self.sample_rate (or b'' on no speech).
+        """
+        sr = self.sample_rate
+        max_frames = int(self.max_cmd_s * 1000 / self.frame_ms)
+        silence_needed = int(self.silence_end_ms / self.frame_ms)
+        preroll_needed = int(self.preroll_ms / self.frame_ms)
+        min_cmd_frames = int(self.min_cmd_ms / self.frame_ms)
+
+        started = False
+        silence_run = 0
+        total_frames = 0
+        speech_frames = 0
+
+        preroll: collections.deque[bytes] = collections.deque(maxlen=preroll_needed)
+        captured: list[bytes] = []
+
+        t0 = time.monotonic()
+        while total_frames < max_frames:
+            try:
+                data = self.audio_queue.get(timeout=0.3)
+            except queue.Empty:
+                # bail cleanly if we never started and timed out
+                if not started and (time.monotonic() - t0) * 1000 >= self.start_timeout_ms:
+                    return b""
+                continue
+
+            for frame in self._chunker(data, sr, self.frame_ms):
+                is_speech = self.vad.is_speech(frame, sr)
+                total_frames += 1
+
+                if not started:
+                    preroll.append(frame)
+                    # timeout check while waiting for first speech
+                    if (time.monotonic() - t0) * 1000 >= self.start_timeout_ms and not is_speech:
+                        if total_frames >= max_frames:
+                            return b""
+                        continue
+                    if is_speech:
+                        started = True
+                        captured.extend(preroll)  # include some audio before speech
+                        silence_run = 0
+                        speech_frames = 1
+                    continue
+
+                captured.append(frame)
+                if is_speech:
+                    speech_frames += 1
+                    silence_run = 0
+                else:
+                    silence_run += 1
+
+                # Check if we have enough silence to stop
+                if silence_run >= silence_needed and speech_frames >= min_cmd_frames:
+                    break
+
+                # Safety check: don't record forever
+                if total_frames >= max_frames:
+                    break
+
+        return b"".join(captured)
+
+    def record_with_streaming(self) -> str:
+        """Record audio with real-time streaming transcription."""
+        streaming_mode = int(os.getenv("KLR_STREAMING_MODE", "0"))
+        if not streaming_mode or not self.stt_backend:
+            # Fall back to regular processing
+            audio_data = self.record_until_silence()
+            if not audio_data:
+                return ""
+            # Convert to numpy array for STT
+            audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32767.0
+            result = self.stt_backend.transcribe(audio_array, self.sample_rate)
+            return result.transcript
+        
+        # Streaming transcription with VOSK
+        from src.stt.vosk_backend_streaming import VoskSttBackend
+        if not isinstance(self.stt_backend, VoskSttBackend):
+            print("[streaming] STT backend not compatible with streaming")
+            # Fall back to regular processing
+            audio_data = self.record_until_silence()
+            if not audio_data:
+                return ""
+            # Convert to numpy array for STT
+            audio_array = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32767.0
+            result = self.stt_backend.transcribe(audio_array, self.sample_rate)
+            return result.transcript
+        
+        print("🎯 Starting streaming transcription...")
+        self.stt_backend.start_streaming(self.sample_rate)
+
+        sr = self.sample_rate
+        max_frames = int(self.max_cmd_s * 1000 / self.frame_ms)
+        silence_needed = int(self.silence_end_ms / self.frame_ms)
+        silence_run = 0
+        total_frames = 0
+
+        # Collect audio bytes for speaker identification and other processing
+        captured_frames = []
+
+        t0 = time.monotonic()
+        while total_frames < max_frames:
+            try:
+                data = self.audio_queue.get(timeout=0.3)
+            except queue.Empty:
+                if (time.monotonic() - t0) * 1000 >= self.start_timeout_ms:
+                    break
+                continue
+            
+            for frame in self._chunker(data, sr, self.frame_ms):
+                total_frames += 1
+
+                # Collect audio frame for later use
+                captured_frames.append(frame)
+
+                # Convert frame to float32 for streaming STT
+                frame_array = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32767.0
+
+                # Stream chunk to STT backend
+                try:
+                    partial_transcript = self.stt_backend.stream_chunk(frame_array)
+                    # Track partial transcript for fallback mechanism
+                    if partial_transcript:
+                        self._last_partial_transcript = partial_transcript
+                except Exception as e:
+                    print(f"[streaming] STT error: {e}")
+                    continue
+                
+                # PHASE 4: Natural Endpoints - Use semantic endpoint detection if available
+                is_speech = self.vad.is_speech(frame, sr)
+                if not is_speech:
+                    silence_run += 1
+                else:
+                    silence_run = 0
+
+                # Calculate current silence duration
+                current_silence_ms = silence_run * self.frame_ms
+
+                # Use Phase 4 semantic endpoint detection if available
+                endpoint_detected = False
+                use_legacy_fallback = False
+
+                if self.use_natural_endpoints and hasattr(self, 'endpoint_detector') and self.endpoint_detector:
+                    try:
+                        # Get current partial transcript for analysis with fallback mechanisms
+                        current_transcript = ""
+
+                        # Primary method: get partial result from STT backend
+                        if hasattr(self.stt_backend, 'get_partial_result'):
+                            try:
+                                current_transcript = self.stt_backend.get_partial_result()
+                            except Exception as e:
+                                print(f"[endpoint] Failed to get partial result: {e}")
+
+                        # Fallback 1: Use most recent partial transcript from streaming
+                        if not current_transcript and hasattr(self, '_last_partial_transcript'):
+                            current_transcript = getattr(self, '_last_partial_transcript', "")
+
+                        # Fallback 2: Use most recent successful transcription (if recent)
+                        if not current_transcript and hasattr(self, '_last_successful_transcript'):
+                            last_transcript = getattr(self, '_last_successful_transcript', "")
+                            last_transcript_time = getattr(self, '_last_transcript_time', 0)
+                            # Only use if less than 3 seconds old
+                            if last_transcript and (time.time() - last_transcript_time) < 3.0:
+                                current_transcript = last_transcript
+
+                        # Ensure we have something for semantic analysis
+                        if not current_transcript.strip():
+                            current_transcript = "..."  # Minimal content for analysis
+
+                        # Reuse frame_array from STT processing to avoid duplication
+                        if 'frame_array' not in locals():
+                            frame_array = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32767.0
+                        audio_energy = float(np.sqrt(np.mean(frame_array**2)))
+
+                        # Get real speech confidence from STT backend if available
+                        speech_confidence = 0.8  # Default fallback
+                        if hasattr(self.stt_backend, 'get_confidence'):
+                            try:
+                                speech_confidence = self.stt_backend.get_confidence()
+                            except Exception:
+                                pass  # Use default if confidence extraction fails
+
+                        # Analyze endpoint with semantic detector
+                        decision = self.endpoint_detector.analyze_endpoint(
+                            current_transcript,
+                            current_silence_ms,
+                            speech_confidence,
+                            audio_energy
+                        )
+
+                        # Act on endpoint decision
+                        if decision.endpoint_type in [EndpointType.SENTENCE_END, EndpointType.QUESTION_END]:
+                            print(f"\n🎯 Natural endpoint detected: {decision.endpoint_type.value} (confidence: {decision.confidence:.2f})")
+                            print(f"   Reasoning: {decision.reasoning}")
+                            endpoint_detected = True
+                        elif decision.endpoint_type == EndpointType.TIMEOUT:
+                            print(f"\n⏰ Timeout endpoint: {decision.reasoning}")
+                            endpoint_detected = True
+                        elif decision.endpoint_type == EndpointType.NATURAL_PAUSE and decision.confidence > 0.7:
+                            # Wait a bit longer for natural pauses, but not too long
+                            if current_silence_ms > 1200:  # 1.2 seconds max for natural pauses
+                                print(f"\n🤔 Natural pause timeout: {decision.reasoning}")
+                                endpoint_detected = True
+
+                        # Natural endpoints system is working - don't use legacy timeout unless forced
+                        if not endpoint_detected and current_silence_ms > self.silence_end_ms * 2:
+                            # Emergency fallback: if natural endpoints hasn't decided after 2x normal timeout
+                            print(f"\n⚠️  Natural endpoints emergency timeout at {current_silence_ms}ms")
+                            endpoint_detected = True
+
+                    except Exception as e:
+                        print(f"[endpoint] Error in semantic detection: {e}, falling back to legacy")
+                        use_legacy_fallback = True
+
+                # Use legacy silence detection only if natural endpoints disabled or failed
+                if not self.use_natural_endpoints or use_legacy_fallback:
+                    if silence_run >= silence_needed:
+                        print("\n🔚 Legacy silence detected, ending transcription")
+                        endpoint_detected = True
+
+                # Break out of loop if any endpoint detection triggered
+                if endpoint_detected:
+                    break
+        
+        # Store captured audio for later use (speaker ID, etc.)
+        if captured_frames:
+            self._last_audio_bytes = b"".join(captured_frames)
+        else:
+            self._last_audio_bytes = b""
+
+        # Get final result
+        try:
+            final_result = self.stt_backend.end_streaming()
+            transcript = final_result.transcript
+            # Track successful transcript for fallback mechanism
+            if transcript:
+                self._last_successful_transcript = transcript
+                self._last_transcript_time = time.time()
+            return transcript
+        except Exception as e:
+            print(f"[streaming] Failed to get final result: {e}")
+            return ""
+
+    # -------- Wake gating helpers --------
+    def _rms16(self, b: bytes) -> int:
+        """Short-term RMS of int16 mono chunk (energy gate for wake)."""
+        if not b:
+            return 0
+        a = np.frombuffer(b, dtype=np.int16).astype(np.int32)
+        return int(np.sqrt(np.mean(a * a)) or 0)
+
+    def _avg_conf(self, res: dict) -> float:
+        """Average per-word confidence from a Vosk final result, if present."""
+        seg = res.get("result") or []
+        if not seg:
+            return 1.0  # some models omit confidences; treat as OK
+        confs = [w.get("conf", 1.0) for w in seg if isinstance(w, dict)]
+        return float(sum(confs) / max(len(confs), 1))
+
+    def _command_is_risky(self, transcript: str) -> bool:
+        """Heuristic guard for risky voice commands."""
+        lowered = transcript.lower()
+        triggers = (
+            "delete",
+            "format",
+            "rm ",
+            "shutdown",
+            "wipe",
+            "drop table",
+            "erase",
+        )
+        return any(trigger in lowered for trigger in triggers)
+
+    def _process_audio_chunks(self) -> None:
+        """Process audio using the new chunked capture system."""
+        if self.audio_backend is None:
+            print("[audio] No audio backend available, falling back to legacy method")
+            self.listen_for_wake_word()
+            return
+
+        self.listening = True
+        log_event(
+            "chunk_listen_started",
+            backend=self.audio_backend_name,
+            sample_rate=self.audio_sample_rate,
+            block_ms=self.audio_block_ms,
+        )
+        self._emit_persona("quip", {"line": "Listening with chunked audio capture."})
+
+        try:
+            # Accumulate chunks for processing
+            chunk_buffer = []
+            # Streaming Mode: Use smaller buffer for responsiveness + Initialize Progressive Transcription
+            streaming_mode = int(os.getenv("KLR_STREAMING_MODE", "0"))
+            if streaming_mode:
+                buffer_duration_s = 0.5  # Much more responsive in streaming mode
+
+                # PHASE 2 REDESIGN: Initialize progressive transcription
+                if hasattr(self.stt_backend, 'start_streaming'):
+                    try:
+                        self.stt_backend.start_streaming(self.stt_backend.sample_rate)
+                        print("🎯 Progressive transcription initialized", flush=True)
+                    except Exception as e:
+                        print(f"⚠️ Streaming STT initialization failed: {e}")
+                        streaming_mode = 0  # Fall back to traditional mode
+            else:
+                buffer_duration_s = float(os.getenv("KLR_CHUNK_BUFFER_DURATION_S", "3.5"))  # Configurable buffer duration
+            target_chunks = int(buffer_duration_s * 1000 / self.audio_block_ms)
+
+            for chunk in self.audio_backend.chunks(self.audio_block_ms):
+                if not self.listening:
+                    break
+
+                # STREAMING MODE: Process each chunk immediately for real-time VAD + Progressive Transcription
+                if streaming_mode:
+                    # Convert chunk to numpy array for analysis
+                    chunk_array = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32767.0
+                    rms = np.sqrt(np.mean(chunk_array**2))
+
+                    # Real-time VAD feedback + Progressive Transcription
+                    if rms > 0.001:  # Voice activity detected
+                        print("🎤 Voice detected...", end="\r", flush=True)
+                        chunk_buffer.append(chunk)
+
+                        # PHASE 2 INTEGRATION: Start progressive transcription immediately
+                        if hasattr(self.stt_backend, 'stream_chunk'):
+                            # Stream this chunk to STT for immediate processing
+                            partial_transcript = self.stt_backend.stream_chunk(chunk_array)
+                            if partial_transcript:
+                                print(f"📝 {partial_transcript}...", end="\r", flush=True)
+
+                        # Process complete speech after minimal buffering (0.5s) or on silence
+                        if len(chunk_buffer) >= target_chunks:
+                            print("\n🎯 Finalizing transcription...", flush=True)
+                            break  # Exit loop to finalize accumulated speech
+                    else:
+                        print("🔇 Listening...     ", end="\r", flush=True)
+                        # In streaming mode, if we have audio and hit silence, finalize now
+                        if len(chunk_buffer) > 0:
+                            print("\n🎯 Finalizing transcription...", flush=True)
+                            break
+                else:
+                    # TRADITIONAL MODE: Accumulate chunks until buffer full
+                    chunk_buffer.append(chunk)
+
+                # When we have enough chunks, process as a turn
+                if len(chunk_buffer) >= target_chunks:
+                    # TTS suppression: skip processing during TTS output
+                    if self.tts_suppression_enabled and self.tts_playing:
+                        chunk_buffer = []  # Clear buffer and continue
+                        continue
+
+                    # Streaming Mode: Show processing indicator
+                    if streaming_mode:
+                        print("\n🎯 Processing speech...", flush=True)
+
+                    # Combine chunks into single audio buffer
+                    audio_buffer = np.concatenate(chunk_buffer)
+
+                    # Only process if we have reasonable audio energy
+                    rms = np.sqrt(np.mean(audio_buffer**2))
+                    if rms > 0.001:  # Basic energy gate for float32 audio
+                        try:
+                            # Use the turn orchestrator if available
+                            if run_turn is not None and self.stt_backend is not None:
+                                # Create reasoning function
+                                def reason_fn(transcript: str) -> str:
+                                    if self.reason_backend:
+                                        result = self.reason_backend.reply(transcript)
+                                        return result.reply_text
+                                    else:
+                                        return self.chat(transcript)
+
+                                # Get VAD threshold
+                                vad_threshold = self._get_vad_threshold()
+
+                                # Run the turn
+                                turn_result = run_turn(
+                                    audio=audio_buffer,
+                                    sample_rate=self.audio_sample_rate,
+                                    stt=self.stt_backend,
+                                    reason_fn=reason_fn,
+                                    tts=self.tts_backend,
+                                    vad_threshold_dbfs=vad_threshold,
+                                    max_turn_seconds=self.max_turn_seconds,
+                                    logger=self.json_logger if self.json_logger else None,
+                                )
+
+                                if turn_result.ok:
+                                    print(
+                                        f"[turn] Successful turn: '{turn_result.transcript}' -> '{turn_result.reply_text}'"
+                                    )
+                                    self._log_event(
+                                        "turn_completed",
+                                        transcript=turn_result.transcript,
+                                        reply=turn_result.reply_text,
+                                        timings=turn_result.timings_ms,
+                                    )
+                                else:
+                                    print(f"[turn] Turn failed: {turn_result.reason}")
+
+                        except Exception as e:
+                            print(f"[turn] Error processing audio: {e}")
+
+                    # Reset buffer
+                    chunk_buffer = []
+
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            print(f"[audio] Chunked processing error: {e}")
+            # Fall back to legacy method
+            self.listen_for_wake_word()
+        finally:
+            # PHASE 2 REDESIGN: Cleanup progressive transcription
+            if streaming_mode and hasattr(self.stt_backend, 'end_streaming'):
+                try:
+                    final_transcript = self.stt_backend.end_streaming()
+                    if final_transcript:
+                        print(f"🎯 Final transcript: {final_transcript}")
+                except Exception as e:
+                    print(f"⚠️ Streaming STT cleanup error: {e}")
+
+            if self.audio_backend:
+                self.audio_backend.close()
+
+    def listen_for_wake_word(self) -> None:
+        self.listening = True
+        log_event(
+            "listen_started",
+            device=self.input_device_index,
+            sample_rate=self.sample_rate,
+        )
+        self._emit_persona("quip", {"line": "Listening for your next whim."})
+
+        if self.audio_backend is None:
+            print("[audio] No audio backend available for wake word detection")
+            return
+
+        try:
+            print(f"[audio] Wake loop using {self.audio_backend_name} backend")
+
+            # Process audio chunks from the unified backend
+            for chunk in self.audio_backend.chunks(self.audio_block_ms):
+                if not self.listening:
+                    break
+
+                # Convert float32 chunk to int16 for Vosk
+                int16_chunk = (chunk * 32767).astype(np.int16)
+                data = int16_chunk.tobytes()
+                
+                # Fill audio queue for record_until_silence() to use later
+                try:
+                    self.audio_queue.put_nowait(data)
+                except queue.Full:
+                    # Drain oldest if full to prevent blocking
+                    try:
+                        self.audio_queue.get_nowait()
+                        self.audio_queue.put_nowait(data)
+                    except queue.Empty:
+                        pass
+
+                
+                # Perform idle reflection during quiet periods
+                if self.reflection_manager and hasattr(self, 'reflection_manager'):
+                    try:
+                        self.reflection_manager.perform_reflection()
+                    except Exception as e:
+                        print(f"[reflection] Reflection error: {e}")
+
+                # --- TTS suppression: skip processing during TTS output ---
+                if self.tts_suppression_enabled and self.tts_playing:
+                    continue
+
+                # --- Real-time VAD with streaming indicators ---
+                rms = self._rms16(data)
+
+                # Streaming Mode: Real-time voice activity feedback
+                streaming_mode = int(os.getenv("KLR_STREAMING_MODE", "0"))
+                if streaming_mode:
+                    if rms >= self.wake_rms_min:
+                        print("🎤 Voice detected", end="", flush=True)
+                    else:
+                        print(".", end="", flush=True)
+
+                if rms < self.wake_rms_min:
+                    continue
+
+                # Grammar-limited recognizer for wake detection (skip if model missing)
+                if self.wake_rec is None:
+                    # No STT model available — fall back to RMS-only gating for diagnostics
+                    print(f"[wake] Vosk model missing; rms={rms} (no recognition)")
+                    continue
+
+                if self.wake_rec.AcceptWaveform(data):
+                    res = json.loads(self.wake_rec.Result())
+                    text = (res.get("text") or "").lower().strip()
+                    avgc = self._avg_conf(res)
+                    if text and text != "[unk]":
+                        print(f"\n[wake-final] {text}  (avg_conf={avgc:.2f}, rms={rms})")
+                        log_event(
+                            "wake_result",
+                            transcript=text,
+                            confidence=avgc,
+                            rms=rms,
+                        )
+
+                    # Fuzzy wake-word matching with debounce/cooldown
+                    is_match, score, phrase = fuzzy_wake_match(
+                        text, self.wake_phrases, threshold=self.fuzzy_threshold
+                    )
+                    now_ms = time.monotonic() * 1000
+                    # DEBUG: Show fuzzy match results only for valid candidates (not [unk])
+                    if text and text != "[unk]":
+                        print(f"[wake-debug] match={is_match}, score={score:.3f}, phrase='{phrase}', wake_phrases={self.wake_phrases}, threshold={self.fuzzy_threshold}")
+                    if (
+                        is_match
+                        and avgc >= self.wake_conf_min
+                        and (now_ms - self._last_wake_ms) > self.wake_cooldown_ms
+                        and (now_ms - self._last_emit_ms) > self.wake_debounce_ms
+                    ):
+                        print("[WAKE] Detected wake phrase!")
+                        play_wake_chime()  # Audio confirmation
+                        log_event(
+                            "wake_confirmed",
+                            transcript=text,
+                            matched_phrase=phrase,
+                            fuzzy_score=score,
+                            confidence=avgc,
+                            rms=rms,
+                        )
+                        self._last_wake_ms = now_ms
+
+                        # Log wake detection to memory system
+                        if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
+                            try:
+                                self.memory_enhanced.log_wake_detection(
+                                    transcript=text,
+                                    confidence=avgc,
+                                    wake_phrase=phrase
+                                )
+                            except Exception as e:
+                                print(f"[memory] Wake detection logging failed: {e}")
+
+                        self.handle_conversation()
+                        # reset recognizers for next round (guarded creation)
+                        if self.vosk_model is not None:
+                            self.vosk_rec = vosk.KaldiRecognizer(
+                                self.vosk_model, self.sample_rate
+                            )
+                            self.wake_rec = vosk.KaldiRecognizer(
+                                self.vosk_model, self.sample_rate, self.wake_grammar
+                            )
+                else:
+                    # Partial results suppressed to reduce log spam
+                    pass
+        except Exception as e:
+            print("\n[audio] Wake loop error:", e)
+
+    def _create_reason_function(self):
+        """Create a reasoning function for the turn orchestrator."""
+
+        def reason_fn(transcript: str) -> str:
+            """Generate response from transcript using reasoning backend or fallback."""
+            from src.middleware import filter_response, sanitize_output
+
+            if not transcript:
+                return ""
+
+            # Check for enrollment commands first (including ongoing enrollment flow)
+            enrollment_response = self._handle_enrollment_commands(transcript)
+            if enrollment_response:
+                return enrollment_response
+
+            # Ingest user input through conversation flow
+            state, normalized_transcript = self.conversation_flow.ingest_user(transcript)
+
+            # Build conversation context for better threading
+            flow_context = self.conversation_flow.context_block(
+                preamble=self.system_prompt
+            )
+
+            # Apply existing safety checks (relaxed for better conversational flow)
+            if self._command_is_risky(normalized_transcript):
+                # Log risky command but allow LLM to decide response
+                log_event("risky_command_detected", command=transcript)
+                # Continue to LLM instead of blocking
+
+            # Route through unified reasoning (consciousness + reasoning + expression)
+            reply = self._unified_reasoning(normalized_transcript, confidence=0.85)
+
+            # Ingest assistant response into conversation flow
+            self.conversation_flow.ingest_assistant(reply)
+
+            # Apply dialogue policy
+            return self.dialogue_policy.apply(reply)
+
+        return reason_fn
+
+
+    def _generate_wake_acknowledgment(self) -> str:
+        """Generate a natural wake acknowledgment using the LLM."""
+        if self.reason_backend is None:
+            return "Yes?"  # Fallback if no reasoning backend
+
+        try:
+            # Use reasoning backend to generate a brief acknowledgment
+            # NOTE: suppress_streaming=True prevents internal dialogue from being spoken aloud
+            result = self.reason_backend.reason(
+                "Generate a very brief (1-2 words) acknowledgment that you're listening.",
+                kloros_instance=self,
+                enable_xai=False,
+                suppress_streaming=True
+            )
+
+            # Extract just the text, keep it short
+            ack = result.reply_text.strip()
+            # Limit to first sentence if multiple
+            if '.' in ack:
+                ack = ack.split('.')[0] + '.'
+
+            return ack if ack else "Yes?"
+        except Exception as e:
+            print(f"[wake] LLM acknowledgment failed: {e}, using fallback")
+            return "Yes?"
+
+
+    # Properly structured handle_conversation method
+    def handle_conversation(self) -> None:
+        """Handle conversation with multi-turn support."""
+        import threading
+
+        # Identify VAD instance for reset after each utterance
+        vad_to_reset = None
+        if hasattr(self, 'audio_backend') and self.audio_backend:
+            if hasattr(self.audio_backend, 'vad') and self.audio_backend.vad:
+                vad_to_reset = self.audio_backend.vad
+
+        conversation_active = True
+        turn_count = 0
+        max_turns = int(os.getenv("KLR_MAX_CONVERSATION_TURNS", "5"))
+        conversation_timeout_s = float(os.getenv("KLR_CONVERSATION_TIMEOUT", "10.0"))
+
+        # Store original timeout for restoration
+        original_timeout = self.start_timeout_ms
+
+        while conversation_active and turn_count < max_turns:
+            turn_count += 1
+            print(f"[CONVERSATION] Turn {turn_count}/{max_turns}")
+
+            # Only say "Yes?" on first turn, not follow-ups
+            if turn_count == 1:
+                print("[DEBUG] Wake word detected, responding.")
+                wake_response = self._generate_wake_acknowledgment()
+                if wake_response:
+                    self.speak(wake_response)
+
+            # No flush - let VAD handle audio vs echo discrimination
+
+            log_event("conversation_start", user=self.operator_id)
+            task = {"name": "voice_command", "kind": "interactive", "priority": "high"}
+            if should_prioritize(self.operator_id, task):
+                log_event("priority_bump", user=self.operator_id, task=task["name"])
+
+            # Start background thread to keep filling audio queue during command recording
+            keep_filling = threading.Event()
+            keep_filling.set()
+
+            def fill_queue_from_backend():
+                """Background thread to continuously fill audio queue from backend."""
+                try:
+                    for chunk in self.audio_backend.chunks(self.audio_block_ms):
+                        if not keep_filling.is_set():
+                            break
+                        # Convert float32 to int16
+                        int16_chunk = (chunk * 32767).astype(np.int16)
+                        data = int16_chunk.tobytes()
+                        try:
+                            self.audio_queue.put_nowait(data)
+                        except queue.Full:
+                            # Drain oldest if full
+                            try:
+                                self.audio_queue.get_nowait()
+                                self.audio_queue.put_nowait(data)
+                            except queue.Empty:
+                                pass
+                except Exception as e:
+                    print(f"[DEBUG] Queue filler thread error: {e}")
+
+            # Clear queue of wake artifacts
+            flushed = 0
+            while not self.audio_queue.empty():
+                try:
+                    self.audio_queue.get_nowait()
+                    flushed += 1
+                except queue.Empty:
+                    break
+            if flushed > 0:
+                print(f"[DEBUG] Flushed {flushed} chunks from queue before listening for command")
+
+            # Start background filler thread
+            filler_thread = threading.Thread(target=fill_queue_from_backend, daemon=True)
+            filler_thread.start()
+            print(f"[DEBUG] Started background audio queue filler thread")
+
+            print("[DEBUG] Listening for command (VAD).")
+
+            # Check if streaming mode is enabled
+            streaming_mode = int(os.getenv("KLR_STREAMING_MODE", "0"))
+            if streaming_mode:
+                # Use streaming transcription for real-time processing
+                print("🎯 Using streaming transcription mode")
+                transcript = self.record_with_streaming()
+                # For streaming mode, use the last captured audio for speaker ID
+                audio_bytes = self._last_audio_bytes if hasattr(self, '_last_audio_bytes') else b""
+            else:
+                # Use traditional block processing
+                audio_bytes = self.record_until_silence()
+                transcript = None  # Will be transcribed later
+
+            # Stop filler thread
+            keep_filling.clear()
+            filler_thread.join(timeout=1.0)
+            print(f"[DEBUG] Stopped background audio queue filler thread")
+            sample_count = len(audio_bytes) // 2
+            log_event("audio_capture", samples=sample_count)
+            print(f"[DEBUG] Collected {sample_count} samples")
+
+            # Store audio for potential enrollment use
+            self._last_audio_bytes = audio_bytes
+
+            # Convert audio to float32 numpy array
+            audio_array = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32767.0
+
+            # Speaker identification (if enabled)
+            if self.enable_speaker_id and self.speaker_backend is not None:
+                try:
+                    speaker_result = self.speaker_backend.identify_speaker(
+                        audio_bytes, self.sample_rate
+                    )
+                    if speaker_result.is_known_speaker:
+                        print(
+                            f"[speaker] Identified: {speaker_result.user_id} (confidence: {speaker_result.confidence:.2f})"
+                        )
+                        # Update operator_id for this interaction
+                        self.operator_id = speaker_result.user_id
+                        log_event(
+                            "speaker_identified",
+                            user_id=speaker_result.user_id,
+                            confidence=speaker_result.confidence,
+                        )
+                    else:
+                        print(
+                            f"[speaker] Unknown speaker (confidence: {speaker_result.confidence:.2f})"
+                        )
+                        log_event("speaker_unknown", confidence=speaker_result.confidence)
+                except Exception as e:
+                    print(f"[speaker] Identification failed: {e}")
+                    log_event("speaker_error", error=str(e))
+
+            # Check for test override
+            test_override = os.getenv("KLR_TEST_TRANSCRIPT")
+            if test_override:
+                print(f"[TEST] Using transcript override: {test_override}")
+                # For test override, create a simple response and speak it
+                transcript = test_override.strip()
+                response = self.chat(transcript) if transcript else ""
+                if response:
+                    print(f"KLoROS: {response}")
+                    self.speak(response)
+                return
+
+            # Use turn orchestrator if available
+            if (
+                run_turn is not None
+                and self.stt_backend is not None
+                and self.enable_stt
+                and detect_voiced_segments is not None
+            ):
+                try:
+                    # Track total turn latency
+                    t_turn_start = time.perf_counter()
+
+                    try:
+                        # Generate trace ID
+                        trace_id = (
+                            new_trace_id() if new_trace_id is not None else str(int(time.time() * 1000))
+                        )
+
+                        # Create logger adapter that enhances reason_done events with sources
+                        class LoggerAdapter:
+                            def __init__(self, voice_instance):
+                                self.voice = voice_instance
+
+                            def log_event(self, name: str, **payload):
+                                # Enhance reason_done events with sources information
+                                if name == "reason_done" and hasattr(self.voice, "_last_reasoning_sources"):
+                                    sources = getattr(self.voice, "_last_reasoning_sources", [])
+                                    if sources:
+                                        payload["sources_count"] = len(sources)
+                                self.voice._log_event(name, **payload)
+
+                        # Run orchestrated turn
+                        summary = run_turn(
+                            audio_array,
+                            self.sample_rate,
+                            stt=self.stt_backend,
+                            reason_fn=self._create_reason_function(),
+                            tts=self.tts_backend if self.enable_tts else None,
+                            vad_threshold_dbfs=self._get_vad_threshold(),
+                            frame_ms=self.vad_frame_ms,
+                            hop_ms=self.vad_hop_ms,
+                            attack_ms=self.vad_attack_ms,
+                            release_ms=self.vad_release_ms,
+                            min_active_ms=self.vad_min_active_ms,
+                            margin_db=self.vad_margin_db,
+                            max_turn_seconds=self.max_turn_seconds,
+                            logger=LoggerAdapter(self),
+                            trace_id=trace_id,
+                        )
+                    finally:
+                        # Reset VAD state after turn completes
+                        if vad_to_reset:
+                            vad_to_reset.reset()
+
+                    # Measure total turn latency
+                    t_turn_end = time.perf_counter()
+                    turn_latency_ms = (t_turn_end - t_turn_start) * 1000.0
+
+                    log_event(
+                        "turn_latency",
+                        total_ms=round(turn_latency_ms, 2),
+                        timestamp=time.time()
+                    )
+
+                    print(f"[TURN] {summary.trace_id}: {summary.reason}")
+
+                    if summary.ok and summary.reply_text:
+                        print(f"[TRANSCRIPT] {summary.transcript}")
+                        print(f"KLoROS: {summary.reply_text}")
+
+                        # Check if streaming TTS was used (already spoken during generation)
+                        streaming_tts_enabled = os.getenv("KLR_ENABLE_STREAMING_TTS", "0") == "1"
+
+                        # Track TTS duration for dynamic flush
+                        tts_duration_s = 0.0
+
+                        # Skip final TTS playback if streaming already spoke it
+                        if streaming_tts_enabled:
+                            print(f"[TTS] Skipping final playback (streaming TTS already spoke response)")
+                        elif summary.tts and summary.tts.audio_path:
+                            # Audio already synthesized by orchestrator
+                            tts_duration_s = summary.tts.duration_s or 0.0
+                            if platform.system() == "Linux":
+                                try:
+                                    subprocess.run(  # nosec B603, B607
+                                        self._playback_cmd(summary.tts.audio_path),
+                                        capture_output=True,
+                                        check=False,
+                                    )
+                                except Exception as e:
+                                    print(f"[TTS] Audio playback failed: {e}")
+                        elif summary.reply_text:
+                            # Fallback to speak method if no TTS result
+                            self.speak(summary.reply_text)
+
+                        # Dynamic flush: wait for TTS playback + buffer, then drain queue
+                        if tts_duration_s > 0 and turn_count < max_turns:
+                            flush_delay_s = tts_duration_s + 0.5  # TTS duration + 500ms buffer
+                            print(f"[ANTI-ECHO] Waiting {flush_delay_s:.2f}s for TTS playback to complete...")
+                            time.sleep(flush_delay_s)
+
+                            # Drain audio queue to prevent echo
+                            flushed = 0
+                            while not self.audio_queue.empty():
+                                try:
+                                    self.audio_queue.get_nowait()
+                                    flushed += 1
+                                except queue.Empty:
+                                    break
+                            print(f"[ANTI-ECHO] Flushed {flushed} chunks after TTS playback")
+
+                    elif not summary.ok:
+                        if summary.reason == "no_voice":
+                            print("[DEBUG] No voice activity detected")
+                            # Report system condition correctly to LLM for contextual response
+                            reason_fn = self._create_reason_function()
+                            response = reason_fn("System status: No voice activity detected in audio input")
+                            if response:
+                                self.speak(response)
+                        elif summary.reason == "timeout":
+                            print("[DEBUG] Turn timed out")
+                            # Report timeout condition to LLM for contextual response
+                            reason_fn = self._create_reason_function()
+                            response = reason_fn("System status: Audio processing timeout occurred")
+                            if response:
+                                self.speak(response)
+                        else:
+                            print(f"[DEBUG] Turn failed: {summary.reason}")
+                            # Report processing error to LLM for contextual response
+                            reason_fn = self._create_reason_function()
+                            response = reason_fn(f"System status: Audio processing failed - {summary.reason}")
+                            if response:
+                                self.speak(response)
+
+                except Exception as e:
+                    print(f"[TURN] Orchestrator failed: {e}")
+                    log_event("turn_error", error=str(e))
+                    reason_fn = self._create_reason_function()
+                    response = reason_fn("I encountered a system error")
+                    if response:
+                        self.speak(response)
+
+            else:
+                # Fallback to legacy logic when orchestrator unavailable
+                print("[DEBUG] Using legacy conversation handling")
+                # This maintains backward compatibility for cases where orchestrator is not available
+                reason_fn = self._create_reason_function()
+                response = reason_fn("Voice processing is currently unavailable")
+                if response:
+                    self.speak(response)
+
+            # Check if conversation should continue
+            # Priority: enrollment mode takes precedence over normal conversation flow
+            if self.enrollment_mode:
+                print("[CONVERSATION] Enrollment active, forcing conversation continuation...")
+                # Set shorter timeout for enrollment steps
+                self.start_timeout_ms = int(conversation_timeout_s * 1000)
+                conversation_active = True
+            elif self.conversation_flow.current and not self.conversation_flow.current.is_idle():
+                print("[CONVERSATION] Waiting for follow-up...")
+                # Set shorter timeout for follow-ups
+                self.start_timeout_ms = int(conversation_timeout_s * 1000)
+                conversation_active = True
+            else:
+                print("[CONVERSATION] Conversation thread idle, returning to wake mode")
+                conversation_active = False
+
+        # Restore original timeout when exiting conversation
+        self.start_timeout_ms = original_timeout
+        print(f"[CONVERSATION] Exited multi-turn mode after {turn_count} turns")
+
+    # ======================== Main =========================
+    def run(self) -> None:
+        try:
+            # Use chunked audio processing if wakeword is disabled and audio backend is available
+            if not self.enable_wakeword and self.audio_backend is not None:
+                self._process_audio_chunks()
+            else:
+                self.listen_for_wake_word()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.listening = False
+            if self.audio_backend:
+                self.audio_backend.close()
+            self._log_event("shutdown", reason="loop_exit")
+            self._emit_persona("quip", {"line": "Shutting down. Try not to miss me."})
+            if self.json_logger:
+                self.json_logger.close()
+
+
+def load_kloros_environment():
+    """Load environment variables from .kloros_env file before KLoROS initialization.
+
+    This function loads environment variables from the KLoROS configuration file,
+    ensuring compatibility with both systemd services and manual execution.
+    Variables already set in the environment (e.g., from systemd) take precedence.
+    """
+    env_file_paths = [
+        '/home/kloros/.kloros_env',        # Primary location
+        os.path.expanduser('~/.kloros_env'), # Fallback for user home
+    ]
+
+    loaded_count = 0
+    already_set_count = 0
+    total_vars_in_file = 0
+
+    for env_file in env_file_paths:
+        if os.path.exists(env_file) and os.access(env_file, os.R_OK):
+            try:
+                with open(env_file, 'r') as f:
+                    for line_num, line in enumerate(f, 1):
+                        line = line.strip()
+
+                        # Skip empty lines and comments
+                        if not line or line.startswith('#'):
+                            continue
+
+                        # Check for valid key=value format
+                        if '=' not in line:
+                            continue
+
+                        try:
+                            key, value = line.split('=', 1)
+
+                            # Handle export prefix and whitespace
+                            key = key.replace('export ', '').strip()
+                            value = value.strip()
+
+                            # Strip inline comments (# after value)
+                            if '#' in value:
+                                value = value.split('#')[0].strip()
+
+                            # Remove surrounding quotes if present
+                            if (value.startswith('"') and value.endswith('"')) or \
+                               (value.startswith("'") and value.endswith("'")):
+                                value = value[1:-1]
+
+                            if key:
+                                total_vars_in_file += 1
+                                # Only set if not already in environment (respect systemd/CLI)
+                                if key not in os.environ:
+                                    os.environ[key] = value
+                                    loaded_count += 1
+                                else:
+                                    already_set_count += 1
+
+                        except Exception:
+                            continue  # Skip malformed lines
+
+                print(f"[env] Environment config: {total_vars_in_file} total, {already_set_count} pre-loaded (systemd), {loaded_count} newly set from {env_file}")
+                return  # Success - don't try other paths
+
+            except Exception as e:
+                print(f"[env] Warning: Failed to load {env_file}: {e}")
+                continue
+
+    print("[env] No environment file found or accessible")
+
+
+if __name__ == "__main__":
+    # Load environment variables before KLoROS initialization
+    load_kloros_environment()
+
+    kloros = KLoROS()
+    kloros.run()
+

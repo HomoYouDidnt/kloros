@@ -1,0 +1,15 @@
+[Unit]
+Description=KLoROS Autopilot v2 (user)
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/opt/kloros/kloros_autopilot
+ExecStart=/usr/bin/env python3 autopilot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

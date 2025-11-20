@@ -1,0 +1,243 @@
+# KLoROS Unified Loop Configuration
+# Single source of truth for PHASE, D-REAM, and Memory integration
+version: "1.0"
+updated: "2025-10-17"
+
+# Targets and Budgets
+targets:
+  # Performance targets
+  response_time_ms: 3000
+  cpu_threshold_pct: 80
+  memory_threshold_pct: 85
+  gpu_utilization_target_pct: 70
+  recognition_accuracy_target: 0.90
+
+  # Fitness thresholds
+  fitness_promotion_threshold: 0.75
+  fitness_regression_threshold: 0.60
+
+  # Resource budgets
+  max_runtime_per_eval_sec: 300
+  max_cpu_per_eval_pct: 90
+  max_memory_per_eval_gb: 8
+  max_gpu_memory_mb: 4096
+
+# Paths
+paths:
+  # Artifact storage
+  phase_reports: "/home/kloros/kloros_loop/phase_report.jsonl"
+  fitness_scores: "/home/kloros/kloros_loop/fitness.json"
+  telemetry: "/home/kloros/src/dream/artifacts/telemetry/events.jsonl"
+  manifests: "/home/kloros/src/dream/artifacts/manifests"
+
+  # Logs
+  structured_log: "/var/log/kloros/structured.jsonl"
+  structured_log_fallback: "/home/kloros/.kloros/logs/structured.jsonl"
+  heuristics_log: "/home/kloros/logs/heuristics_controller.log"
+  dream_background_log: "/home/kloros/.kloros/dream_background.log"
+
+  # State
+  bandit_state: "/home/kloros/out/heuristics/bandit_state.json"
+  hints: "/home/kloros/out/heuristics/hints.json"
+  summary: "/home/kloros/out/heuristics/summary.json"
+
+  # Memory
+  reasoning_bank: "/home/kloros/.kloros/reasoning_bank.jsonl"
+  memory_db: "/home/kloros/.kloros/kloros_memory.db"
+
+# PHASE Configuration
+phase:
+  # Adaptive parameters
+  exploration_rate_initial: 0.10
+  exploration_rate_final: 0.03
+  exploration_decay_after_selections: 100
+
+  # Weight capping
+  weight_min: 0.10
+  weight_max: 0.50
+
+  # Phase types
+  phase_types:
+    LIGHT:
+      trigger: "avg_cost > 60"
+      strategy: "last_failed + promotion only"
+    DEEP:
+      trigger: "default"
+      strategy: "all passes enabled"
+    REM:
+      trigger: "novelty > 0.6 AND promotion_acceptance > 0.7"
+      strategy: "comprehensive testing for D-REAM meta-learning"
+
+  # Hints TTL
+  hints_ttl_hours: 2
+  hints_expired_fallback: "DEEP"
+
+  # Signal computation
+  signals:
+    yield: "failures_detected / runtime_hours"
+    cost: "avg_runtime_minutes / trial"
+    stability: "1 - flake_rate"
+    novelty: "unique_failures / total_failures"
+    promotion: "candidates_accepted / evaluations_run"
+
+# D-REAM Configuration
+dream:
+  # Evolution parameters
+  generations: 10
+  population: 12
+  timeout_sec: 300
+
+  # Fitness weights
+  fitness_weights:
+    performance: 0.4
+    accuracy: 0.3
+    stability: 0.2
+    novelty: 0.1
+
+  # Safety constraints
+  max_runtime_sec: 600
+  cpu_cap_pct: 90
+  memory_cap_gb: 8
+  gpu_cap_mb: 4096
+
+  # Prohibited tools
+  banned_utilities:
+    - "stress-ng"
+    - "sysbench"
+    - "fork-bomb"
+    - "stream"
+    - "STREAM"
+    - "mbw"
+    - "stressapptest"
+
+  # Background optimization detection
+  detection_interval_sec: 300
+  optimization_cooldown_hours: 1
+  confidence_threshold: 0.75
+
+# Memory Promotion Rules
+memory:
+  # Promotion criteria
+  promotion_rule: "decision == 'promote' AND fitness >= previous_fitness"
+  demotion_rule: "decision == 'demote' OR fitness < fitness_regression_threshold"
+
+  # ReasoningBank evolution
+  min_confidence_for_promotion: 0.60
+  max_reasoning_bank_entries: 10000
+  auto_condense_after_days: 7
+
+# Event Logging Schema
+event_logging:
+  # Standardized event types
+  event_types:
+    - "loop.plan"       # Planning decisions
+    - "phase.epoch"     # PHASE run completion
+    - "dream.eval"      # D-REAM evaluation
+    - "memory.promoted" # Memory promotion events
+    - "governance.checked" # Governance checks
+
+  # Required fields for each event type
+  schemas:
+    "loop.plan":
+      - epoch_id
+      - plan_type
+      - targets
+      - timestamp
+
+    "phase.epoch":
+      - epoch_id
+      - status
+      - latency_ms
+      - cpu_pct
+      - memory_mb
+      - failures
+      - timestamp
+
+    "dream.eval":
+      - run_id
+      - inputs
+      - weights
+      - fitness_score
+      - decision
+      - timestamp
+
+    "memory.promoted":
+      - entry_id
+      - decision
+      - fitness_before
+      - fitness_after
+      - reason
+      - timestamp
+
+    "governance.checked":
+      - check_type
+      - outcome
+      - problems
+      - timestamp
+
+# Artifact Contracts
+contracts:
+  # PHASE report format
+  phase_report:
+    required_fields:
+      - epoch_id
+      - status
+      - start_time
+      - end_time
+      - latency_ms
+      - cpu_pct
+      - memory_mb
+      - failures_detected
+      - tests_run
+      - tests_passed
+      - tests_failed
+      - tests_skipped
+
+  # Fitness JSON format
+  fitness:
+    required_fields:
+      - run_id
+      - epoch_id
+      - inputs
+      - weights
+      - fitness_score
+      - decision
+      - timestamp
+      - components:
+          - performance
+          - accuracy
+          - stability
+          - novelty
+
+  # Telemetry event format
+  telemetry:
+    required_fields:
+      - event_type
+      - timestamp
+      - source
+      - data
+
+# Integration Points
+integration:
+  # PHASE → D-REAM
+  phase_to_dream:
+    - "PHASE writes phase_report.jsonl"
+    - "D-REAM reads phase_report.jsonl for fitness computation"
+    - "Signals flow via hints.json"
+
+  # D-REAM → Memory
+  dream_to_memory:
+    - "D-REAM emits fitness.json with decision field"
+    - "Memory promotes/demotes based on decision + fitness"
+    - "ReasoningBank evolves based on fitness trends"
+
+  # Memory → PHASE
+  memory_to_phase:
+    - "Memory surfaces high-fitness reasoning patterns"
+    - "PHASE prioritizes tests related to promoted patterns"
+
+  # All → Governance
+  all_to_governance:
+    - "All services log to structured.jsonl"
+    - "Governance-Anchor-Master validates before promotion"
+    - "Anti-fabrication checks require functional proof"

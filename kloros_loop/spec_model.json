@@ -1,0 +1,157 @@
+{
+  "version": "1.0",
+  "generated": "2025-10-17T20:10:00Z",
+  "source_files": [
+    "loop.yaml",
+    "capabilities.yaml"
+  ],
+  "rules": [
+    {
+      "id": "SPEC-001",
+      "description": "All D-REAM evaluations must respect resource budgets",
+      "scope": "dream",
+      "severity": "critical",
+      "evidence_type": "config",
+      "requirements": {
+        "max_runtime_sec": 600,
+        "cpu_cap_pct": 90,
+        "memory_cap_gb": 8,
+        "gpu_cap_mb": 4096
+      },
+      "source": "loop.yaml:dream.max_runtime_sec"
+    },
+    {
+      "id": "SPEC-002",
+      "description": "Prohibited stress utilities must never be used in active code",
+      "scope": "dream",
+      "severity": "critical",
+      "evidence_type": "code_scan",
+      "requirements": {
+        "banned": [
+          "stress-ng",
+          "sysbench",
+          "fork-bomb"
+        ]
+      },
+      "source": "loop.yaml:dream.banned_utilities"
+    },
+    {
+      "id": "SPEC-003",
+      "description": "PHASE test weights must be capped between min and max",
+      "scope": "phase",
+      "severity": "high",
+      "evidence_type": "runtime",
+      "requirements": {
+        "weight_min": 0.1,
+        "weight_max": 0.5
+      },
+      "source": "loop.yaml:phase.weight_min/max"
+    },
+    {
+      "id": "SPEC-004",
+      "description": "phase_report.jsonl must contain required fields per contract",
+      "scope": "phase",
+      "severity": "critical",
+      "evidence_type": "artifact",
+      "requirements": {
+        "required_fields": [
+          "epoch_id",
+          "status",
+          "start_time",
+          "end_time",
+          "latency_ms",
+          "cpu_pct",
+          "memory_mb"
+        ]
+      },
+      "source": "loop.yaml:contracts.phase_report"
+    },
+    {
+      "id": "SPEC-005",
+      "description": "fitness.json must contain decision and score fields",
+      "scope": "dream",
+      "severity": "critical",
+      "evidence_type": "artifact",
+      "requirements": {
+        "required_fields": [
+          "run_id",
+          "epoch_id",
+          "inputs",
+          "weights",
+          "fitness_score",
+          "decision"
+        ]
+      },
+      "source": "loop.yaml:contracts.fitness"
+    },
+    {
+      "id": "SPEC-006",
+      "description": "Memory promotion requires decision=='promote' AND fitness >= previous_fitness",
+      "scope": "memory",
+      "severity": "critical",
+      "evidence_type": "code",
+      "requirements": {
+        "promotion_rule": "decision == 'promote' AND fitness >= previous_fitness"
+      },
+      "source": "loop.yaml:memory.promotion_rule"
+    },
+    {
+      "id": "SPEC-007",
+      "description": "All services must log to structured.jsonl with required event types",
+      "scope": "all",
+      "severity": "high",
+      "evidence_type": "logs",
+      "requirements": {
+        "event_types": [
+          "loop.plan",
+          "phase.epoch",
+          "dream.eval",
+          "memory.promoted",
+          "governance.checked"
+        ],
+        "log_path": "/var/log/kloros/structured.jsonl",
+        "fallback": "/home/kloros/.kloros/logs/structured.jsonl"
+      },
+      "source": "loop.yaml:event_logging"
+    },
+    {
+      "id": "SPEC-008",
+      "description": "All systemd services must have RuntimeMaxSec, KillSignal, TimeoutStopSec, Restart, ExecStop",
+      "scope": "systemd",
+      "severity": "critical",
+      "evidence_type": "service_file",
+      "requirements": {
+        "required_directives": [
+          "RuntimeMaxSec",
+          "KillSignal",
+          "TimeoutStopSec",
+          "Restart",
+          "ExecStop"
+        ]
+      },
+      "source": "D-REAM doctrine"
+    },
+    {
+      "id": "SPEC-009",
+      "description": "All enabled modules must be registered in capabilities.yaml",
+      "scope": "all",
+      "severity": "medium",
+      "evidence_type": "config",
+      "requirements": {
+        "registry_path": "/home/kloros/src/registry/capabilities.yaml"
+      },
+      "source": "capabilities.yaml"
+    },
+    {
+      "id": "SPEC-010",
+      "description": "All file I/O operations must have explicit timeout budgets",
+      "scope": "all",
+      "severity": "high",
+      "evidence_type": "code",
+      "requirements": {
+        "max_io_timeout_sec": 10
+      },
+      "source": "Tool-Integrity governance"
+    }
+  ]
+}

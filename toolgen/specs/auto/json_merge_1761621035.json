@@ -1,0 +1,74 @@
+{
+  "id": "json_merge_1761621035",
+  "task": "Deep merge two JSON objects, with second overriding first on conflicts.",
+  "language": "python",
+  "io": {
+    "inputs": [
+      {
+        "name": "obj1",
+        "type": "dict"
+      },
+      {
+        "name": "obj2",
+        "type": "dict"
+      }
+    ],
+    "output": {
+      "type": "dict"
+    }
+  },
+  "constraints": {
+    "time_budget_ms": 200,
+    "memory_budget_mb": 128,
+    "max_deps": [],
+    "forbidden_calls": []
+  },
+  "examples": [
+    {
+      "in": {
+        "obj1": {
+          "a": 1
+        },
+        "obj2": {
+          "b": 2
+        }
+      },
+      "out": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    {
+      "in": {
+        "obj1": {
+          "a": 1,
+          "c": 3
+        },
+        "obj2": {
+          "a": 2
+        }
+      },
+      "out": {
+        "a": 2,
+        "c": 3
+      }
+    }
+  ],
+  "properties": [
+    {
+      "name": "idempotent",
+      "type": "boolean",
+      "value": false
+    },
+    {
+      "name": "no_mutation",
+      "type": "boolean",
+      "value": true
+    }
+  ],
+  "origin": {
+    "reason": "auto_expansion",
+    "epoch_hint": null,
+    "ts": 1761621035.6988554
+  }
+}

@@ -1,0 +1,192 @@
+{
+  "evidence_map": [
+    {
+      "rule_id": "SPEC-001",
+      "description": "All D-REAM evaluations must respect resource budgets",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "config_file",
+          "path": "/home/kloros/kloros_loop/loop.yaml",
+          "line": "dream.max_runtime_sec: 600"
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-002",
+      "description": "Prohibited stress utilities must never be used in active code",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "code_scan",
+          "command": "rg -n 'stress-ng|sysbench' <active_dirs>",
+          "result": "no matches"
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-003",
+      "description": "PHASE test weights must be capped between min and max",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "config_file",
+          "path": "/home/kloros/kloros_loop/loop.yaml",
+          "line": "phase.weight_min: 0.10, phase.weight_max: 0.50"
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-004",
+      "description": "phase_report.jsonl must contain required fields per contract",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "artifact",
+          "path": "/home/kloros/kloros_loop/phase_report.jsonl",
+          "fields": [
+            "epoch_id",
+            "run_id",
+            "test_id",
+            "status",
+            "latency_ms",
+            "cpu_pct",
+            "mem_mb",
+            "seed",
+            "started_at",
+            "finished_at"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-005",
+      "description": "fitness.json must contain decision and score fields",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "artifact",
+          "path": "/home/kloros/kloros_loop/fitness.json",
+          "fields": [
+            "epoch_id",
+            "inputs",
+            "weights",
+            "score",
+            "decision",
+            "evidence"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-006",
+      "description": "Memory promotion requires decision=='promote' AND fitness >= previous_fitness",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "code",
+          "path": "/home/kloros/src/kloros_memory/promoter.py",
+          "line": "if decision == \"promote\" and score >= prev_best:"
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-007",
+      "description": "All services must log to structured.jsonl with required event types",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "log_file",
+          "path": "/home/kloros/kloros_loop/structured.jsonl",
+          "size": 424
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-008",
+      "description": "All systemd services must have RuntimeMaxSec, KillSignal, TimeoutStopSec, Restart, ExecStop",
+      "verifiable": true,
+      "evidence_count": 3,
+      "evidence": [
+        {
+          "type": "service_file",
+          "service": "dream-domains.service",
+          "directives": [
+            "RuntimeMaxSec",
+            "KillSignal",
+            "TimeoutStopSec",
+            "Restart",
+            "ExecStop"
+          ]
+        },
+        {
+          "type": "service_file",
+          "service": "dream-background.service",
+          "directives": [
+            "RuntimeMaxSec",
+            "KillSignal",
+            "TimeoutStopSec",
+            "Restart",
+            "ExecStop"
+          ]
+        },
+        {
+          "type": "service_file",
+          "service": "phase-heuristics.service",
+          "directives": [
+            "RuntimeMaxSec",
+            "KillSignal",
+            "TimeoutStopSec",
+            "Restart",
+            "ExecStop"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-009",
+      "description": "All enabled modules must be registered in capabilities.yaml",
+      "verifiable": true,
+      "evidence_count": 1,
+      "evidence": [
+        {
+          "type": "config_file",
+          "path": "/home/kloros/src/registry/capabilities.yaml",
+          "size": 3117
+        }
+      ]
+    },
+    {
+      "rule_id": "SPEC-010",
+      "description": "All file I/O operations must have explicit timeout budgets",
+      "verifiable": true,
+      "evidence_count": 3,
+      "evidence": [
+        {
+          "type": "code",
+          "path": "/home/kloros/src/phase/report_writer.py",
+          "directive": "IO_TIMEOUT"
+        },
+        {
+          "type": "code",
+          "path": "/home/kloros/src/dream/fitness_writer.py",
+          "directive": "IO_TIMEOUT"
+        },
+        {
+          "type": "code",
+          "path": "/home/kloros/src/kloros_memory/promoter.py",
+          "directive": "IO_TIMEOUT"
+        }
+      ]
+    }
+  ],
+  "verifiable": 10,
+  "total": 10
+}

@@ -1,0 +1,94 @@
+# KLoROS Self-Healing Playbooks
+#
+# Each playbook defines:
+# - name: Unique identifier
+# - rank: Priority (higher = preferred, 0-100)
+# - match: Event pattern to match (source, kind, severity, context)
+# - steps: List of actions to execute
+# - canary_scope: Optional limited scope for testing
+# - validate: Health check to confirm success
+
+playbooks:
+  # Playbook 1: Fix validator context overlap rejections
+  - name: validator.low_context_overlap.autofix
+    rank: 92
+    match:
+      source: validator
+      kind: low_context_overlap
+    steps:
+      - action: lower_threshold
+        params:
+          target: tool_synthesizer.validator.context_threshold
+          new_value: 0.05
+    canary_scope: next_5_queries
+    validate:
+      check: validator_health
+
+  # Playbook 2: Handle tool synthesis timeouts
+  - name: rag.synthesis.timeout.autofix
+    rank: 88
+    match:
+      source: rag
+      kind: synthesis_timeout
+    steps:
+      - action: enable_ack
+        params:
+          flag: KLR_ENABLE_SYNTH_ACK
+          value: "1"
+      - action: set_timeout
+        params:
+          target: tool_synthesizer.synthesis_timeout
+          new_timeout_s: 60
+    validate:
+      check: rag_health
+
+  # Playbook 3: Fix beep echo loops
+  - name: audio.beep.echo.autofix
+    rank: 95
+    match:
+      source: audio
+      kind: beep_echo
+    steps:
+      - action: enforce_mute_wrapper
+        params: {}
+    validate:
+      check: audio_health
+
+  # Playbook 4: Handle swap exhaustion
+  - name: system.swap.exhaustion.autofix
+    rank: 98
+    match:
+      source: system_health
+      kind: swap_exhaustion
+    steps:
+      - action: clear_swap
+        params: {}
+    validate:
+      check: system_health
+
+  # Playbook 5: Kill duplicate processes
+  - name: system.duplicate_process.autofix
+    rank: 97
+    match:
+      source: system_health
+      kind: duplicate_process
+    steps:
+      - action: kill_duplicate_process
+        params:
+          process_name: kloros_voice
+    validate:
+      check: system_health
+
+  # Playbook 6: Kill stuck audio processes
+  - name: system.stuck_audio.autofix
+    rank: 96
+    match:
+      source: system_health
+      kind: stuck_processes
+    steps:
+      - action: kill_stuck_processes
+        params:
+          pattern: pacat
+          max_age_seconds: 1800
+    validate:
+      check: system_health

@@ -1,0 +1,77 @@
+{
+  "findings": [
+    {
+      "check": "report_exists",
+      "pass": true,
+      "record_count": 2
+    },
+    {
+      "check": "contract_compliance",
+      "record": 0,
+      "pass": true
+    },
+    {
+      "check": "contract_compliance",
+      "record": 1,
+      "pass": true
+    },
+    {
+      "check": "timing_anomalies",
+      "pass": true
+    },
+    {
+      "check": "weight_capping",
+      "pass": true,
+      "min": 0.1,
+      "max": 0.5
+    },
+    {
+      "check": "phase_types",
+      "pass": true,
+      "types": [
+        "LIGHT",
+        "DEEP",
+        "REM"
+      ]
+    },
+    {
+      "check": "exploration_config",
+      "pass": true,
+      "initial": 0.1,
+      "final": 0.03
+    },
+    {
+      "check": "service_health",
+      "pass": false,
+      "service": "phase-heuristics"
+    },
+    {
+      "check": "service_activity",
+      "pass": true,
+      "log_lines": 20
+    },
+    {
+      "check": "bandit_state",
+      "pass": false,
+      "reason": "no arms"
+    },
+    {
+      "check": "hints_present",
+      "pass": false
+    },
+    {
+      "check": "post_epoch_hook",
+      "pass": true,
+      "has_fitness": true,
+      "has_promoter": true
+    },
+    {
+      "check": "pytest_config",
+      "pass": true,
+      "has_coverage": false
+    }
+  ],
+  "passed": 10,
+  "failed": 3,
+  "total": 13
+}

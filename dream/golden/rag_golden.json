@@ -1,0 +1,27 @@
+[
+  {
+    "query": "KLoROS voice pipeline components",
+    "keywords": [
+      "VAD",
+      "faster-whisper",
+      "TTS",
+      "router"
+    ]
+  },
+  {
+    "query": "How does the ToolTracker decorator work?",
+    "keywords": [
+      "@track_tool",
+      "logging",
+      "latency"
+    ]
+  },
+  {
+    "query": "What is the RAG hybrid strategy?",
+    "keywords": [
+      "BM25",
+      "vector",
+      "fusion"
+    ]
+  }
+]

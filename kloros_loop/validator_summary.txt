@@ -1,0 +1,105 @@
+REMEDIATION VALIDATOR SUMMARY
+Generated: 2025-10-17T23:50:00Z
+
+╔══════════════════════════════════════════════════════════════╗
+║                  DRIFT FINDINGS SUMMARY                      ║
+╚══════════════════════════════════════════════════════════════╝
+
+Total Findings: 5
+  • RUNTIME_MISMATCH: 3
+  • CONFIG_VIOLATION: 2
+
+╔══════════════════════════════════════════════════════════════╗
+║                  REMEDIATION ACTIONS                         ║
+╚══════════════════════════════════════════════════════════════╝
+
+CODE CHANGES (2 files):
+  [CRITICAL] report_writer.py
+    - Line 94: mem_mb → memory_mb (SPEC-004 compliance)
+    - Line 96: started_at → start_time (SPEC-004 compliance)
+    - Line 97: finished_at → end_time (SPEC-004 compliance)
+    Risk: LOW - field rename only, backward compatible if consumers updated
+    
+  [CRITICAL] fitness_writer.py
+    - Line 8: Add uuid import
+    - Line 33: Add _ulid() helper function
+    - Line 138: Add "run_id" field (SPEC-005 compliance)
+    - Line 143: Rename "score" → "fitness_score" (SPEC-005 compliance)
+    Risk: LOW - additive change (run_id), field rename (fitness_score)
+
+FILE OPERATIONS (3 operations):
+  [MEDIUM] Move hints.json
+    - Source: /home/kloros/out/hints.json
+    - Target: /home/kloros/out/heuristics/hints.json
+    Risk: NONE - file move, path correction
+    
+  [MEDIUM] Create reasoning_bank.jsonl
+    - Target: /home/kloros/.kloros/reasoning_bank.jsonl
+    - Action: Initialize empty JSONL file
+    Risk: NONE - new file creation
+    
+  [LOW] Symlink kloros_memory.db
+    - Source: /home/kloros/.kloros/memory.db (existing 5.5MB SQLite)
+    - Target: /home/kloros/.kloros/kloros_memory.db
+    Risk: NONE - symlink creation for path consistency
+
+FALSE POSITIVES (2 findings - no action):
+  [INFO] phase-heuristics service inactive
+    - Reason: Timer-triggered service, runs every ~10min
+    - Status: Last run successful, next trigger scheduled
+    - Action: NONE REQUIRED
+    
+  [INFO] CONFIG_VIOLATION for capabilities_registry and loop_config
+    - Reason: Paths exist and are correct, validation artifact issue
+    - Status: Files present at expected locations
+    - Action: NONE REQUIRED
+
+╔══════════════════════════════════════════════════════════════╗
+║                  RULE CLASS BREAKDOWN                        ║
+╚══════════════════════════════════════════════════════════════╝
+
+SPEC-004 (PHASE Report Contract):
+  - Findings: 3 missing fields (start_time, end_time, memory_mb)
+  - Fix: Code patch to report_writer.py
+  - Validation: Re-run Drift-Detector, expect 0 SPEC-004 findings
+
+SPEC-005 (Fitness Contract):
+  - Findings: 2 missing fields (run_id, fitness_score)
+  - Fix: Code patch to fitness_writer.py
+  - Validation: Re-run Drift-Detector, expect 0 SPEC-005 findings
+
+Path Consistency:
+  - Findings: 1 hints.json location mismatch
+  - Fix: File move operation
+  - Validation: Re-run PHASE-Overseer, expect hints_present=true
+
+Memory System:
+  - Findings: 2 missing files (reasoning_bank.jsonl, kloros_memory.db)
+  - Fix: File creation + symlink
+  - Validation: Re-run Memory-Cortex, expect 6/6 operational
+
+╔══════════════════════════════════════════════════════════════╗
+║                  EXPECTED POST-FIX STATE                     ║
+╚══════════════════════════════════════════════════════════════╝
+
+Drift-Detector: 0 findings (currently 5)
+PHASE-Overseer: 13/13 checks pass (currently 10/13)
+Memory-Cortex: 6/6 operational (currently 4/6)
+Overall Status: OPERATIONAL (currently DEGRADED)
+
+╔══════════════════════════════════════════════════════════════╗
+║                  ROLLBACK STRATEGY                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+Code Changes:
+  git checkout src/phase/report_writer.py src/dream/fitness_writer.py
+
+File Operations:
+  mv /home/kloros/out/heuristics/hints.json /home/kloros/out/hints.json
+  rm /home/kloros/.kloros/reasoning_bank.jsonl
+  rm /home/kloros/.kloros/kloros_memory.db
+
+Data Preservation:
+  - Existing phase_report.jsonl: PRESERVED (append-only)
+  - Existing fitness.json: WILL BE REGENERATED (next D-REAM run)
+  - Memory.db: PRESERVED (original untouched)

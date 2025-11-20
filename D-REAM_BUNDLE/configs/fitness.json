@@ -1,0 +1,24 @@
+{
+  "run_id": "900dfe03584142739132ced0225e8109",
+  "epoch_id": "3ea1e10958b242b8a9179f31d4347ef7",
+  "inputs": {
+    "pass_rate": 1.0,
+    "latency_delta": -0.2003,
+    "efficiency": 0.76275,
+    "stability": 1.0
+  },
+  "weights": {
+    "pass_rate": 0.4,
+    "latency_delta": 0.3,
+    "efficiency": 0.2,
+    "stability": 0.1
+  },
+  "fitness_score": 0.5924600000000001,
+  "decision": "promote",
+  "evidence": {
+    "phase_report_path": "/home/kloros/kloros_loop/phase_report.jsonl",
+    "total_tests": 3,
+    "passes": 3,
+    "flakes": 0
+  }
+}

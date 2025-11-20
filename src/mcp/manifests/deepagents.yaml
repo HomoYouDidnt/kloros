@@ -1,0 +1,75 @@
+# DeepAgents MCP Manifest
+# Production-ready configuration with full guardrails
+
+server_id: deepagents_planner
+name: DeepAgents Deep Planner
+version: 1.0.0
+host: kloros  # Client host (not external server)
+
+capabilities:
+  - deepagents.planner
+
+# Resource budgets - separate "planning_heavy" class
+budgets:
+  class: planning_heavy
+  max_time_ms: 30000  # 30s soft timeout
+  max_memory_mb: 8192  # 8GB max
+  max_cpu_pct: 80
+  max_in_flight: 2  # Concurrency cap (max 2 simultaneous)
+  hard_kill_ms: 45000  # 45s hard kill in supervisor
+
+# Network egress policy - blocked by default
+network:
+  egress_allowed: false
+  whitelist: []  # Tools must be explicitly MCP-whitelisted
+  block_hosts:
+    - "*"  # Block all outbound by default
+
+# Lifecycle and cancellation hooks
+lifecycle:
+  supports_cancel: true
+  graceful_shutdown_ms: 2000
+  teardown: "async_cleanup"
+  cleanup_on_timeout: true
+
+# State isolation - VFS quarantine
+sandbox:
+  virtual_fs: true
+  quarantine_per_run: true
+  clear_state_after: true
+  max_vfs_size_mb: 1024  # 1GB VFS limit
+
+# Tool discovery
+tools:
+  discovery_mode: "mcp_dynamic"  # Discover from MCP, not hardcoded
+  refresh_interval_sec: 300  # Refresh tool list every 5 minutes
+  cache_enabled: true
+
+# Monitoring and observability
+observability:
+  log_level: INFO
+  trace_enabled: true
+  emit_xai_traces: true
+  metrics:
+    - latency_ms
+    - token_cost
+    - tool_usage
+    - success_rate
+    - timeout_rate
+
+# Cost tracking
+cost:
+  track_tokens: true
+  track_api_calls: true
+  daily_budget_usd: 10.00  # $10/day max for this strategy
+  cost_alert_threshold_usd: 8.00  # Alert at $8
+
+# Metadata
+metadata:
+  description: "Deep planning agent for hard/uncertain tasks"
+  author: "KLoROS D-REAM Integration"
+  tags:
+    - "planning"
+    - "deep_reasoning"
+    - "tumix_worker"
+  deployment: "production"

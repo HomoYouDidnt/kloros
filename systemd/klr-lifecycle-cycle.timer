@@ -1,0 +1,12 @@
+[Unit]
+Description=KLoROS Lifecycle Cycle Timer (daily at 00:15 UTC)
+Documentation=file:///home/kloros/.kloros/design_docs/LIFECYCLE_SYSTEM_INTEGRATION.md
+
+[Timer]
+# Run daily at 00:15 UTC (15 minutes after midnight)
+OnCalendar=*-*-* 00:15:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

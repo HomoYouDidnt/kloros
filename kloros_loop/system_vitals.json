@@ -1,0 +1,95 @@
+{
+  "load_1min": 3.52,
+  "load_5min": 2.9,
+  "load_15min": 5.92,
+  "cpu_count": 16,
+  "top_cpu_processes": [
+    {
+      "user": "kloros",
+      "pid": "955687",
+      "cpu": "95.8",
+      "mem": "0.0",
+      "cmd": "fio"
+    },
+    {
+      "user": "kloros",
+      "pid": "955688",
+      "cpu": "95.8",
+      "mem": "0.0",
+      "cmd": "fio"
+    },
+    {
+      "user": "kloros",
+      "pid": "955686",
+      "cpu": "95.4",
+      "mem": "0.0",
+      "cmd": "fio"
+    },
+    {
+      "user": "kloros",
+      "pid": "955689",
+      "cpu": "95.4",
+      "mem": "0.0",
+      "cmd": "fio"
+    },
+    {
+      "user": "claude_+",
+      "pid": "955762",
+      "cpu": "50.0",
+      "mem": "0.0",
+      "cmd": "python3"
+    }
+  ],
+  "memory": {
+    "total_gb": 31.27,
+    "used_gb": 10.62,
+    "available_gb": 20.65,
+    "used_pct": 34.0,
+    "swap_total_gb": 12.3,
+    "swap_used_gb": 4.66
+  },
+  "services": {
+    "dream-domains.service": {
+      "status": "active",
+      "uptime": "ActiveEnterTimestamp=Fri 2025-10-17 18:09:21 EDT"
+    },
+    "dream-background.service": {
+      "status": "active",
+      "uptime": "ActiveEnterTimestamp=Fri 2025-10-17 19:13:35 EDT"
+    },
+    "phase-heuristics.service": {
+      "status": "inactive",
+      "uptime": "ActiveEnterTimestamp="
+    },
+    "kloros.service": {
+      "status": "active",
+      "uptime": "ActiveEnterTimestamp=Fri 2025-10-17 16:53:51 EDT"
+    }
+  },
+  "gpus": [
+    {
+      "id": 0,
+      "name": "NVIDIA GeForce RTX 3060",
+      "gpu_util": "0",
+      "mem_util": "0",
+      "mem_used_mb": "5089",
+      "mem_total_mb": "12288",
+      "temp_c": "45"
+    },
+    {
+      "id": 1,
+      "name": "NVIDIA GeForce GTX 1080 Ti",
+      "gpu_util": "0",
+      "mem_util": "0",
+      "mem_used_mb": "18",
+      "mem_total_mb": "11264",
+      "temp_c": "45"
+    }
+  ],
+  "ollama_api": true,
+  "health_status": "degraded",
+  "issues": [
+    "Services down: 1/4"
+  ],
+  "timestamp": "2025-10-18T00:19:23Z"
+}

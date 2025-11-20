@@ -1,0 +1,12 @@
+[Unit]
+Description=PHASE Heuristic Controller Timer
+Documentation=https://github.com/kloros/phase
+Requires=phase-heuristics.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

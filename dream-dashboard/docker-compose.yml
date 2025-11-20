@@ -1,0 +1,44 @@
+services:
+  d_ream_dashboard:
+    build: ./backend
+    container_name: d_ream_dashboard
+    ports:
+      - "5000:5000"          # Bind to 0.0.0.0:5000 → accessible via your Tailscale IP:5000
+    environment:
+      - AUTH_TOKEN=${AUTH_TOKEN:-dev-token-change-me}
+      - EXPERIMENT_TYPES_FILE=/data/experiment_types.json
+      - DB_PATH=/data/dream.db
+      - DREAM_ARTIFACTS=/dream_artifacts
+      - PYTHONPATH=/home/kloros
+    volumes:
+      - ./data:/data
+      - /home/kloros/src/dream/artifacts:/dream_artifacts:ro
+      - /home/kloros:/home/kloros:ro
+      - /var/log/kloros:/var/log/kloros:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  sidecar:
+    build: ./sidecar
+    container_name: d_ream_sidecar
+    environment:
+      - AUTH_TOKEN=${AUTH_TOKEN:-dev-token-change-me}
+      - DASH_URL=http://d_ream_dashboard:5000
+      - WORKER_ID=sidecar-1
+      - DREAM_ARTIFACTS=/dream_artifacts
+      - PYTHONPATH=/home/kloros
+    volumes:
+      - ./data:/data
+      - /home/kloros/src/dream/artifacts:/dream_artifacts:ro
+      - /home/kloros:/home/kloros:ro
+    depends_on:
+      - d_ream_dashboard
+    restart: unless-stopped
+
+networks:
+  default:
+    name: d_ream_net

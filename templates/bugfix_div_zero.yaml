@@ -1,0 +1,15 @@
+family: "bugfix.core"
+base:
+  diff_limit: 60
+  timeout_s: 90
+  context_lines: 25
+  max_files_changed: 6
+slots:
+  symbol_pairs:
+    - ["divide", "safe_divide"]
+    - ["quot", "safe_quot"]
+mutators:
+  - name: rename_symbols
+    prob: 0.35
+  - name: constraint_tighten
+    trigger: "pass_3_times"

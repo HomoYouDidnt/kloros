@@ -1,0 +1,33 @@
+[Unit]
+Description=KLoROS Voice Assistant
+After=network.target pipewire.service wireplumber.service
+Wants=network.target pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kloros
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=PYTHONPATH=/home/kloros
+Environment=KLR_REASON_BACKEND=ollama
+Environment=OLLAMA_HOST=http://127.0.0.1:11434
+Environment=KLR_MODEL=llama3.1:8b
+Environment=KLR_INPUT_IDX=10
+Environment=KLR_ENABLE_STT=1
+Environment=KLR_STT_BACKEND=hybrid
+Environment=KLR_STT_LANG=en-US
+Environment=KLR_VOSK_MODEL_DIR=/home/kloros/KLoROS/models/vosk/model
+Environment=KLR_VAD_SENSITIVITY=0.55
+Environment=KLR_VAD_START_MS=200
+Environment=KLR_VAD_MIN_SPEECH_MS=300
+Environment=KLR_VAD_MAX_SILENCE_MS=500
+Environment=KLR_STT_TIMEOUT_MS=6000
+Environment=KLR_PIPER_VOICE=/home/kloros/KLoROS/models/piper/glados_piper_medium.onnx
+ExecStartPre=/bin/bash -c 'source /home/kloros/.kloros_env'
+ExecStart=/home/kloros/.venv/bin/python -m src.kloros_voice
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

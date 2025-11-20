@@ -1,0 +1,2142 @@
+{
+  "schema": "phase.tournament/v1",
+  "suite_id": "qa.rag.gold",
+  "qtime": {
+    "epochs": 2,
+    "slices_per_epoch": 4,
+    "replicas_per_slice": 8
+  },
+  "replica_plan_hash": "298858f625d08b686b3adbc9d670a920e1dafeff69321a0ad3f44d24bd425587",
+  "instances": [
+    "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+    "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+    "/home/kloros/experiments/spica/instances/spica-f2c0d3e8"
+  ],
+  "total_replicas": 192,
+  "isolation": {
+    "cpu_affinity": true,
+    "network_egress": false,
+    "lineage_immutable": true
+  },
+  "results": {
+    "suite_id": "qa.rag.gold",
+    "total_replicas": 192,
+    "integrity_verified": 192,
+    "integrity_failed": 0,
+    "results": [
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s0.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s0.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s0.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s1.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s1.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s1.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s2.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s2.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s2.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e0.s3.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e0.s3.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e0.s3.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s0.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s0.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s0.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s1.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s1.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s1.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s2.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s2.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s2.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r0",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r1",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r2",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r3",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r4",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r5",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r6",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f.e1.s3.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-1957ab7f",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-1957ab7f",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead.e1.s3.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-3dd6dead",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-3dd6dead",
+          "generation": 0
+        }
+      },
+      {
+        "replica_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8.e1.s3.r7",
+        "instance_id": "/home/kloros/experiments/spica/instances/spica-f2c0d3e8",
+        "status": "integrity_verified",
+        "metrics": {
+          "manifest_valid": true,
+          "lineage_valid": true,
+          "spica_id": "spica-f2c0d3e8",
+          "generation": 0
+        }
+      }
+    ]
+  },
+  "completed_at": "2025-10-26T21:53:30.816810+00:00"
+}

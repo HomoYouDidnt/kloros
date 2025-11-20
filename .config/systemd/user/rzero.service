@@ -1,0 +1,16 @@
+[Unit]
+Description=RZERO Orchestrator (user)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/kloros/kloros_rzero_suite
+Environment=RZERO_JOBS_DIR=/opt/kloros/kloros_rzero_suite/rzero/jobs
+Environment=RZERO_RUNS_DIR=/opt/kloros/runs
+Environment=RZERO_CONCURRENCY=2
+ExecStart=/usr/local/bin/rzero serve --jobs-dir=${RZERO_JOBS_DIR} --runs-root=${RZERO_RUNS_DIR} --concurrency=${RZERO_CONCURRENCY}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

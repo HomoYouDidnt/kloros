@@ -1,0 +1,16 @@
+# === KLoROS E2E Test Harness Configuration ===
+
+# === How to send prompts ===
+ingress_mode = "http"                                    # "http" | "cli"
+ingress_http_url = "http://127.0.0.1:8124/ingest-text"
+ingress_cli_bin = "/usr/local/bin/kloros_text"          # if you go CLI instead
+
+# === Logs ===
+structured_log_glob = "/home/claude_temp/.kloros/logs/kloros-*.jsonl"
+
+# === Timeouts (seconds) ===
+settle_timeout = 10
+probe_timeout = 15
+
+# === Optional artifact paths ===
+ace_bullets_md = "~/.kloros/out/ace_bullets.md"

@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""
+Pre-deployment sanity checks for evolutionary metabolism system.
+
+Verifies:
+1. Telemetry plumbing (drift metrics → observability)
+2. Rollback procedures (legacy daemon recovery)
+3. Resource envelope (shadow mode overhead)
+"""
+
+import json
+import subprocess
+import time
+import sys
+from pathlib import Path
+from typing import Dict, Tuple
+
+
+def check_telemetry_plumbing() -> Tuple[bool, str]:
+    """Verify drift metrics reach observability layer."""
+    print("\n[CHECK 1] Telemetry Plumbing")
+    print("=" * 60)
+
+    metrics_dir = Path("/home/kloros/.kloros/metrics")
+
+    if not metrics_dir.exists():
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        print("⚠️  Metrics directory created")
+
+    test_metric = {
+        "niche": "test_telemetry",
+        "drift": 0.05,
+        "timestamp": time.time(),
+        "test": True
+    }
+
+    test_file = metrics_dir / "niche_health.json"
+    with open(test_file, 'w') as f:
+        json.dump(test_metric, f)
+
+    if test_file.exists():
+        with open(test_file, 'r') as f:
+            data = json.load(f)
+
+        if data.get("test") and data.get("drift") == 0.05:
+            print("✅ Metrics directory writable")
+            print("✅ JSON serialization working")
+            print(f"✅ Metrics path: {test_file}")
+            return True, "Telemetry plumbing operational"
+        else:
+            return False, "Metrics corruption detected"
+    else:
+        return False, "Metrics write failed"
+
+
+def check_rollback_procedures() -> Tuple[bool, str]:
+    """Verify legacy daemon can be restored."""
+    print("\n[CHECK 2] Rollback Procedures")
+    print("=" * 60)
+
+    checks = []
+
+    result = subprocess.run(
+        ["systemctl", "list-units", "--all", "--no-pager"],
+        capture_output=True,
+        text=True
+    )
+
+    legacy_services = [
+        "klr-ledger-writer.service",
+    ]
+
+    found_services = []
+    for service in legacy_services:
+        if service in result.stdout:
+            found_services.append(service)
+            status_result = subprocess.run(
+                ["systemctl", "is-enabled", service],
+                capture_output=True,
+                text=True
+            )
+            status = status_result.stdout.strip()
+            print(f"  {service}: {status}")
+
+    if found_services:
+        checks.append(f"✅ Found {len(found_services)} legacy services")
+    else:
+        checks.append("⚠️  No legacy services found (expected for initial deployment)")
+
+    wrapper_dir = Path("/home/kloros/src/zooids/wrappers")
+    if wrapper_dir.exists():
+        wrappers = list(wrapper_dir.glob("*.py"))
+        checks.append(f"✅ {len(wrappers)} wrapper zooids available")
+        print(f"  Wrapper count: {len(wrappers)}")
+    else:
+        return False, "Wrapper directory missing"
+
+    lineage_dir = Path("/home/kloros/.kloros/lineage")
+    if lineage_dir.exists():
+        checks.append("✅ Lineage tracking directory exists")
+    else:
+        lineage_dir.mkdir(parents=True, exist_ok=True)
+        checks.append("⚠️  Lineage directory created")
+
+    registry = Path("/home/kloros/.kloros/registry/niche_map.json")
+    if registry.exists():
+        checks.append("✅ Registry accessible for rollback state tracking")
+    else:
+        return False, "Registry missing - cannot track state"
+
+    print("\n".join(checks))
+    return True, "Rollback infrastructure verified"
+
+
+def check_resource_envelope() -> Tuple[bool, str]:
+    """Verify shadow mode won't overwhelm system resources."""
+    print("\n[CHECK 3] Resource Envelope")
+    print("=" * 60)
+
+    try:
+        import psutil
+    except ImportError:
+        return False, "psutil not installed - cannot measure resources"
+
+    cpu_percent = psutil.cpu_percent(interval=1)
+    memory = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+
+    print(f"  Current CPU: {cpu_percent}%")
+    print(f"  Current Memory: {memory.percent}% ({memory.used // (1024**3)} GB / {memory.total // (1024**3)} GB)")
+    print(f"  Disk Usage: {disk.percent}% ({disk.used // (1024**3)} GB / {disk.total // (1024**3)} GB)")
+
+    checks = []
+
+    if cpu_percent < 70:
+        checks.append(f"✅ CPU headroom available ({100 - cpu_percent:.1f}% free)")
+    else:
+        return False, f"CPU too high ({cpu_percent}%) - may not handle shadow mode"
+
+    if memory.percent < 80:
+        checks.append(f"✅ Memory headroom available ({100 - memory.percent:.1f}% free)")
+    else:
+        return False, f"Memory too high ({memory.percent}%) - may not handle shadow mode"
+
+    if disk.percent < 85:
+        checks.append(f"✅ Disk space available ({100 - disk.percent:.1f}% free)")
+    else:
+        return False, f"Disk too full ({disk.percent}%) - risk of log overflow"
+
+    load = psutil.getloadavg()
+    cores = psutil.cpu_count()
+    load_per_core = load[0] / cores
+
+    print(f"  Load average (1m): {load[0]:.2f} ({load_per_core:.2f} per core)")
+
+    if load_per_core < 0.7:
+        checks.append(f"✅ System load acceptable ({load_per_core:.2f} per core)")
+    else:
+        return False, f"System load too high ({load_per_core:.2f} per core)"
+
+    shadow_overhead = 1.2
+    projected_cpu = cpu_percent * shadow_overhead
+    projected_memory = memory.percent * shadow_overhead
+
+    print(f"\n  Projected shadow mode impact:")
+    print(f"    CPU: {projected_cpu:.1f}%")
+    print(f"    Memory: {projected_memory:.1f}%")
+
+    if projected_cpu < 85 and projected_memory < 90:
+        checks.append(f"✅ Projected overhead acceptable (CPU: {projected_cpu:.1f}%, Mem: {projected_memory:.1f}%)")
+    else:
+        return False, f"Projected overhead too high (CPU: {projected_cpu:.1f}%, Mem: {projected_memory:.1f}%)"
+
+    print("\n".join(checks))
+    return True, "Resource envelope sufficient for shadow mode"
+
+
+def main():
+    print("=" * 60)
+    print("EVOLUTIONARY METABOLISM - PRE-DEPLOYMENT VERIFICATION")
+    print("=" * 60)
+
+    results = []
+
+    checks = [
+        ("Telemetry Plumbing", check_telemetry_plumbing),
+        ("Rollback Procedures", check_rollback_procedures),
+        ("Resource Envelope", check_resource_envelope),
+    ]
+
+    all_passed = True
+
+    for name, check_func in checks:
+        try:
+            passed, message = check_func()
+            results.append((name, passed, message))
+            if not passed:
+                all_passed = False
+        except Exception as e:
+            results.append((name, False, f"Exception: {e}"))
+            all_passed = False
+
+    print("\n" + "=" * 60)
+    print("SUMMARY")
+    print("=" * 60)
+
+    for name, passed, message in results:
+        status = "✅ PASS" if passed else "❌ FAIL"
+        print(f"{status} - {name}")
+        print(f"      {message}")
+
+    print("\n" + "=" * 60)
+
+    if all_passed:
+        print("✅ ALL CHECKS PASSED")
+        print("\nSystem ready for Cohort 1 deployment:")
+        print("  - maintenance_housekeeping")
+        print("  - observability_logging")
+        print("\nNext steps:")
+        print("  1. Spawn v0 wrappers to DORMANT")
+        print("  2. Run two-track PHASE testing")
+        print("  3. Monitor for 3 successful cycles")
+        print("  4. Promote to ACTIVE with shadow mode")
+        return 0
+    else:
+        print("❌ SOME CHECKS FAILED")
+        print("\nResolve issues before deployment:")
+        for name, passed, message in results:
+            if not passed:
+                print(f"  - {name}: {message}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

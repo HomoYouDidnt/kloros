@@ -1,0 +1,5 @@
+{"type": "RUNTIME_MISMATCH", "rule_id": "SPEC-004", "description": "phase_report.jsonl must contain required fields per contract", "missing_fields": ["start_time", "end_time", "memory_mb"]}
+{"type": "RUNTIME_MISMATCH", "rule_id": "SPEC-005", "description": "fitness.json must contain decision and score fields", "missing_fields": ["run_id", "fitness_score"]}
+{"type": "RUNTIME_MISMATCH", "service": "phase-heuristics", "description": "Required service phase-heuristics not active", "expected": "active", "actual": "inactive"}
+{"type": "CONFIG_VIOLATION", "path_name": "capabilities_registry", "description": "Path mismatch: config vs invariants", "expected": "/home/kloros/src/registry/capabilities.yaml", "actual": null}
+{"type": "CONFIG_VIOLATION", "path_name": "loop_config", "description": "Path mismatch: config vs invariants", "expected": "/home/kloros/kloros_loop/loop.yaml", "actual": null}

@@ -1,0 +1,99 @@
+{
+  "findings": [
+    {
+      "rule": "anti_fabrication",
+      "artifact": "phase_report.jsonl",
+      "pass": true,
+      "evidence": "exists, 572B"
+    },
+    {
+      "rule": "anti_fabrication",
+      "artifact": "fitness.json",
+      "pass": true,
+      "evidence": "exists, 431B"
+    },
+    {
+      "rule": "anti_fabrication",
+      "artifact": "fitness_prev_best.txt",
+      "pass": true,
+      "evidence": "exists, 8B"
+    },
+    {
+      "rule": "anti_fabrication",
+      "check": "simulation_language",
+      "pass": true
+    },
+    {
+      "rule": "measurable_evolution",
+      "pass": true,
+      "evidence": "inputs=True, score=True, decision=True, evidence=True"
+    },
+    {
+      "rule": "resource_guardrails",
+      "module": "report_writer.py",
+      "pass": true,
+      "timeout": "5"
+    },
+    {
+      "rule": "resource_guardrails",
+      "module": "fitness_writer.py",
+      "pass": true,
+      "timeout": "10"
+    },
+    {
+      "rule": "resource_guardrails",
+      "module": "promoter.py",
+      "pass": true,
+      "timeout": "5"
+    },
+    {
+      "rule": "banned_utilities",
+      "pass": true,
+      "evidence": "clean"
+    },
+    {
+      "rule": "pytest_config",
+      "pass": true
+    },
+    {
+      "rule": "systemd_controls",
+      "service": "dream-domains",
+      "pass": true
+    },
+    {
+      "rule": "systemd_controls",
+      "service": "dream-background",
+      "pass": true
+    },
+    {
+      "rule": "systemd_controls",
+      "service": "phase-heuristics",
+      "pass": true
+    },
+    {
+      "rule": "structured_logging",
+      "pass": true
+    },
+    {
+      "rule": "structured_logging",
+      "module": "report_writer.py",
+      "pass": true,
+      "emit_calls": 6
+    },
+    {
+      "rule": "structured_logging",
+      "module": "fitness_writer.py",
+      "pass": true,
+      "emit_calls": 14
+    },
+    {
+      "rule": "structured_logging",
+      "module": "promoter.py",
+      "pass": true,
+      "emit_calls": 16
+    }
+  ],
+  "passed": 17,
+  "failed": 0,
+  "total": 17
+}

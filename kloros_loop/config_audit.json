@@ -1,0 +1,109 @@
+{
+  "findings": [
+    {
+      "config": "systemd",
+      "service": "dream-domains.service",
+      "pass": true,
+      "directives": [
+        "RuntimeMaxSec",
+        "KillSignal",
+        "TimeoutStopSec",
+        "Restart",
+        "ExecStop"
+      ]
+    },
+    {
+      "config": "systemd",
+      "service": "dream-background.service",
+      "pass": true,
+      "directives": [
+        "RuntimeMaxSec",
+        "KillSignal",
+        "TimeoutStopSec",
+        "Restart",
+        "ExecStop"
+      ]
+    },
+    {
+      "config": "systemd",
+      "service": "phase-heuristics.service",
+      "pass": true,
+      "directives": [
+        "RuntimeMaxSec",
+        "KillSignal",
+        "TimeoutStopSec",
+        "Restart",
+        "ExecStop"
+      ]
+    },
+    {
+      "config": "systemd",
+      "service": "kloros.service",
+      "pass": true,
+      "directives": [
+        "RuntimeMaxSec",
+        "KillSignal",
+        "TimeoutStopSec",
+        "Restart",
+        "ExecStop"
+      ]
+    },
+    {
+      "config": "pytest",
+      "pass": true,
+      "checks": {
+        "parallel": true,
+        "maxfail": true,
+        "quiet": true,
+        "report": true
+      }
+    },
+    {
+      "config": "dream",
+      "pass": true,
+      "banned_utilities": [
+        "stress-ng",
+        "sysbench",
+        "fork-bomb"
+      ],
+      "budgets": {
+        "max_runtime_sec": 600,
+        "cpu_cap_pct": 90,
+        "memory_cap_gb": 8,
+        "gpu_cap_mb": 4096
+      }
+    },
+    {
+      "config": "phase",
+      "pass": true,
+      "weight_capping": {
+        "min": 0.1,
+        "max": 0.5
+      },
+      "phase_types": [
+        "LIGHT",
+        "DEEP",
+        "REM"
+      ]
+    },
+    {
+      "config": "capabilities",
+      "pass": true,
+      "total_modules": 16,
+      "required_modules_present": true
+    },
+    {
+      "config": "paths",
+      "pass": true,
+      "paths": {
+        "phase_reports": "/home/kloros/kloros_loop/phase_report.jsonl",
+        "fitness_scores": "/home/kloros/kloros_loop/fitness.json",
+        "structured_log": "/var/log/kloros/structured.jsonl",
+        "structured_log_fallback": "/home/kloros/.kloros/logs/structured.jsonl"
+      }
+    }
+  ],
+  "passed": 9,
+  "failed": 0,
+  "total": 9
+}

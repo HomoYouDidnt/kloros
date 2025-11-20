@@ -1,0 +1,58 @@
+{
+  "cpu": {
+    "interval": 15,
+    "priority": "high",
+    "enabled": true,
+    "apply_best": false,
+    "description": "CPU governor and performance optimization"
+  },
+  "gpu": {
+    "interval": 30,
+    "priority": "medium",
+    "enabled": true,
+    "apply_best": false,
+    "description": "GPU compute and LLM inference optimization"
+  },
+  "audio": {
+    "interval": 20,
+    "priority": "critical",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Audio pipeline and xrun minimization"
+  },
+  "memory": {
+    "interval": 60,
+    "priority": "low",
+    "enabled": true,
+    "apply_best": false,
+    "description": "DDR5 timing and stability optimization"
+  },
+  "storage": {
+    "interval": 120,
+    "priority": "low",
+    "enabled": true,
+    "apply_best": false,
+    "description": "NVMe/SATA I/O performance tuning"
+  },
+  "asr_tts": {
+    "interval": 45,
+    "priority": "high",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Speech recognition and TTS accuracy"
+  },
+  "power_thermal": {
+    "interval": 10,
+    "priority": "critical",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Power limits and thermal management"
+  },
+  "os_scheduler": {
+    "interval": 90,
+    "priority": "medium",
+    "enabled": true,
+    "apply_best": false,
+    "description": "Kernel scheduler and VM tuning"
+  }
+}

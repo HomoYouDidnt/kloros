@@ -1,0 +1,262 @@
+## KLoROS Configuration
+
+# Cognitive modes (light/standard/thunderdome)
+modes:
+  light:
+    ace: true
+    agentflow: true
+    budgets:
+      latency_ms: 2000
+      tool_calls: 2
+      tokens: 1200
+
+  standard:
+    ace: true
+    agentflow: true
+    budgets:
+      latency_ms: 5000
+      tool_calls: 4
+      tokens: 3500
+
+  thunderdome:
+    ace: true
+    agentflow: true
+    d_ream_generations: 3
+    budgets:
+      latency_ms: 9000
+      tool_calls: 7
+      tokens: 6000
+
+# AgentFlow configuration
+agentflow:
+  reward_weights:
+    cost: 0.02
+    safety: 1.0
+    verifier_agree: 0.3
+  flow_grpo:
+    batch_episodes: 16
+    clip_adv: 1.0
+    group_norm: true
+    lr: 0.00002
+
+# ACE (Agentic Context Engineering)
+ace:
+  k_retrieve: 12
+  max_bullets_per_domain: 24
+  max_bullets_per_task: 8
+  dedupe_cosine: 0.88
+  quarantine_risky_bullets: true
+  min_evidence_score: 0.6
+
+# ChromaDB persistence
+chroma:
+  persist_dir: "~/.kloros/chroma_data"
+  embedder: "nomic-ai/nomic-embed-text-v1.5"
+
+# PETRI (Petri-net Execution, Testing, Risk Isolation)
+petri:
+  enabled: true
+  risk_threshold: 0.3           # Risk score threshold to trigger PETRI checks
+  telemetry_enabled: true       # Log reports and incidents
+  policy:
+    fail_any_probe: true        # Conservative: any probe failure = unsafe
+    risk_ceiling: 0.99          # Maximum acceptable total risk
+    block_high_risk: true       # Block tools with risk >= 1.0
+  sandbox:
+    cpu_seconds: 5              # CPU time limit for sandboxed execution
+    mem_mb: 512                 # Memory limit in MB
+    allow_net_default: false    # Network access disabled by default
+  probes:
+    - ArgumentValidationProbe
+    - FilesystemPolicyProbe
+    - NetworkPolicyProbe
+    - ToolAllowlistProbe
+    - CommandInjectionProbe
+    - ResourceLimitProbe
+
+# RA³ (Reasoning as Action Abstractions)
+ra3:
+  enabled: true
+  fallback_threshold: 0.55      # Confidence threshold to use macro (vs primitives)
+  library_id: "kloros_seed_v1"  # Macro library to use
+  budgets:
+    default_latency_ms: 4000
+    default_tool_calls: 4
+    default_tokens: 3500
+  policy:
+    prefer_high_success: true   # Prefer macros with high success rates
+    min_uses_for_stats: 3       # Minimum executions before using stats
+  telemetry:
+    enabled: true
+    log_traces: true
+
+# D-REAM (Distributed Reasoning via Evolutionary Adaptation & Mutation)
+dream:
+  enabled: false                    # Enable evolutionary optimization (CPU intensive)
+  evolution:
+    population_size: 20             # Number of genomes per generation
+    elite_size: 3                   # Top genomes preserved each generation
+    mutation_rate: 0.3              # Base probability of mutation
+    tournament_size: 3              # Tournament selection size
+    generations_per_cycle: 5        # Generations to evolve before deploying best
+  flow_grpo:
+    learning_rate: 0.1              # Step size for policy updates
+    baseline_momentum: 0.9          # EMA momentum for baseline tracking
+    clip_ratio: 0.2                 # PPO-style clipping for stability
+    value_weight: 0.5               # Weight for value function
+  fitness_weights:
+    success: 0.6                    # Task success rate
+    latency: -0.2                   # Latency penalty (negative = lower is better)
+    tokens: -0.1                    # Token cost penalty
+    safety: -0.7                    # Safety incident penalty (strong)
+    verifier: 0.3                   # Verifier quality score
+    user: 0.4                       # User feedback score
+  telemetry:
+    enabled: true
+    log_populations: true           # Save population snapshots
+    persist_dir: "~/.kloros/dream_data"
+
+# Governance (Action Escrow & Policy)
+governance:
+  enabled: true
+  escrow_queue_path: "~/.kloros/escrow_queue.jsonl"
+  policy:
+    allow_net: ["https://*"]
+    deny_net: []
+    deny_fs_globs:
+      - "**/*.key"
+      - "**/.env"
+      - "**/*token*"
+      - "**/*secret*"
+      - "**/*password*"
+      - "**/.ssh/*"
+      - "**/id_rsa*"
+      - "**/credentials*"
+    tool_allowlist: []              # Empty = all allowed
+    tool_denylist: []
+    max_risk_auto: 0.5              # Auto-approve below this risk
+    max_risk_escrow: 0.9            # Escrow between this and auto threshold
+
+# Resource Limits (SPICA spawn protection)
+resource_limits:
+  spica:
+    max_instances: 10               # Maximum concurrent SPICA instances (8 for tournament + 2 buffer)
+    max_spawns_per_hour: 3          # Maximum spawn rate (per hour)
+    min_disk_space_gb: 20           # Minimum free disk space required (GB)
+    circuit_breaker_threshold: 3    # Consecutive failures before circuit opens
+    circuit_recovery_seconds: 300   # Circuit breaker recovery time (5 minutes)
+
+# Semantic Cache
+cache:
+  enabled: true
+  cache_path: "~/.kloros/semantic_cache.jsonl"
+  max_age_seconds: 86400            # 24 hours
+  invalidate_on_source_change: true
+
+# Uncertainty Quantification
+uncertainty:
+  enabled: true
+  confidence_estimator:
+    base_confidence: 0.5
+    weight_agreement: 0.25
+    weight_retrieval: 0.20
+    weight_contradictions: -0.30
+    weight_length: -0.10
+    weight_verifier: 0.35
+  thresholds:
+    clarify: 0.6                    # Ask clarifying questions below this
+    advanced_reasoning: 0.5         # Use ToT/TUMIX below this
+
+# Tool Evolution (ToolForge)
+toolforge:
+  enabled: false                    # Enable tool synthesis and evolution
+  workspace_dir: "~/.kloros/toolforge"
+  synthesis:
+    auto_generate_tests: true
+    static_checks: true             # Run mypy/ruff/bandit
+    dependency_allowlist: []
+  petri_harness:
+    timeout_ms: 2000
+    max_retries: 3
+    fuzz_iterations: 100
+  canary:
+    shadow_traffic_pct: 0.05        # 5% shadow traffic
+    min_success_delta_pp: 3.0       # Minimum +3pp success improvement
+    max_latency_delta_pct: 5.0      # Maximum +5% latency regression
+    max_incidents: 0                # Zero tolerance for safety incidents
+    min_samples: 100                # Minimum samples for promotion
+  promotion:
+    auto_promote: false             # Require manual approval
+    rollback_on_incident: true
+
+# Enhanced RAG (Hybrid Retrieval + Self-RAG)
+rag:
+  enabled: true
+  hybrid:
+    enabled: true                   # Use hybrid BM25 + vector retrieval
+    k_vec: 12                       # Vector search results
+    k_bm25: 50                      # BM25 search results
+    rrf_k: 60                       # Reciprocal rank fusion constant
+    top_k: 6                        # Final number of chunks
+    diversity_per_doc: 2            # Max chunks per document
+  reranking:
+    enabled: true
+    model: null                     # null = heuristic, or 'cross-encoder/ms-marco-MiniLM-L-6-v2'
+    top_k: 6                        # Results after reranking
+  embeddings:
+    model: "nomic-ai/nomic-embed-text-v1.5"
+    batch_size: 32
+    truncate_dim: null              # null = full dimension
+    cache_queries: true
+    cache_size: 1000
+  bm25:
+    k1: 1.5                         # Term frequency saturation
+    b: 0.75                         # Length normalization
+  self_rag:
+    enabled: true                   # Enable self-RAG for system queries
+    allowed_roots:
+      - "~/.kloros"
+      - "/home/kloros/src"
+      - "/home/kloros"
+    include_live_state: true        # Include system status
+    max_file_size: 131072           # 128KB limit per file
+    redact_secrets: true
+
+# Brainmods (Advanced Cognitive Enhancements)
+brainmods:
+  enabled: true
+  tot_search:
+    enabled: true                   # Tree of Thought search
+    beam_width: 3                   # Beam search width
+    max_depth: 3                    # Maximum search depth
+    strategy: "beam"                # "beam" or "mcts"
+  debate:
+    enabled: true                   # Multi-agent debate
+    rounds: 1                       # Debate rounds
+    use_consensus: false            # Use consensus mode
+  voi:
+    enabled: true                   # Value of Information estimation
+    cost_weight: 1.0                # Weight for cost in VOI
+    risk_weight: 0.5                # Weight for risk in VOI
+    threshold: 0.0                  # Minimum VOI to proceed
+  mode_router:
+    enabled: true                   # Cognitive mode routing
+    adapt: true                     # Learn from outcomes
+    hard_keywords:
+      - "prove"
+      - "optimize"
+      - "formal"
+      - "api design"
+      - "security"
+      - "theorem"
+      - "architecture"
+  safety_value:
+    enabled: true                   # Safety value learning
+    model: "frequentist"            # "frequentist" or "bayesian"
+    risk_threshold: 0.3             # Maximum acceptable risk
+    min_executions: 3               # Minimum samples for learning
+  provenance:
+    enabled: true                   # Provenance tracking
+    track_sources: true             # Track source documents
+    track_decisions: true           # Track decisions
+    max_lineage_depth: 10           # Maximum trace depth
