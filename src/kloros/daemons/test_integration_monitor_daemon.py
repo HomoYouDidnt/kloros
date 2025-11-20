@@ -200,8 +200,11 @@ class BrokenComponent:
 
         mock_pub_instance.emit.assert_called()
 
+        # Verify keyword arguments (new API uses kwargs, not positional args)
         call_args = mock_pub_instance.emit.call_args
-        self.assertEqual(call_args[0][0], 'curiosity.integration_question')
+        self.assertEqual(call_args.kwargs['signal'], 'curiosity.integration_question')
+        self.assertEqual(call_args.kwargs['ecosystem'], 'curiosity')
+        self.assertIn('facts', call_args.kwargs)
 
     def test_state_save_and_load(self):
         from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon

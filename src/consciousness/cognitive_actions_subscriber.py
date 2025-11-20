@@ -63,29 +63,85 @@ class CognitiveActionHandler:
             self.memory_store = None
 
         try:
-            from memory.chroma_client import get_client, init_collections, get_embedder
-            from memory.conversation_logger import ConversationLogger
+            from memory.qdrant_conversation_logger import QdrantConversationLogger
+            import os
+            from pathlib import Path
 
-            client = get_client()
-            embedder = get_embedder()
-            collections = init_collections(client, embedder)
-            self.conversation_logger = ConversationLogger(client, collections)
-            print("[cognitive_actions] Initialized ConversationLogger for ChromaDB")
+            try:
+                from qdrant_client import QdrantClient
+                HAS_QDRANT = True
+            except ImportError:
+                HAS_QDRANT = False
+
+            if HAS_QDRANT:
+                server_url = os.getenv('KLR_QDRANT_URL', None)
+
+                if server_url is None:
+                    try:
+                        import tomllib
+                        config_path = Path("/home/kloros/config/models.toml")
+                        if config_path.exists():
+                            with open(config_path, "rb") as f:
+                                config = tomllib.load(f)
+                            server_url = config.get("vector_store", {}).get("server_url", None)
+                    except Exception:
+                        pass
+
+                if server_url:
+                    client = QdrantClient(url=server_url)
+                else:
+                    qdrant_dir = os.getenv('KLOROS_QDRANT_DIR', '/home/kloros/.kloros/qdrant_data')
+                    os.makedirs(qdrant_dir, exist_ok=True)
+                    client = QdrantClient(path=qdrant_dir)
+
+                self.conversation_logger = QdrantConversationLogger(client, collection_prefix="kloros")
+                print("[cognitive_actions] Initialized QdrantConversationLogger for Qdrant")
+            else:
+                print("[cognitive_actions] Warning: qdrant-client not installed")
+                self.conversation_logger = None
         except ImportError:
             try:
-                from src.memory.chroma_client import get_client, init_collections, get_embedder
-                from src.memory.conversation_logger import ConversationLogger
+                from src.memory.qdrant_conversation_logger import QdrantConversationLogger
+                import os
+                from pathlib import Path
 
-                client = get_client()
-                embedder = get_embedder()
-                collections = init_collections(client, embedder)
-                self.conversation_logger = ConversationLogger(client, collections)
-                print("[cognitive_actions] Initialized ConversationLogger for ChromaDB")
+                try:
+                    from qdrant_client import QdrantClient
+                    HAS_QDRANT = True
+                except ImportError:
+                    HAS_QDRANT = False
+
+                if HAS_QDRANT:
+                    server_url = os.getenv('KLR_QDRANT_URL', None)
+
+                    if server_url is None:
+                        try:
+                            import tomllib
+                            config_path = Path("/home/kloros/config/models.toml")
+                            if config_path.exists():
+                                with open(config_path, "rb") as f:
+                                    config = tomllib.load(f)
+                                server_url = config.get("vector_store", {}).get("server_url", None)
+                        except Exception:
+                            pass
+
+                    if server_url:
+                        client = QdrantClient(url=server_url)
+                    else:
+                        qdrant_dir = os.getenv('KLOROS_QDRANT_DIR', '/home/kloros/.kloros/qdrant_data')
+                        os.makedirs(qdrant_dir, exist_ok=True)
+                        client = QdrantClient(path=qdrant_dir)
+
+                    self.conversation_logger = QdrantConversationLogger(client, collection_prefix="kloros")
+                    print("[cognitive_actions] Initialized QdrantConversationLogger for Qdrant")
+                else:
+                    print("[cognitive_actions] Warning: qdrant-client not installed")
+                    self.conversation_logger = None
             except Exception as e:
-                print(f"[cognitive_actions] Warning: Could not initialize ConversationLogger: {e}")
+                print(f"[cognitive_actions] Warning: Could not initialize QdrantConversationLogger: {e}")
                 self.conversation_logger = None
         except Exception as e:
-            print(f"[cognitive_actions] Warning: Could not initialize ConversationLogger: {e}")
+            print(f"[cognitive_actions] Warning: Could not initialize QdrantConversationLogger: {e}")
             self.conversation_logger = None
 
     def _verify_episodic_storage(self, event_id: Optional[int], operation: str) -> bool:
@@ -576,6 +632,290 @@ class CognitiveActionHandler:
             self.log_action('archive_tasks', f'Failed: {e}')
             return False
 
+    def throttle_investigations(self, facts: Dict[str, Any], evidence: List[str]) -> bool:
+        """
+        Throttle investigation consumer to reduce resource usage.
+
+        Triggered by AFFECT_MEMORY_PRESSURE when system resources are critical.
+        Emits INVESTIGATION_THROTTLE_REQUEST signal to reduce concurrency.
+
+        Args:
+            facts: Signal facts (memory stats, thread count, etc.)
+            evidence: Evidence about memory pressure
+
+        Returns:
+            True if throttle signal emitted
+        """
+        self._log_operation_start('throttle_investigations', {'facts': facts, 'evidence': evidence})
+
+        try:
+            from kloros.orchestration.chem_bus_v2 import ChemPub
+            chem_pub = ChemPub()
+
+            thread_count = facts.get('thread_count', 0)
+            swap_used_mb = facts.get('swap_used_mb', 0)
+            memory_used_pct = facts.get('memory_used_pct', 0)
+
+            print(f"  Emitting throttle request: threads={thread_count}, swap={swap_used_mb}MB, mem={memory_used_pct}%")
+
+            chem_pub.emit(
+                signal="INVESTIGATION_THROTTLE_REQUEST",
+                ecosystem="orchestration",
+                intensity=2.0,
+                facts={
+                    "reason": "Critical memory pressure detected",
+                    "thread_count": thread_count,
+                    "swap_used_mb": swap_used_mb,
+                    "memory_used_pct": memory_used_pct,
+                    "requested_concurrency": 1,
+                    "evidence": evidence
+                }
+            )
+
+            chem_pub.close()
+            self._log_operation_end('throttle_investigations', True, f'Throttle requested: concurrency=1')
+            self.log_action('throttle_investigations', f'Requested concurrency reduction due to memory pressure')
+            print(f"  ✓ Throttle signal emitted successfully")
+            return True
+
+        except Exception as e:
+            print(f"  Failed to emit throttle signal: {e}")
+            import traceback
+            traceback.print_exc()
+            self._log_operation_end('throttle_investigations', False, str(e))
+            self.log_action('throttle_investigations', f'Failed: {e}')
+            return False
+
+    def optimize_performance(self, facts: Dict[str, Any], evidence: List[str]) -> bool:
+        """
+        Analyze system performance and apply autonomous optimizations.
+
+        Triggered by AFFECT_RESOURCE_STRAIN when system is under moderate pressure.
+        Analyzes current resource usage, generates improvement proposals, and emits
+        optimization signals that other systems can act on.
+
+        Args:
+            facts: Signal facts (memory stats, thread count, failure rates, etc.)
+            evidence: Evidence about resource strain
+
+        Returns:
+            True if optimization analysis completed
+        """
+        self._log_operation_start('optimize_performance', {'facts': facts, 'evidence': evidence})
+
+        try:
+            from pathlib import Path
+            import json
+            from dream.improvement_proposer import ImprovementProposer, ImprovementProposal
+            from kloros.orchestration.chem_bus_v2 import ChemPub
+
+            print(f"  🔍 Analyzing system performance for optimization opportunities...")
+
+            thread_count = facts.get('thread_count', 0)
+            swap_used_mb = facts.get('swap_used_mb', 0)
+            memory_used_pct = facts.get('memory_used_pct', 0)
+            investigation_failure_rate = facts.get('investigation_failure_rate', 0)
+
+            print(f"    Current state: threads={thread_count}, swap={swap_used_mb:.0f}MB, "
+                  f"mem={memory_used_pct:.1f}%, inv_failures={investigation_failure_rate:.1%}")
+
+            proposer = ImprovementProposer()
+            chem_pub = ChemPub()
+
+            actions_emitted = 0
+
+            if swap_used_mb > 10000 or memory_used_pct > 70:
+                print(f"  🎯 Direct detection: High memory pressure detected!")
+                print(f"    swap={swap_used_mb:.0f}MB, mem={memory_used_pct:.1f}%")
+
+                try:
+                    from consciousness.skill_executor import SkillExecutor
+                    from consciousness.skill_auto_executor import SkillAutoExecutor
+
+                    problem_context = {
+                        'description': f'Memory pressure: {swap_used_mb:.0f}MB swap, {memory_used_pct:.1f}% RAM',
+                        'evidence': {
+                            'swap_used_mb': swap_used_mb,
+                            'memory_used_pct': memory_used_pct,
+                            'thread_count': thread_count
+                        },
+                        'metrics': {
+                            'thread_count': thread_count,
+                            'swap_used_mb': swap_used_mb,
+                            'memory_used_pct': memory_used_pct,
+                            'investigation_failure_rate': investigation_failure_rate
+                        }
+                    }
+
+                    print(f"    → Loading skill: memory-optimization")
+                    executor = SkillExecutor()
+                    auto_executor = SkillAutoExecutor()
+
+                    from consciousness.skill_tracker import SkillTracker
+                    tracker = SkillTracker()
+                    effectiveness = tracker.get_skill_effectiveness('memory-optimization', 'performance')
+
+                    if effectiveness['total_executions'] > 0:
+                        print(f"    → Past performance: {effectiveness['success_rate']:.0%} success rate "
+                              f"({effectiveness['successes']} successes, {effectiveness['failures']} failures)")
+
+                        if effectiveness['success_rate'] < 0.3 and effectiveness['total_executions'] >= 2:
+                            print(f"    ⚠️  This skill has low success rate - including failure context in prompt")
+                            problem_context['past_failures'] = {
+                                'skill': 'memory-optimization',
+                                'attempts': effectiveness['total_executions'],
+                                'success_rate': effectiveness['success_rate'],
+                                'note': 'Previous attempts at memory-optimization have not been effective. Consider alternative approaches or escalate to manual intervention.'
+                            }
+
+                    tracker.close()
+
+                    plan = executor.execute_skill('memory-optimization', problem_context)
+
+                    if plan:
+                        print(f"    → Generated action plan: Phase={plan.phase}, Confidence={plan.confidence}")
+                        print(f"    → {len(plan.actions)} actions planned")
+
+                        if auto_executor.can_auto_execute('memory-optimization'):
+                            print(f"    → 🤖 Auto-executing skill (safe, low-risk)")
+                            result = auto_executor.execute_plan(plan, auto_execute=True)
+
+                            if result:
+                                print(f"    → ✓ Auto-execution completed: {result.outcome}")
+                                print(f"    → Improvement: {result.improvement:.1%}")
+                                actions_emitted += 1
+                            else:
+                                print(f"    → ✗ Auto-execution failed or not allowed")
+                        else:
+                            print(f"    → Manual approval required")
+                    else:
+                        print(f"    ✗ Failed to generate skill plan")
+
+                except Exception as e:
+                    print(f"    ✗ Direct skill execution error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            print(f"  📊 Running fresh performance analysis...")
+            proposals = proposer.analyze_system_health()
+
+            if not proposals:
+                print(f"  ✓ No optimization opportunities identified - system healthy")
+                self._log_operation_end('optimize_performance', True, 'System healthy')
+                chem_pub.close()
+                return True
+
+            critical = [p for p in proposals if p.priority == 'critical']
+            high = [p for p in proposals if p.priority == 'high']
+
+            print(f"  📌 Found {len(critical)} critical, {len(high)} high priority issues")
+
+            for proposal in proposals:
+                proposer.submit_proposal(proposal)
+
+            for proposal in critical[:3] + high[:2]:
+                print(f"  🎯 Issue [{proposal.priority}]: {proposal.description[:70]}...")
+
+                skill_name = None
+                if proposal.issue_type == 'performance' and 'memory' in proposal.description.lower():
+                    skill_name = 'memory-optimization'
+                elif proposal.issue_type == 'performance' and 'swap' in proposal.description.lower():
+                    skill_name = 'memory-optimization'
+                elif proposal.issue_type == 'reliability' and 'stuck' in proposal.description.lower():
+                    skill_name = 'systematic-debugging'
+
+                if skill_name:
+                    try:
+                        from consciousness.skill_executor import SkillExecutor, SkillExecutionPlan
+                        from consciousness.skill_auto_executor import SkillAutoExecutor
+                        from dataclasses import asdict
+
+                        print(f"    → Loading skill: {skill_name}")
+                        executor = SkillExecutor()
+                        auto_executor = SkillAutoExecutor()
+
+                        problem_context = {
+                            'description': proposal.description,
+                            'evidence': proposal.evidence if hasattr(proposal, 'evidence') else {},
+                            'metrics': {
+                                'thread_count': thread_count,
+                                'swap_used_mb': swap_used_mb,
+                                'memory_used_pct': memory_used_pct,
+                                'investigation_failure_rate': investigation_failure_rate
+                            }
+                        }
+
+                        plan = executor.execute_skill(skill_name, problem_context)
+
+                        if plan:
+                            print(f"    → Generated action plan: Phase={plan.phase}, Confidence={plan.confidence}")
+                            print(f"    → {len(plan.actions)} actions planned")
+
+                            if auto_executor.can_auto_execute(skill_name):
+                                print(f"    → 🤖 Auto-executing skill (safe, low-risk)")
+                                result = auto_executor.execute_plan(plan, auto_execute=True)
+
+                                if result:
+                                    print(f"    → ✓ Auto-execution completed: {result.outcome}")
+                                    print(f"    → Improvement: {result.improvement:.1%}")
+                                    actions_emitted += 1
+                                else:
+                                    print(f"    → ✗ Auto-execution failed or not allowed")
+                            else:
+                                print(f"    → Manual approval required - emitting plan")
+                                chem_pub.emit(
+                                    signal="SKILL_EXECUTION_PLAN",
+                                    ecosystem="consciousness",
+                                    intensity=2.0,
+                                    facts={
+                                        "skill_name": skill_name,
+                                        "problem": proposal.description,
+                                        "plan": asdict(plan),
+                                        "auto_execute": False
+                                    }
+                                )
+                                actions_emitted += 1
+                        else:
+                            print(f"    ✗ Failed to generate skill plan")
+
+                    except Exception as e:
+                        print(f"    ✗ Skill execution error: {e}")
+
+                if proposal.issue_type == 'performance' and 'swap' in proposal.description.lower():
+                    print(f"    → Also emitting OPTIMIZE_MEMORY_USAGE signal")
+                    chem_pub.emit(
+                        signal="OPTIMIZE_MEMORY_USAGE",
+                        ecosystem="consciousness",
+                        intensity=2.0,
+                        facts={
+                            "reason": proposal.description,
+                            "swap_used_mb": swap_used_mb,
+                            "memory_used_pct": memory_used_pct,
+                            "recommendations": ["reduce_investigation_concurrency", "clear_caches"]
+                        }
+                    )
+                    actions_emitted += 1
+
+            if investigation_failure_rate > 0.3:
+                print(f"  ⚠️  High investigation failure rate detected ({investigation_failure_rate:.1%})")
+                print(f"    → Already throttled by AFFECT_MEMORY_PRESSURE")
+
+            result_msg = f'Analyzed {len(proposals)} issues, emitted {actions_emitted} optimization signals (threads={thread_count}, swap={swap_used_mb:.0f}MB, mem={memory_used_pct:.1f}%)'
+
+            self._log_operation_end('optimize_performance', True, result_msg)
+            self.log_action('optimize_performance', result_msg)
+            print(f"  ✓ Performance optimization analysis complete")
+            chem_pub.close()
+            return True
+
+        except Exception as e:
+            print(f"  ✗ Failed to optimize performance: {e}")
+            import traceback
+            traceback.print_exc()
+            self._log_operation_end('optimize_performance', False, str(e))
+            self.log_action('optimize_performance', f'Failed: {e}')
+            return False
+
     def _get_completed_tasks(self, days: int = 7) -> List[Dict[str, Any]]:
         """
         Retrieve completed tasks from consciousness history.
@@ -1063,7 +1403,13 @@ def handle_memory_pressure(msg: dict):
         for action_text in autonomous_actions:
             action_lower = action_text.lower()
 
-            if 'summarize' in action_lower and 'context' in action_lower:
+            if 'throttle' in action_lower and 'investigation' in action_lower:
+                if handler.can_execute_action('throttle_investigations'):
+                    handler.throttle_investigations(facts, evidence)
+                else:
+                    print(f"  ⏭️  Skipping (cooldown): {action_text}")
+
+            elif 'summarize' in action_lower and 'context' in action_lower:
                 if handler.can_execute_action('summarize_context'):
                     handler.summarize_context(evidence)
                 else:
@@ -1072,6 +1418,12 @@ def handle_memory_pressure(msg: dict):
             elif 'archive' in action_lower and 'task' in action_lower:
                 if handler.can_execute_action('archive_tasks'):
                     handler.archive_completed_tasks(evidence)
+                else:
+                    print(f"  ⏭️  Skipping (cooldown): {action_text}")
+
+            elif 'optimize' in action_lower and 'performance' in action_lower:
+                if handler.can_execute_action('optimize_performance'):
+                    handler.optimize_performance(facts, evidence)
                 else:
                     print(f"  ⏭️  Skipping (cooldown): {action_text}")
 
@@ -1145,6 +1497,42 @@ def handle_task_failure_pattern(msg: dict):
         print(f"[cognitive_actions] Error handling TASK_FAILURE_PATTERN: {e}")
 
 
+def handle_resource_strain(msg: dict):
+    """
+    Handle AFFECT_RESOURCE_STRAIN signal.
+
+    Resource strain indicates elevated resource usage or investigation failures.
+    Trigger performance optimization analysis and apply improvements.
+
+    Args:
+        msg: JSON message dict from ChemBus
+    """
+    if check_emergency_brake():
+        print("[cognitive_actions] ⏸️  Emergency brake active, skipping action")
+        return
+
+    try:
+        facts = msg.get('facts', {})
+        intensity = msg.get('intensity', 0.0)
+
+        print(f"\n[cognitive_actions] ⚠️  RESOURCE_STRAIN signal (intensity: {intensity:.2f})")
+
+        autonomous_actions = facts.get('autonomous_actions', [])
+        evidence = facts.get('evidence', [])
+
+        for action_text in autonomous_actions:
+            action_lower = action_text.lower()
+
+            if 'optimize' in action_lower and 'performance' in action_lower:
+                if handler.can_execute_action('optimize_performance'):
+                    handler.optimize_performance(facts, evidence)
+                else:
+                    print(f"  ⏭️  Skipping (cooldown): optimize_performance")
+
+    except Exception as e:
+        print(f"[cognitive_actions] Error handling RESOURCE_STRAIN: {e}")
+
+
 def run_daemon():
     """
     Run cognitive actions subscriber daemon.
@@ -1179,6 +1567,14 @@ def run_daemon():
         failure_sub = ChemSub(
             topic="AFFECT_TASK_FAILURE_PATTERN",
             on_json=handle_task_failure_pattern,
+            zooid_name="cognitive_actions",
+            niche="affective_actions"
+        )
+
+        print("[cognitive_actions] Subscribing to AFFECT_RESOURCE_STRAIN...")
+        strain_sub = ChemSub(
+            topic="AFFECT_RESOURCE_STRAIN",
+            on_json=handle_resource_strain,
             zooid_name="cognitive_actions",
             niche="affective_actions"
         )

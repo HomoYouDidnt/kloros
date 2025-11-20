@@ -13,7 +13,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Callable, Optional
 
 import numpy
-import sounddevice
+
+# Optional dependency for audio tools
+try:
+    import sounddevice
+except ImportError:
+    sounddevice = None
 
 # Knowledge base updater
 from src.knowledge_base_updater import get_updater
@@ -1935,6 +1940,74 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[tools] Failed to load capability tools: {e}")
 
+    def reload_capability_tools(self):
+        """
+        Hot-reload capability tools when capabilities.yaml changes.
+
+        This enables zero-downtime integration of newly discovered modules.
+        Tracks existing tools and only loads new ones.
+
+        Returns:
+            Number of newly loaded tools
+        """
+        try:
+            import gc
+            from registry.loader import reload_registry
+
+            # Track tools before reload
+            existing_tools = set(self.tools.keys())
+
+            # Reload the capability registry to pick up new entries
+            reload_registry()
+            logger.info("[tools] Reloaded capability registry")
+
+            # Force garbage collection after module reload to prevent memory leak
+            gc.collect()
+            logger.debug("[tools] Garbage collection after registry reload")
+
+            # Load new capability tools
+            from registry.loader import get_registry
+            registry = get_registry()
+            capabilities = registry.get_enabled_capabilities()
+
+            loaded_count = 0
+            for cap in capabilities:
+                # Only load auto-discovered capabilities
+                if not cap.to_dict().get("auto_discovered", False):
+                    continue
+
+                # Check if we have investigation data for this module
+                callable_interface = self._get_callable_interface(cap.module)
+
+                if not callable_interface:
+                    continue
+
+                # Create tools from callable interface
+                for interface in callable_interface:
+                    tool = self._create_tool_from_interface(
+                        cap_name=cap.name,
+                        interface=interface,
+                        module_path=cap.module
+                    )
+
+                    if tool:
+                        # Only register if this is a new tool
+                        if tool.name not in existing_tools:
+                            self.register(tool)
+                            loaded_count += 1
+                            logger.info(f"[tools] Hot-loaded new capability tool: {tool.name}")
+
+            if loaded_count > 0:
+                logger.info(f"[tools] Hot-reload complete: {loaded_count} new tools loaded")
+            else:
+                logger.debug("[tools] Hot-reload complete: no new tools")
+
+            return loaded_count
+
+        except Exception as e:
+            logger.error(f"[tools] Failed to hot-reload capability tools: {e}")
+            return 0
+
     def _get_callable_interface(self, module_path: str) -> List[Dict]:
         """Get callable interface from investigation results."""
         try:
@@ -1944,6 +2017,9 @@ if __name__ == "__main__":
             if not investigations_file.exists():
                 return []
 
+            # Extract module name from Python import path (e.g., "test_discovery_module.calculator" -> "test_discovery_module")
+            module_name = module_path.split('.')[0] if '.' in module_path else module_path
+
             # Find latest investigation for this module
             with open(investigations_file, 'r') as f:
                 for line in reversed(list(f)):
@@ -1951,7 +2027,10 @@ if __name__ == "__main__":
                         continue
 
                     inv = json.loads(line)
-                    if module_path in inv.get("module_path", ""):
+                    inv_module_name = inv.get("module_name", "")
+
+                    # Match on module name
+                    if module_name == inv_module_name or module_name in inv.get("module_path", ""):
                         return inv.get("callable_interface", [])
 
             return []

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime, timezone
 
-from kloros.orchestration.chem_bus_v2 import ChemPub
+from kloros.orchestration.chem_bus_v2 import ChemPub, ChemSub
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,17 @@ class IntentRouter:
         self.chem_pub = ChemPub()
         self.processed_count = 0
 
+        # Subscribe to Q_RUN_SCANNER signals for direct scanner execution
+        self.scanner_sub = ChemSub(
+            topic="Q_RUN_SCANNER",
+            on_json=self._on_run_scanner_signal,
+            zooid_name="intent_router_scanner",
+            niche="introspection"
+        )
+
         logger.info(f"[intent_router] Initialized with intent_dir={self.intent_dir}")
         logger.info(f"[intent_router] Dead letter queue: {self.dlq_path}")
+        logger.info(f"[intent_router] Subscribed to Q_RUN_SCANNER signals")
 
     def _route_intent(self, intent_file: Path):
         """
@@ -143,6 +152,42 @@ class IntentRouter:
             facts=facts
         )
         logger.info(f"[intent_router] Emitted {signal_type}: {facts.get('question_id', 'unknown')}")
+
+    def _on_run_scanner_signal(self, msg: Dict[str, Any]):
+        """
+        Handle Q_RUN_SCANNER signal by executing scanner subprocess.
+
+        Args:
+            msg: Signal message containing facts dict with 'scanner' field
+        """
+        facts = msg.get('facts', msg)
+        scanner_name = facts.get("scanner")
+
+        if not scanner_name:
+            logger.error(f"[intent_router] Q_RUN_SCANNER signal missing scanner name")
+            return
+
+        logger.info(f"[intent_router] Running scanner from signal: {scanner_name}")
+
+        try:
+            result = subprocess.run(
+                ["/home/kloros/.venv/bin/python3", "-m", f"src.registry.capability_scanners.{scanner_name}_scanner"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd="/home/kloros"
+            )
+
+            if result.returncode != 0:
+                logger.error(f"[intent_router] Scanner {scanner_name} failed: {result.stderr}")
+            else:
+                logger.info(f"[intent_router] Scanner {scanner_name} completed successfully")
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"[intent_router] Scanner {scanner_name} timed out after 60s")
+
+        except Exception as e:
+            logger.error(f"[intent_router] Scanner {scanner_name} execution error: {e}")
 
     def _write_dead_letter(self, intent_file: Path, error: str):
         """

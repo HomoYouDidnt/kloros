@@ -10,9 +10,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 import requests
@@ -33,6 +34,7 @@ except ImportError:
     HAS_QDRANT = False
 
 from .embeddings import get_embedding_engine
+from reasoning.llm_router import get_router, LLMMode
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +62,7 @@ class KnowledgeIndexer:
     def __init__(
         self,
         qdrant_client: QdrantClient,
-        collection_name: str = "kloros_knowledge",
-        llm_model: str = "qwen2.5-coder:14b",
-        llm_url: str = "http://100.67.244.66:11434"
+        collection_name: str = "kloros_knowledge"
     ):
         """
         Initialize knowledge indexer.
@@ -70,8 +70,6 @@ class KnowledgeIndexer:
         Args:
             qdrant_client: QdrantClient instance
             collection_name: Qdrant collection name
-            llm_model: Ollama model for summaries
-            llm_url: Ollama server URL
         """
         if not HAS_QDRANT:
             raise ImportError(
@@ -81,8 +79,7 @@ class KnowledgeIndexer:
 
         self.client = qdrant_client
         self.collection_name = collection_name
-        self.llm_model = llm_model
-        self.llm_url = llm_url.rstrip("/")
+        self.router = get_router()
         self.embedder = get_embedding_engine()
 
         if self.embedder is None:
@@ -174,7 +171,7 @@ class KnowledgeIndexer:
 
     def _generate_summary(self, file_path: Path, content: str, file_type: str) -> str:
         """
-        Generate LLM summary of file content.
+        Generate LLM summary of file content using LLMRouter with fallback.
 
         Args:
             file_path: Path to file
@@ -187,55 +184,44 @@ class KnowledgeIndexer:
         prompt = self._build_summary_prompt(file_path, content, file_type)
 
         try:
-            response = requests.post(
-                f"{self.llm_url}/api/generate",
-                json={
-                    "model": self.llm_model,
-                    "prompt": prompt,
-                    "options": {
-                        "temperature": 0.3,
-                        "num_predict": 500,
-                        "num_gpu": 999,
-                        "main_gpu": 0,
-                    },
-                    "stream": False,
-                },
-                timeout=LLM_TIMEOUT_SECONDS,
+            success, response, source = self.router.query(
+                prompt=prompt,
+                mode=LLMMode.LIVE,
+                prefer_remote=False,
+                stream=False
             )
-            response.raise_for_status()
-            summary = response.json().get("response", "").strip()
 
-            if not summary:
-                logger.warning(f"[knowledge_indexer] Empty summary from LLM for {file_path}")
-                return "[Summary generation failed: empty response]"
-
-            return summary
-
-        except requests.Timeout:
-            logger.error(f"[knowledge_indexer] LLM timeout for {file_path}, retrying once...")
-            try:
-                response = requests.post(
-                    f"{self.llm_url}/api/generate",
-                    json={
-                        "model": self.llm_model,
-                        "prompt": prompt,
-                        "options": {
-                            "temperature": 0.3,
-                            "num_predict": 500,
-                        },
-                        "stream": False,
-                    },
-                    timeout=LLM_RETRY_TIMEOUT_SECONDS,
-                )
-                response.raise_for_status()
-                return response.json().get("response", "[Summary generation failed: timeout]").strip()
-            except Exception as e:
-                logger.error(f"[knowledge_indexer] LLM retry failed for {file_path}: {e}")
-                return "[Summary generation failed: timeout]"
+            if success:
+                summary = response.strip()
+                if summary:
+                    logger.info(f"[knowledge_indexer] Generated summary from {source} for {file_path}")
+                    return summary
+                else:
+                    logger.warning(f"[knowledge_indexer] Empty summary from LLM for {file_path}")
+                    return self._fallback_summary(content)
+            else:
+                logger.warning(f"[knowledge_indexer] LLM query failed: {response}, using fallback")
+                return self._fallback_summary(content)
 
         except Exception as e:
-            logger.error(f"[knowledge_indexer] LLM error for {file_path}: {e}")
-            return f"[Summary generation failed: {type(e).__name__}]"
+            logger.error(f"[knowledge_indexer] LLM error for {file_path}: {e}, using fallback")
+            return self._fallback_summary(content)
+
+    def _fallback_summary(self, content: str, max_chars: int = 500) -> str:
+        """
+        Generate fallback summary from text extraction when LLM is unavailable.
+
+        Args:
+            content: File content
+            max_chars: Maximum characters to extract
+
+        Returns:
+            Fallback summary string
+        """
+        summary = content[:max_chars].strip()
+        if len(content) > max_chars:
+            summary += "..."
+        return summary
 
     def _build_summary_prompt(self, file_path: Path, content: str, file_type: str) -> str:
         """
@@ -281,6 +267,53 @@ Content:
         doc_id_hash = hashlib.sha256(file_path_str.encode()).digest()
         return str(UUID(bytes=doc_id_hash[:16]))
 
+    def _extract_dates(self, content: str) -> Dict[str, Any]:
+        """
+        Extract temporal metadata from document content.
+
+        Looks for common patterns:
+        - **Date:** 2025-11-17
+        - **Last Updated:** 2025-11-07 18:00 EST
+        - **First Autonomous Spawn:** 2025-11-07 18:00:17 EST
+        - created 2025-11-07
+        - (modified: 2025-11-17)
+
+        Args:
+            content: Document text content
+
+        Returns:
+            Dictionary with keys:
+                - document_date: str (primary date, ISO format or None)
+                - last_updated: str (last update date, ISO format or None)
+                - all_dates: List[str] (all dates found in YYYY-MM-DD format)
+                - has_timeline: bool (whether doc contains timeline sections)
+        """
+        dates = {
+            "document_date": None,
+            "last_updated": None,
+            "all_dates": [],
+            "has_timeline": False
+        }
+
+        date_pattern = r'\*\*Date[*:\s]+(\d{4}-\d{2}-\d{2})'
+        match = re.search(date_pattern, content[:2000])
+        if match:
+            dates["document_date"] = match.group(1)
+
+        updated_pattern = r'\*\*Last Updated[*:\s]+(\d{4}-\d{2}-\d{2})'
+        match = re.search(updated_pattern, content[:2000])
+        if match:
+            dates["last_updated"] = match.group(1)
+
+        all_dates_pattern = r'\b(\d{4}-\d{2}-\d{2})\b'
+        all_matches = re.findall(all_dates_pattern, content[:5000])
+        dates["all_dates"] = sorted(list(set(all_matches)))
+
+        if re.search(r'##\s+.*[Tt]imeline', content, re.IGNORECASE):
+            dates["has_timeline"] = True
+
+        return dates
+
     def summarize_and_index(self, file_path: Path) -> Dict[str, Any]:
         """
         Read file, generate summary, index to Qdrant.
@@ -315,6 +348,8 @@ Content:
 
             content, truncated = self._read_file_content(file_path)
 
+            temporal_metadata = self._extract_dates(content)
+
             summary = self._generate_summary(file_path, content, file_type)
 
             embedding = self.embedder.embed(summary)
@@ -334,6 +369,10 @@ Content:
                 "truncated": truncated,
                 "summary_failed": summary.startswith("[Summary generation failed"),
                 "_text": summary,
+                "document_date": temporal_metadata["document_date"],
+                "last_updated": temporal_metadata["last_updated"],
+                "all_dates": temporal_metadata["all_dates"],
+                "has_timeline": temporal_metadata["has_timeline"],
             }
 
             point = PointStruct(
@@ -500,15 +539,21 @@ Content:
         self,
         query: str,
         top_k: int = 5,
-        doc_type_filter: Optional[str] = None
+        doc_type_filter: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        sort_by_date: bool = False
     ) -> List[Dict[str, Any]]:
         """
-        Semantic search in knowledge base.
+        Semantic search in knowledge base with optional temporal filtering.
 
         Args:
             query: Search query text
             top_k: Number of results to return
             doc_type_filter: Optional filter by file_type (e.g., "markdown_doc", "python_file")
+            date_from: Optional start date filter (YYYY-MM-DD format)
+            date_to: Optional end date filter (YYYY-MM-DD format)
+            sort_by_date: If True, sort by document_date instead of similarity (newest first)
 
         Returns:
             List of result dictionaries with keys:
@@ -516,27 +561,50 @@ Content:
                 - summary: str
                 - file_type: str
                 - similarity: float
-                - metadata: dict (all payload fields)
+                - metadata: dict (all payload fields including temporal data)
         """
         try:
             query_embedding = self.embedder.embed(query)
             query_embedding_list = query_embedding.tolist()
 
-            query_filter = None
+            filter_conditions = []
+
             if doc_type_filter:
-                query_filter = Filter(
-                    must=[
-                        FieldCondition(
-                            key="file_type",
-                            match=MatchValue(value=doc_type_filter)
-                        )
-                    ]
+                filter_conditions.append(
+                    FieldCondition(
+                        key="file_type",
+                        match=MatchValue(value=doc_type_filter)
+                    )
                 )
+
+            if date_from:
+                filter_conditions.append(
+                    FieldCondition(
+                        key="document_date",
+                        range={
+                            "gte": date_from
+                        }
+                    )
+                )
+
+            if date_to:
+                filter_conditions.append(
+                    FieldCondition(
+                        key="document_date",
+                        range={
+                            "lte": date_to
+                        }
+                    )
+                )
+
+            query_filter = None
+            if filter_conditions:
+                query_filter = Filter(must=filter_conditions)
 
             results = self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding_list,
-                limit=top_k,
+                limit=top_k * 2 if sort_by_date else top_k,
                 query_filter=query_filter,
                 with_payload=True
             )
@@ -550,29 +618,115 @@ Content:
                     'summary': payload.get('summary', ''),
                     'file_type': payload.get('file_type', 'unknown'),
                     'similarity': hit.score,
+                    'document_date': payload.get('document_date'),
+                    'last_updated': payload.get('last_updated'),
+                    'all_dates': payload.get('all_dates', []),
+                    'has_timeline': payload.get('has_timeline', False),
                     'metadata': payload,
                 })
 
-            logger.info(f"[knowledge_indexer] Search query='{query}' returned {len(formatted_results)} results")
+            if sort_by_date:
+                formatted_results.sort(
+                    key=lambda x: x.get('document_date') or x.get('last_updated') or '0000-00-00',
+                    reverse=True
+                )
+                formatted_results = formatted_results[:top_k]
+
+            logger.info(f"[knowledge_indexer] Search query='{query}' date_range={date_from or 'any'} to {date_to or 'any'} returned {len(formatted_results)} results")
             return formatted_results
 
         except Exception as e:
             logger.error(f"[knowledge_indexer] Search error for query '{query}': {e}")
             return []
 
+    def build_timeline(
+        self,
+        query: str = "",
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        doc_type: Optional[str] = "markdown_doc",
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Build chronological timeline of documents.
+
+        Args:
+            query: Optional semantic query to filter relevant docs (empty = all docs)
+            date_from: Start date (YYYY-MM-DD)
+            date_to: End date (YYYY-MM-DD)
+            doc_type: Filter by document type (default: markdown_doc)
+            limit: Maximum number of documents to return
+
+        Returns:
+            List of documents sorted chronologically (newest first), each with:
+                - file_path, summary, document_date, last_updated, all_dates, etc.
+        """
+        try:
+            if query:
+                results = self.search_knowledge(
+                    query=query,
+                    top_k=limit,
+                    doc_type_filter=doc_type,
+                    date_from=date_from,
+                    date_to=date_to,
+                    sort_by_date=True
+                )
+            else:
+                scroll_results, _ = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=limit,
+                    with_payload=True,
+                    with_vectors=False
+                )
+
+                results = []
+                for point in scroll_results:
+                    payload = point.payload
+
+                    if doc_type and payload.get('file_type') != doc_type:
+                        continue
+
+                    doc_date = payload.get('document_date')
+
+                    if date_from and doc_date and doc_date < date_from:
+                        continue
+                    if date_to and doc_date and doc_date > date_to:
+                        continue
+
+                    results.append({
+                        'file_path': payload.get('file_path', ''),
+                        'summary': payload.get('summary', ''),
+                        'file_type': payload.get('file_type', 'unknown'),
+                        'document_date': doc_date,
+                        'last_updated': payload.get('last_updated'),
+                        'all_dates': payload.get('all_dates', []),
+                        'has_timeline': payload.get('has_timeline', False),
+                        'metadata': payload,
+                    })
+
+                results.sort(
+                    key=lambda x: x.get('document_date') or x.get('last_updated') or '0000-00-00',
+                    reverse=True
+                )
+
+            logger.info(f"[knowledge_indexer] Built timeline with {len(results)} documents")
+            return results
+
+        except Exception as e:
+            logger.error(f"[knowledge_indexer] Timeline build error: {e}")
+            return []
+
 
 def get_knowledge_indexer(
-    collection_name: str = "kloros_knowledge",
-    llm_model: Optional[str] = None,
-    llm_url: Optional[str] = None
+    collection_name: str = "kloros_knowledge"
 ) -> Optional[KnowledgeIndexer]:
     """
     Get or create KnowledgeIndexer instance.
 
+    Uses LLMRouter for all LLM operations with fallback to text extraction.
+
     Args:
         collection_name: Qdrant collection name
-        llm_model: Ollama model for summaries (default from env or qwen2.5-coder:14b)
-        llm_url: Ollama server URL (default from env or http://100.67.244.66:11434)
 
     Returns:
         KnowledgeIndexer instance or None if dependencies unavailable
@@ -589,14 +743,9 @@ def get_knowledge_indexer(
             logger.error("[knowledge_indexer] Failed to get Qdrant vector store")
             return None
 
-        llm_model = llm_model or os.getenv("KLR_KNOWLEDGE_LLM_MODEL", "qwen2.5-coder:14b")
-        llm_url = llm_url or os.getenv("KLR_KNOWLEDGE_LLM_URL", "http://100.67.244.66:11434")
-
         indexer = KnowledgeIndexer(
             qdrant_client=vector_store.client,
-            collection_name=collection_name,
-            llm_model=llm_model,
-            llm_url=llm_url
+            collection_name=collection_name
         )
 
         return indexer

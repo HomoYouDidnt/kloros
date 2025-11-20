@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from kloros_memory.decay_daemon import DecayDaemon
+from src.kloros_memory.decay_daemon import DecayDaemon
 
 
 class DecayZooid:

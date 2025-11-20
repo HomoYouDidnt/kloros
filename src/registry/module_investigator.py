@@ -67,7 +67,8 @@ class ModuleInvestigator:
 
         logger.info(f"[module_investigator] Initialized with {self.model} at {self.ollama_host}")
 
-    def investigate_module(self, module_path: str, module_name: str, question: str) -> Dict[str, Any]:
+    def investigate_module(self, module_path: str, module_name: str, question: str,
+                          custom_instructions: Optional[str] = None) -> Dict[str, Any]:
         """
         Deeply investigate a module to understand its purpose and capabilities.
 
@@ -78,6 +79,8 @@ class ModuleInvestigator:
             module_path: Full path to module directory
             module_name: Name of the module
             question: The curiosity question being investigated
+            custom_instructions: Optional custom instructions from meta-agent
+                               (if provided, uses these instead of default prompt)
 
         Returns:
             Investigation results dictionary
@@ -117,7 +120,7 @@ class ModuleInvestigator:
             logger.info(f"[module_investigator] Extracted structure: {len(structure['classes'])} classes, {len(structure['functions'])} functions")
 
             # Step 3: Use LLM to deeply understand the code
-            llm_analysis = self._llm_deep_analysis(code_files, structure, module_name, question)
+            llm_analysis = self._llm_deep_analysis(code_files, structure, module_name, question, custom_instructions)
 
             if llm_analysis:
                 investigation["llm_analysis"] = llm_analysis
@@ -268,7 +271,8 @@ class ModuleInvestigator:
         code_files: List[Dict[str, Any]],
         structure: Dict[str, Any],
         module_name: str,
-        question: str
+        question: str,
+        custom_instructions: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Use LLM to deeply understand what the module does.
@@ -281,6 +285,8 @@ class ModuleInvestigator:
             structure: Extracted structure
             module_name: Module name
             question: Original curiosity question
+            custom_instructions: Optional custom instructions from meta-agent
+                               (replaces default role-playing prompt)
 
         Returns:
             LLM analysis dict or None if failed
@@ -294,7 +300,56 @@ class ModuleInvestigator:
 
         code_context = "\n\n".join(code_snippets)
 
-        prompt = f"""You are a senior software architect analyzing an undiscovered module in the KLoROS voice assistant system.
+        # Use custom instructions from meta-agent if provided, otherwise default prompt
+        if custom_instructions:
+            # Meta-agent has delegated with her own instructions
+            prompt = f"""{custom_instructions}
+
+Module Name: {module_name}
+Question to Answer: {question}
+
+Module Structure:
+- Classes: {', '.join(c['name'] for c in structure['classes'][:20])}
+- Functions: {', '.join(f['name'] for f in structure['functions'][:20])}
+- Key Imports: {', '.join(structure['imports'][:15])}
+- Total Lines: {structure['total_lines']}
+
+Code Files:
+{code_context}
+
+Analyze this module and provide a structured understanding in JSON format:
+
+{{
+  "purpose": "One-sentence explanation of what this module does",
+  "problem_solved": "What problem does this solve?",
+  "capabilities": [
+    "capability_1: Brief description",
+    "capability_2: Brief description"
+  ],
+  "key_abstractions": [
+    "Class/concept 1 and what it represents",
+    "Class/concept 2 and what it represents"
+  ],
+  "integration_points": [
+    "How it connects to X system",
+    "How it depends on Y"
+  ],
+  "callable_interface": [
+    {{
+      "function": "function_name",
+      "parameters": [{{"name": "param_name", "type": "param_type"}}],
+      "returns": "return_type",
+      "description": "One-sentence description of what this function does"
+    }}
+  ],
+  "module_kind": "service|tool|storage|utility|orchestration",
+  "confidence": 0.0-1.0
+}}
+
+Output ONLY valid JSON, no markdown or explanations."""
+        else:
+            # Default autonomous investigation (no meta-agent delegation)
+            prompt = f"""You are a senior software architect analyzing an undiscovered module in the KLoROS voice assistant system.
 
 Module Name: {module_name}
 Question to Answer: {question}

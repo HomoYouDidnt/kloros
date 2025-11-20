@@ -129,7 +129,15 @@ class IntegrationFlowMonitor:
             "buffer",
             "regimes",
             "safety_violations",
-            "violations"
+            "violations",
+            "created_bridges",
+            "data_flows",
+            "playbook_deltas",
+            "petri_reports",
+            "responsibilities",
+            "_streaming_audio_chunks",
+            "tokenized_corpus",
+            "worker_threads"
         }
 
         if queue_name in DREAM_QUEUES:

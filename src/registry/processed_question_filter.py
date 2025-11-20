@@ -189,26 +189,11 @@ class ProcessedQuestionFilter:
                 logger.debug(f"[filter] {qid}: Missing evidence hash, allowing through")
                 return True
 
-            # Time-based filtering for other question types
-            cached = self._processed_cache[qid]
-            processed_at = cached.get("timestamp", 0)
-            cooldown_days = self._get_cooldown_days(question)
-
-            # Calculate age
-            now = time.time()
-            age_seconds = now - processed_at
-
-            # Handle time travel / clock skew
-            if age_seconds < 0:
-                logger.warning(f"[filter] Question {qid} has future timestamp, treating as just processed")
-                return False
-
-            age_days = age_seconds / 86400
-            cooldown_expired = age_days >= cooldown_days
-
-            logger.debug(f"[filter] {qid}: age={age_days:.1f}d, cooldown={cooldown_days}d, regenerate={cooldown_expired}")
-
-            return cooldown_expired
+            # COOLDOWN BYPASS (2025-11-16): Allow all questions through until convergence
+            # Rationale: New actionability analysis deployed, need to re-investigate
+            # all questions with new logic before implementing cooldowns
+            logger.debug(f"[filter] {qid}: Cooldown bypass active - allowing through")
+            return True
 
         except Exception as e:
             logger.warning(f"[filter] Error checking regeneration for {question.id}: {e}, allowing through")

@@ -13,10 +13,12 @@ import subprocess
 import os
 import time
 import contextlib
+import shutil
 from collections import deque
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from queue import Queue, Empty
 
 try:
     import filelock
@@ -64,6 +66,28 @@ _MAX_TOURNAMENTS_PER_HOUR = int(os.getenv("KLR_SPICA_MAX_TOURNAMENTS_PER_HOUR", 
 
 # Tournament enable flag (Phase 3.5 - staged rollout)
 ENABLE_SPICA_TOURNAMENTS = os.getenv("KLR_ENABLE_SPICA_TOURNAMENTS", "0") == "1"
+
+# Priority queue feature flag (Task 5: Event-driven priority queue processing)
+USE_PRIORITY_QUEUES = os.getenv("KLR_USE_PRIORITY_QUEUES", "1") == "1"
+
+# Import ChemSub and ArchiveManager for priority queue mode
+if USE_PRIORITY_QUEUES:
+    try:
+        from kloros.orchestration.chem_bus_v2 import ChemSub, ChemPub
+        CHEM_AVAILABLE = True
+    except ImportError:
+        CHEM_AVAILABLE = False
+        logger.warning("ChemSub/ChemPub not available, priority queue mode may not work")
+
+    try:
+        from registry.curiosity_archive_manager import ArchiveManager
+        ARCHIVE_MGR_AVAILABLE = True
+    except ImportError:
+        ARCHIVE_MGR_AVAILABLE = False
+        logger.warning("ArchiveManager not available, question archival disabled")
+else:
+    CHEM_AVAILABLE = False
+    ARCHIVE_MGR_AVAILABLE = False
 
 
 def _load_active_spica_instances(refresh: bool = False) -> List[str]:
@@ -250,7 +274,7 @@ def _derive_search_space(question: Dict[str, Any]) -> Dict[str, Any]:
     # Parse evidence for domain-specific hints
     domain = "unknown"
     for ev in evidence:
-        if ev.startswith("capability:"):
+        if ev and ev.startswith("capability:"):
             domain = ev.split(":", 1)[1]
             break
 
@@ -407,30 +431,38 @@ def _should_investigate_with_new_evidence(qid: str, current_evidence: List[Any])
     Returns:
         True if should investigate (new or changed evidence)
     """
-    if not PROCESSED_QUESTIONS.exists():
-        return True  # Never processed anything
+    # EVIDENCE-BASED DEDUP BYPASS (2025-11-16): Align with processed_question_filter bypass
+    # Rationale: Same as processed_question_filter - new actionability analysis deployed,
+    # need to re-investigate all questions with new logic before implementing cooldowns.
+    # Both dedup systems must honor the same bypass to prevent conflicting behavior.
+    logger.debug(f"[curiosity_processor] {qid}: Evidence-based dedup bypass active - allowing through")
+    return True
 
-    current_hash = _evidence_hash(current_evidence)
-
-    try:
-        with open(PROCESSED_QUESTIONS) as f:
-            for line in f:
-                entry = json.loads(line.strip())
-                if entry.get("question_id") == qid:
-                    # Found previous processing
-                    previous_hash = entry.get("evidence_hash")
-                    if previous_hash == current_hash:
-                        # Same evidence - skip re-investigation
-                        return False
-                    # Evidence changed - re-investigate!
-                    # (will continue checking for most recent entry)
-
-        # Either never processed or evidence changed
-        return True
-
-    except Exception as e:
-        logger.error(f"Error checking evidence for {qid}: {e}")
-        return True  # Default to investigating on error
+    # Original evidence-based dedup logic (DISABLED during bypass period):
+    # if not PROCESSED_QUESTIONS.exists():
+    #     return True  # Never processed anything
+    #
+    # current_hash = _evidence_hash(current_evidence)
+    #
+    # try:
+    #     with open(PROCESSED_QUESTIONS) as f:
+    #         for line in f:
+    #             entry = json.loads(line.strip())
+    #             if entry.get("question_id") == qid:
+    #                 # Found previous processing
+    #                 previous_hash = entry.get("evidence_hash")
+    #                 if previous_hash == current_hash:
+    #                     # Same evidence - skip re-investigation
+    #                     return False
+    #                 # Evidence changed - re-investigate!
+    #                 # (will continue checking for most recent entry)
+    #
+    #     # Either never processed or evidence changed
+    #     return True
+    #
+    # except Exception as e:
+    #     logger.error(f"Error checking evidence for {qid}: {e}")
+    #     return True  # Default to investigating on error
 
 
 def _has_spawned_curiosity(qid: str) -> bool:
@@ -474,6 +506,11 @@ def _processed_older_than(qid: str, days: int) -> bool:
                     continue
                 if entry.get("question_id") == qid:
                     processed_at = entry.get("processed_at", 0)
+                    if isinstance(processed_at, str):
+                        try:
+                            processed_at = datetime.fromisoformat(processed_at).timestamp()
+                        except (ValueError, AttributeError):
+                            processed_at = 0
                     most_recent_timestamp = max(most_recent_timestamp, processed_at)
     except Exception as e:
         logger.warning(f"Error checking processed age for {qid}: {e}")
@@ -569,6 +606,14 @@ def _cleanup_stale_processed_questions(max_age_days: int = None, max_entries: in
                     continue
                 processed_at = entry.get("processed_at", 0)
 
+                if isinstance(processed_at, str):
+                    try:
+                        processed_at = datetime.fromisoformat(processed_at).timestamp()
+                        entry["processed_at"] = processed_at
+                    except (ValueError, AttributeError):
+                        processed_at = 0
+                        entry["processed_at"] = 0
+
                 if processed_at > cutoff_time:
                     fresh_entries.append(entry)
                 else:
@@ -577,7 +622,7 @@ def _cleanup_stale_processed_questions(max_age_days: int = None, max_entries: in
         # LRU eviction: keep only most recent max_entries
         if len(fresh_entries) > max_entries:
             # Sort by processed_at (oldest first)
-            fresh_entries.sort(key=lambda e: e.get("processed_at", 0))
+            fresh_entries.sort(key=lambda e: float(e.get("processed_at", 0)))
             # Keep only the newest max_entries
             evicted = len(fresh_entries) - max_entries
             fresh_entries = fresh_entries[-max_entries:]
@@ -923,6 +968,401 @@ def _regenerate_curiosity_feed() -> bool:
         return False
 
 
+class CuriosityProcessorDaemon:
+    """
+    Event-driven curiosity processor supporting both file-polling and priority-queue modes.
+
+    Priority Queue Mode (KLR_USE_PRIORITY_QUEUES=1):
+    - Subscribes to 4 priority signals: CRITICAL, HIGH, MEDIUM, LOW
+    - Callback-based processing via message queues
+    - Archives skipped questions with skip reasons
+    - Opportunistic rehydration from archives when idle
+
+    File Polling Mode (KLR_USE_PRIORITY_QUEUES=0, legacy):
+    - Polls curiosity_feed.json every 20 seconds
+    - Processes all questions in sequence
+    - Preserves backward compatibility for rollback
+    """
+
+    def __init__(self):
+        self.running = False
+        self.cycle_count = 0
+        self.chem_pub = None
+
+        if USE_PRIORITY_QUEUES and CHEM_AVAILABLE:
+            try:
+                self.chem_pub = ChemPub()
+                logger.info("[curiosity_processor] ChemPub initialized for priority queue mode")
+            except Exception as e:
+                logger.error(f"[curiosity_processor] Failed to initialize ChemPub: {e}")
+                self.chem_pub = None
+
+            if ARCHIVE_MGR_AVAILABLE:
+                try:
+                    self.archive_mgr = ArchiveManager(
+                        Path.home() / '.kloros' / 'archives',
+                        self.chem_pub
+                    )
+                    logger.info("[curiosity_processor] ArchiveManager initialized")
+                except Exception as e:
+                    logger.error(f"[curiosity_processor] Failed to initialize ArchiveManager: {e}")
+                    self.archive_mgr = None
+            else:
+                self.archive_mgr = None
+
+            self.subscribers = {}
+            self.message_queues = {}
+            self._init_priority_subscribers()
+        else:
+            self.archive_mgr = None
+            self.subscribers = {}
+            self.message_queues = {}
+
+    def _init_priority_subscribers(self):
+        """Initialize subscribers to priority signals with message queues."""
+        if not CHEM_AVAILABLE or not self.chem_pub:
+            logger.warning("[curiosity_processor] Cannot initialize subscribers: ChemSub not available")
+            return
+
+        priority_levels = ['critical', 'high', 'medium', 'low']
+        signal_names = {
+            'critical': 'Q_CURIOSITY_CRITICAL',
+            'high': 'Q_CURIOSITY_HIGH',
+            'medium': 'Q_CURIOSITY_MEDIUM',
+            'low': 'Q_CURIOSITY_LOW'
+        }
+
+        for level in priority_levels:
+            self.message_queues[level] = Queue(maxsize=100)
+            signal_name = signal_names[level]
+
+            try:
+                def make_callback(queue_ref):
+                    def on_message(msg: Dict[str, Any]):
+                        try:
+                            question_dict = msg.get('facts', msg)
+                            queue_ref.put_nowait(question_dict)
+                        except:
+                            logger.debug(f"Queue full for {signal_name}, dropping message")
+                    return on_message
+
+                subscriber = ChemSub(
+                    topic=signal_name,
+                    on_json=make_callback(self.message_queues[level]),
+                    zooid_name=f"curiosity_processor_{level}",
+                    niche="curiosity"
+                )
+                self.subscribers[level] = subscriber
+                logger.info(f"[curiosity_processor] Subscribed to {signal_name} (priority={level})")
+
+            except Exception as e:
+                logger.error(f"[curiosity_processor] Failed to subscribe to {signal_name}: {e}")
+
+    def run(self):
+        """Main entry point: route to appropriate loop based on feature flag."""
+        if USE_PRIORITY_QUEUES and CHEM_AVAILABLE and self.chem_pub:
+            logger.info("[curiosity_processor] Starting priority queue loop")
+            self._run_priority_queue_loop()
+        else:
+            logger.info("[curiosity_processor] Starting file polling loop (legacy mode)")
+            self._run_file_polling_loop()
+
+    def _run_priority_queue_loop(self):
+        """
+        Event-driven processing from priority signals.
+
+        Polls subscribers in priority order (CRITICAL → HIGH → MEDIUM → LOW),
+        processes questions through intent generation, archives skipped questions
+        with skip reasons, and rehydrates from archives during idle periods.
+        """
+        self.running = True
+        logger.info("[curiosity_processor] Priority queue loop started")
+
+        while self.running:
+            question_dict = None
+            priority_level = None
+
+            for level in ['critical', 'high', 'medium', 'low']:
+                queue = self.message_queues.get(level)
+                if not queue:
+                    continue
+
+                try:
+                    question_dict = queue.get_nowait()
+                    priority_level = level
+                    break
+                except Empty:
+                    continue
+
+            if not question_dict:
+                main_feed_size = self._estimate_queue_size()
+                if self.archive_mgr:
+                    try:
+                        self.archive_mgr.rehydrate_opportunistic(main_feed_size)
+                    except Exception as e:
+                        logger.error(f"[curiosity_processor] Rehydration error: {e}")
+
+                time.sleep(1)
+                continue
+
+            self.cycle_count += 1
+            qid = question_dict.get('id', 'unknown')
+            logger.info(f"[curiosity_processor] Cycle {self.cycle_count}: "
+                       f"Processing {qid} (priority={priority_level})")
+
+            try:
+                result = self._process_question(question_dict)
+
+                if result['action'] == 'emit_intent':
+                    if self.chem_pub:
+                        try:
+                            self.chem_pub.emit(
+                                "Q_CURIOSITY_INVESTIGATE",
+                                ecosystem='introspection',
+                                facts={
+                                    'question_id': qid,
+                                    'question': question_dict.get('question'),
+                                    'hypothesis': question_dict.get('hypothesis'),
+                                    'capability_key': question_dict.get('capability_key'),
+                                    'evidence': question_dict.get('evidence', []),
+                                    'action_class': question_dict.get('action_class'),
+                                    'value_estimate': question_dict.get('value_estimate'),
+                                    'cost_estimate': question_dict.get('cost')
+                                }
+                            )
+                            logger.info(f"[curiosity_processor] Emitted Q_CURIOSITY_INVESTIGATE for {qid}")
+                        except Exception as e:
+                            logger.error(f"[curiosity_processor] Failed to emit investigation signal for {qid}: {e}")
+
+                elif result['action'] == 'skip':
+                    if self.archive_mgr:
+                        try:
+                            self._archive_skipped_question(question_dict, result['reason'])
+                        except Exception as e:
+                            logger.error(f"[curiosity_processor] Archive error for {qid}: {e}")
+                    else:
+                        logger.debug(f"[curiosity_processor] Skipped {qid}: {result['reason']} (no archive)")
+
+            except Exception as e:
+                logger.error(f"[curiosity_processor] Error processing {qid}: {e}")
+
+    def _run_file_polling_loop(self):
+        """
+        Legacy file-polling loop (backward compatibility).
+
+        Uses existing process_curiosity_feed() logic.
+        """
+        self.running = True
+        logger.info("[curiosity_processor] File polling loop started (legacy mode)")
+
+        while self.running:
+            try:
+                result = process_curiosity_feed()
+                logger.debug(f"[curiosity_processor] Polling cycle: {result}")
+            except Exception as e:
+                logger.error(f"[curiosity_processor] Polling error: {e}")
+
+            time.sleep(20)
+
+    def _process_question(self, question_dict: Dict) -> Dict:
+        """
+        Process single question, return action and reason.
+
+        Returns:
+            {'action': 'emit_intent' | 'skip', 'reason': str}
+        """
+        qid = question_dict.get('id', 'unknown')
+        evidence = question_dict.get('evidence', [])
+
+        evidence_based_dedup = _should_investigate_with_new_evidence(qid, evidence)
+        if not evidence_based_dedup:
+            return {'action': 'skip', 'reason': 'already_processed'}
+
+        already_spawned = _has_spawned_curiosity(qid)
+        if already_spawned:
+            return {'action': 'skip', 'reason': 'already_processed'}
+
+        autonomy = question_dict.get('autonomy', 2)
+        if autonomy >= 3 and SAFETY_ENABLED:
+            try:
+                governor = ResourceGovernor()
+                can_spawn, reason = governor.can_spawn()
+                if not can_spawn:
+                    return {'action': 'skip', 'reason': 'resource_blocked'}
+            except Exception as e:
+                logger.warning(f"[curiosity_processor] ResourceGovernor check failed for {qid}: {e}")
+
+        if self._has_missing_dependencies(question_dict):
+            return {'action': 'skip', 'reason': 'missing_deps'}
+
+        try:
+            intent = _question_to_intent(question_dict)
+            self._emit_intent_as_signal(intent)
+
+            # Compute intent hash for processed log
+            intent_json = json.dumps(intent, indent=2)
+            intent_sha = hashlib.sha256(intent_json.encode()).hexdigest()[:8]
+
+            _mark_question_processed(qid, intent_sha=intent_sha, evidence=evidence)
+            return {'action': 'emit_intent', 'reason': 'processed'}
+        except Exception as e:
+            logger.error(f"[curiosity_processor] Intent generation failed for {qid}: {e}")
+            return {'action': 'skip', 'reason': 'intent_generation_error'}
+
+    def _has_missing_dependencies(self, question: Dict) -> bool:
+        """Check if question has unresolved dependencies."""
+        capability_key = question.get('capability_key') or ''
+
+        if capability_key.startswith('agent.'):
+            playwright_path = Path('/home/kloros/.venv/bin/playwright')
+            if not playwright_path.exists():
+                logger.debug(f"[curiosity_processor] Missing playwright for {capability_key}")
+                return True
+
+        if capability_key.startswith('module.'):
+            module_path = Path(f"/home/kloros/src/{capability_key.replace('.', '/')}")
+            if not module_path.exists():
+                logger.debug(f"[curiosity_processor] Missing module path: {module_path}")
+                return True
+
+        return False
+
+    def _estimate_queue_size(self) -> int:
+        """Estimate total questions waiting across all queues."""
+        total = 0
+        for level, queue in self.message_queues.items():
+            total += queue.qsize()
+        return total
+
+    def _archive_skipped_question(self, question_dict: Dict, reason: str):
+        """Archive skipped question with reason."""
+        if not self.archive_mgr:
+            return
+
+        try:
+            from registry.curiosity_core import CuriosityQuestion, ActionClass, QuestionStatus
+
+            # Convert string fields to enums if needed
+            q_dict = question_dict.copy()
+            if 'action_class' in q_dict and isinstance(q_dict['action_class'], str):
+                q_dict['action_class'] = ActionClass(q_dict['action_class'])
+            if 'status' in q_dict and isinstance(q_dict['status'], str):
+                q_dict['status'] = QuestionStatus(q_dict['status'])
+
+            q = CuriosityQuestion(**q_dict)
+            self.archive_mgr.archive_question(q, reason)
+
+            # Add evidence hash to processed log to prevent re-emission
+            if q.evidence_hash:
+                try:
+                    with open(PROCESSED_QUESTIONS, 'a') as f:
+                        json.dump({
+                            'id': q.id,
+                            'evidence_hash': q.evidence_hash,
+                            'processed_at': datetime.now().isoformat(),
+                            'reason': f'archived_{reason}'
+                        }, f)
+                        f.write('\n')
+                except Exception as e2:
+                    logger.warning(f"[curiosity_processor] Could not add to processed log: {e2}")
+
+            logger.debug(f"[curiosity_processor] Archived {q.id} as {reason}")
+        except Exception as e:
+            logger.warning(f"[curiosity_processor] Failed to archive question: {e}")
+
+    def _emit_intent_as_signal(self, intent: Dict[str, Any]):
+        """
+        Emit intent directly as ChemBus signal instead of writing to file.
+
+        Converts intent structure to appropriate ChemBus signal based on intent_type.
+        """
+        if not self.chem_pub:
+            logger.warning(f"[curiosity_processor] Cannot emit signal: ChemPub not initialized")
+            return
+
+        intent_type = intent.get("intent_type", "unknown")
+        intent_data = intent.get("data", {})
+        priority = intent.get("priority", "normal")
+
+        if isinstance(priority, int):
+            priority_map = {10: "critical", 9: "critical", 8: "high", 7: "high", 6: "normal", 5: "normal", 4: "low"}
+            priority_str = priority_map.get(priority, "normal")
+        else:
+            priority_str = priority
+
+        signal_type = None
+        ecosystem = "introspection"
+        facts = {}
+
+        if intent_type in ['curiosity_investigate', 'curiosity_propose_fix',
+                          'curiosity_find_substitute', 'curiosity_explore']:
+            signal_type = "Q_CURIOSITY_INVESTIGATE"
+            facts = {
+                "question": intent_data.get("question", ""),
+                "question_id": intent_data.get("question_id", "unknown"),
+                "priority": priority_str,
+                "evidence": intent_data.get("evidence", []),
+                "hypothesis": intent_data.get("hypothesis", ""),
+                "capability_key": intent_data.get("capability_key", ""),
+                "action_class": intent_data.get("action_class", "investigate")
+            }
+
+        elif intent_type == "integration_fix":
+            signal_type = "Q_INTEGRATION_FIX"
+            ecosystem = "queue_management"
+            facts = {
+                "question_id": intent_data.get("question_id", "unknown"),
+                "question": intent_data.get("question", ""),
+                "hypothesis": intent_data.get("hypothesis", ""),
+                "fix_specification": intent_data.get("fix_specification", {}),
+                "autonomy_level": intent_data.get("autonomy_level", 1),
+                "reason": intent.get("reason", ""),
+                "priority": priority_str
+            }
+
+        elif intent_type == "spica_spawn_request":
+            signal_type = "Q_SPICA_SPAWN"
+            ecosystem = "experimentation"
+            facts = {
+                "question_id": intent_data.get("question_id", "unknown"),
+                "question": intent_data.get("question", ""),
+                "hypothesis": intent_data.get("hypothesis", ""),
+                "fix_context": intent_data.get("fix_context", {}),
+                "validation": intent_data.get("validation", {}),
+                "priority": priority_str,
+                "reason": intent.get("reason", "")
+            }
+
+        else:
+            logger.warning(f"[curiosity_processor] Unknown intent type: {intent_type}, cannot emit signal")
+            return
+
+        try:
+            self.chem_pub.emit(
+                signal=signal_type,
+                ecosystem=ecosystem,
+                intensity=1.0,
+                facts=facts
+            )
+            logger.info(f"[curiosity_processor] Emitted {signal_type} signal: {facts.get('question_id', 'unknown')}")
+        except Exception as e:
+            logger.error(f"[curiosity_processor] Failed to emit {signal_type}: {e}")
+
+    def stop(self):
+        """Gracefully stop the processor."""
+        self.running = False
+        for subscriber in self.subscribers.values():
+            try:
+                subscriber.close()
+            except:
+                pass
+        if self.chem_pub:
+            try:
+                self.chem_pub.close()
+            except:
+                pass
+
+
 def process_curiosity_feed() -> Dict[str, Any]:
     """
     Process curiosity_feed.json and spawn D-REAM experiments for high-value questions.
@@ -977,20 +1417,16 @@ def process_curiosity_feed() -> Dict[str, Any]:
         cost = q["cost"]
         ratio = value / max(cost, 0.01)
         action_class = q["action_class"]
-        hypothesis = q.get("hypothesis", "")
+        hypothesis = q.get("hypothesis") or ""
 
         # Check if already processed AND spawned (processed ≠ spawned)
-        # Module discovery uses evidence-based re-investigation (context-aware, not time-based)
+        # Use evidence-based re-investigation for ALL questions (context-aware, not time-based)
+        # This prevents wasting investigations on questions with identical evidence
         evidence = q.get("evidence", [])
-        if "UNDISCOVERED_MODULE" in hypothesis:
-            should_investigate = _should_investigate_with_new_evidence(qid, evidence)
-            already_processed = not should_investigate  # Invert: if should investigate, not "already processed"
-            already_spawned = _has_spawned_curiosity(qid)
-            reprocess_age_ok = should_investigate  # Re-investigate when evidence changes
-        else:
-            already_processed = _is_question_processed(qid)
-            already_spawned = _has_spawned_curiosity(qid)
-            reprocess_age_ok = _reprocess_window_allows(qid)
+        should_investigate = _should_investigate_with_new_evidence(qid, evidence)
+        already_processed = not should_investigate  # Invert: if should investigate, not "already processed"
+        already_spawned = _has_spawned_curiosity(qid)
+        reprocess_age_ok = should_investigate  # Re-investigate when evidence changes
 
         # DIAGNOSTIC: Log decision variables for first 3 questions
         if skipped_processed + skipped_low_value < 3:
@@ -1055,14 +1491,9 @@ def process_curiosity_feed() -> Dict[str, Any]:
                         "emitted_by": "curiosity_processor_integration_router"
                     }
 
-                    doc_intent_json = json.dumps(doc_intent, indent=2)
-                    doc_intent_sha = hashlib.sha256(doc_intent_json.encode()).hexdigest()[:8]
-                    ts_ms = int(time.time() * 1000)
-                    doc_intent_path = INTENT_DIR / f"{ts_ms}_integration_fix_{doc_intent_sha}.json"
-                    INTENT_DIR.mkdir(parents=True, exist_ok=True)
-                    doc_intent_path.write_text(doc_intent_json)
+                    self._emit_intent_as_signal(doc_intent)
                     intents_emitted += 1
-                    logger.info(f"[integration_fix] Emitted documentation intent for {qid}")
+                    logger.info(f"[integration_fix] Emitted Q_INTEGRATION_FIX signal for {qid}")
 
                     # CONDITIONALLY create SPICA spawn intent for high autonomy
                     if autonomy >= 3:
@@ -1104,13 +1535,9 @@ def process_curiosity_feed() -> Dict[str, Any]:
                             "emitted_by": "curiosity_processor_spica_router"
                         }
 
-                        spica_intent_json = json.dumps(spica_intent, indent=2)
-                        spica_intent_sha = hashlib.sha256(spica_intent_json.encode()).hexdigest()[:8]
-                        ts_ms = int(time.time() * 1000)
-                        spica_intent_path = INTENT_DIR / f"{ts_ms}_spica_spawn_{spica_intent_sha}.json"
-                        spica_intent_path.write_text(spica_intent_json)
+                        self._emit_intent_as_signal(spica_intent)
                         intents_emitted += 1
-                        logger.info(f"[spica_spawn] Emitted autonomous fix intent for {qid} (autonomy={autonomy})")
+                        logger.info(f"[spica_spawn] Emitted Q_SPICA_SPAWN signal for {qid} (autonomy={autonomy})")
 
                     _mark_question_processed(qid, doc_intent_sha, evidence)
                     continue
@@ -1135,48 +1562,33 @@ def process_curiosity_feed() -> Dict[str, Any]:
                 experiment_result = _spawn_tournament(q)
                 experiments_spawned += 1
 
-            # Also emit intent for orchestrator visibility
+            # Also emit intent as ChemBus signal for orchestrator visibility
             intent = _question_to_intent(q)
             intent["data"]["experiment_result"] = experiment_result
 
-            intent_json = json.dumps(intent, indent=2)
-            intent_sha = hashlib.sha256(intent_json.encode()).hexdigest()[:8]
-            ts_ms = int(time.time() * 1000)
-            intent_path = INTENT_DIR / f"{ts_ms}_{intent['intent_type']}_{intent_sha}.json"
-            INTENT_DIR.mkdir(parents=True, exist_ok=True)
+            self._emit_intent_as_signal(intent)
+            logger.info(f"Emitted ChemBus signal for question {qid} (ratio={ratio:.2f}, priority={intent['priority']})")
+            intents_emitted += 1
 
             try:
-                intent_path.write_text(intent_json)
-                logger.info(f"Emitted intent for question {qid} (ratio={ratio:.2f}, priority={intent['priority']})")
-                intents_emitted += 1
-
                 # Mark as processed with evidence hash for context-aware re-investigation
+                intent_json = json.dumps(intent, indent=2)
+                intent_sha = hashlib.sha256(intent_json.encode()).hexdigest()[:8]
                 _mark_question_processed(qid, intent_sha, evidence)
 
             except Exception as e:
                 logger.error(f"Failed to emit intent for {qid}: {e}")
         else:
-            # Synchronous tournaments disabled - emit intent only, let chemical signals handle async processing
+            # Synchronous tournaments disabled - emit ChemBus signal for async chemical routing
             logger.debug(f"Skipping synchronous tournament for {qid} (ENABLE_SPICA_TOURNAMENTS=0, will route via chemical signals)")
             intent = _question_to_intent(q)
             intent["data"]["experiment_result"] = {"status": "pending", "mode": "async_chemical_routing"}
 
-            intent_json = json.dumps(intent, indent=2)
-            intent_sha = hashlib.sha256(intent_json.encode()).hexdigest()[:8]
-            ts_ms = int(time.time() * 1000)
-            intent_path = INTENT_DIR / f"{ts_ms}_{intent['intent_type']}_{intent_sha}.json"
-            INTENT_DIR.mkdir(parents=True, exist_ok=True)
+            self._emit_intent_as_signal(intent)
+            logger.info(f"Emitted ChemBus signal for question {qid} (ratio={ratio:.2f}, priority={intent['priority']})")
+            intents_emitted += 1
 
-            try:
-                intent_path.write_text(intent_json)
-                logger.info(f"Emitted intent for question {qid} (ratio={ratio:.2f}, priority={intent['priority']})")
-                intents_emitted += 1
-
-                # NOTE: Don't mark as processed yet for async routing - investigation_consumer will mark when complete
-                # _mark_question_processed(qid, intent_sha)
-
-            except Exception as e:
-                logger.error(f"Failed to emit intent for {qid}: {e}")
+            # NOTE: Don't mark as processed yet for async routing - investigation_consumer will mark when complete
 
     summary = {
         "status": "complete",

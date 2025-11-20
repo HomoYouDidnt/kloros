@@ -1,0 +1,102 @@
+# KLoROS
+
+KLoROS is a small, single-process local voice assistant that combines offline STT (Vosk), TTS (Piper), and a local LLM (Ollama).
+
+This README focuses on developer-facing usage, Linux-first deployment, and helpful environment variables.
+
+## Quick start (Linux headless - recommended)
+
+- Install dependencies into a virtualenv (example):
+
+```powershell
+# On Windows PowerShell (dev machine example):
+python -m venv .venv; .\.venv\Scripts\Activate; python -m pip install -r requirements.txt
+```
+
+```bash
+# On Debian (server):
+python3 -m venv .venv; source .venv/bin/activate; python3 -m pip install -r requirements.txt
+```
+
+- Place runtime models under `~/kloros_models/`:
+  - Vosk model: `~/kloros_models/vosk/model`
+  - Piper model: `~/kloros_models/piper/*.onnx`
+
+- Start Ollama and ensure the configured model (default `nous-hermes:13b-q4_0`) is available.
+
+- Run the assistant:
+
+```bash
+python -m src.kloros_voice
+```
+
+## Device helper
+
+To list audio devices and suggested `KLR_INPUT_IDX` values (useful on dev machines):
+
+```bash
+python -m src.kloros_voice --list-devices
+```
+
+## Accuracy stack smoke test
+
+The accuracy stack ships with a tiny fixture corpus and evaluation harness. Run a quick
+check after installing requirements:
+
+```bash
+python scripts/eval_accuracy.py \
+  --config kloROS_accuracy_stack/config/accuracy_ci.yml \
+  --qa kloROS_accuracy_stack/fixtures/mini/qa.jsonl \
+  --out out/smoke \
+  --limit 3
+cat out/smoke/eval_report.md
+```
+
+Use `kloROS_accuracy_stack/config/accuracy.yml` for full runs with FAISS indexes when the
+corpus and models are available locally.
+
+## CI & audit hygiene
+
+- Core CI lives in `.github/workflows/ci.yml` and runs linting, typing, security, tests,
+  and the accuracy smoke evaluation.
+- Heavy analyzers are isolated in `.github/workflows/audit.yml` to keep the main workflow
+  fast. Jobs cover `shellcheck`, `osv-scanner`, `npm audit --audit-level=high`,
+  `madge --circular`, `jscpd`, and `ts-prune` (skips automatically if no TS config is found).
+- Trigger the audit suite manually with the **Audit** workflow in GitHub Actions when
+  preparing releases.
+
+Examples to set the device environment variable:
+
+```bash
+export KLR_INPUT_IDX=3  # Linux
+```
+
+```powershell
+$env:KLR_INPUT_IDX = 3  # PowerShell (dev)
+```
+
+## Environment variables (useful)
+
+- `KLR_INPUT_IDX` — force a sound device index.
+- `KLR_WAKE_PHRASES` — comma-separated wake phrase variants (default `kloros`).
+- `KLR_WAKE_CONF_MIN` — Vosk confidence gate (default `0.65`).
+- `KLR_WAKE_RMS_MIN` — RMS energy gate for wakes (default `350`).
+- `KLR_INPUT_GAIN` — software input gain (1.0–2.0).
+- `KLR_PIPER_EXE` — explicit path to Piper executable (dev override).
+- `KLR_TEST_TRANSCRIPT` — supply a mock transcript for local testing when Vosk is absent.
+
+## Notes on cross-platform behavior
+
+- The project is Linux-first. Runtime audio tooling (`pactl`, `aplay`) is used on Linux. On Windows the code logs and skips those steps so developers can work without crashing.
+- `src/test_components.py` contains cross-platform smoke tests that will skip TTS if `piper` or the model are not present.
+
+## Contributing / PRs
+
+- Start each coding session by reading PLAN.md and the active task in TODO.md.
+- `scripts/rzero_run.py --dry-run` prints the sandbox self-improvement plan. When
+  `self_improve.rzero_enabled` is flipped on you can run `propose`, `evaluate`, and
+  `gatekeep` stages locally before promoting candidates.
+- I created a small set of Windows-safe guards and a device helper. If you'd like, I can open a branch & PR with these changes plus a short changelog. Otherwise, apply the changes directly on `main`.
+
+---
+If anything in this README is unclear or you want additional automated tests / CI, tell me which items to add and I will implement them.

@@ -39,7 +39,7 @@ class ChemBusHistorian:
     def __init__(self):
         self.running = True
         self.history_file = Path.home() / ".kloros/chembus_history.jsonl"
-        self.max_size_bytes = 500 * 1024 * 1024
+        self.max_size_bytes = 50 * 1024 * 1024  # Increased to 50MB to accommodate 100k line retention (~29MB)
         self.message_count = 0
         self.last_stats_ts = time.time()
         self.max_retries = 10
@@ -116,19 +116,36 @@ class ChemBusHistorian:
             file_size_mb = self.history_file.stat().st_size / 1024 / 1024
             logger.warning(f"Emergency rotation triggered: {self.history_file} is {file_size_mb:.2f} MB")
 
-            old_path = self.history_file.with_suffix(".jsonl.old")
-            if old_path.exists():
-                old_size_mb = old_path.stat().st_size / 1024 / 1024
-                logger.info(f"Deleting existing old file: {old_path} ({old_size_mb:.2f} MB)")
-                old_path.unlink()
+            # Keep only the most recent lines (approximately last 24 hours of data)
+            # This prevents scanner timeouts caused by reading huge files
+            import subprocess
+            keep_lines = 100000  # Approximately last 24 hours at current message rate
 
-            self.history_file.rename(old_path)
-            os.chmod(old_path, 0o640)
+            temp_file = self.history_file.with_suffix(".jsonl.tmp")
+            try:
+                # Use tail to keep only recent lines
+                subprocess.run(
+                    ["tail", f"-{keep_lines}", str(self.history_file)],
+                    stdout=open(temp_file, 'w'),
+                    check=True
+                )
 
-            self.history_file.touch()
-            os.chmod(self.history_file, 0o640)
+                # Archive old file before replacing
+                old_path = self.history_file.with_suffix(".jsonl.old")
+                if old_path.exists():
+                    old_path.unlink()
+                self.history_file.rename(old_path)
 
-            logger.info(f"Emergency rotation complete: {self.history_file} rotated to {old_path}")
+                # Move temp file to history file
+                temp_file.rename(self.history_file)
+                os.chmod(self.history_file, 0o640)
+
+                new_size_mb = self.history_file.stat().st_size / 1024 / 1024
+                logger.info(f"Emergency rotation complete: kept last {keep_lines} lines, reduced from {file_size_mb:.2f}MB to {new_size_mb:.2f}MB")
+            finally:
+                if temp_file.exists():
+                    temp_file.unlink()
+
         except Exception as e:
             logger.error(f"Emergency rotation failed: {e}", exc_info=True)
 

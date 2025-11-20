@@ -12,10 +12,9 @@ from collections import defaultdict
 from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
 
 try:
-    from kloros.orchestration.chem_bus_v2 import ChemPub, ChemMessage
+    from kloros.orchestration.chem_bus_v2 import ChemPub
 except ImportError:
     ChemPub = None
-    ChemMessage = None
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +200,7 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
         return missing
 
     def _emit_questions_to_chembus(self, questions: List[Dict[str, Any]]):
-        if not ChemPub or not ChemMessage:
+        if not ChemPub:
             logger.warning("[integration_monitor] ChemBus not available, skipping emission")
             return
 
@@ -214,7 +213,7 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
 
         for q in questions:
             try:
-                msg = ChemMessage(
+                self.chem_pub.emit(
                     signal="curiosity.integration_question",
                     ecosystem="curiosity",
                     intensity=0.95,
@@ -225,8 +224,6 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
                         'timestamp': time.time()
                     }
                 )
-
-                self.chem_pub.emit("curiosity.integration_question", msg.to_bytes())
                 logger.info(f"[integration_monitor] Emitted question: {q['id']}")
 
             except Exception as e:

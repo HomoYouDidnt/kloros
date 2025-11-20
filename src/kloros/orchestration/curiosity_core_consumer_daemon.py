@@ -64,7 +64,7 @@ class CuriosityCoreConsumerDaemon:
         try:
             self.evaluator = CapabilityEvaluator()
             self.capability_matrix = self.evaluator.evaluate_all()
-            self.curiosity_core = CuriosityCore(feed_path=CURIOSITY_FEED)
+            self.curiosity_core = CuriosityCore(feed_path=CURIOSITY_FEED, enable_daemon_subscriptions=True)
             logger.info(f"[curiosity_core_consumer] Initialized with {self.capability_matrix.total_count} capabilities")
         except Exception as e:
             logger.warning(f"[curiosity_core_consumer] Could not initialize: {e}")

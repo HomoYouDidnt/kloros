@@ -2149,13 +2149,33 @@ class CuriosityCore:
         - Writes curiosity_feed.json for consumption by picker/scheduler
     """
 
-    def __init__(self, feed_path: Optional[Path] = None):
+    _instance: Optional['CuriosityCore'] = None
+    _daemon_subs_initialized: bool = False
+
+    def __new__(cls, feed_path: Optional[Path] = None, enable_daemon_subscriptions: bool = False):
+        """
+        Enforce singleton pattern to prevent thread/memory leaks.
+
+        Returns the same instance on subsequent calls to prevent:
+        - Repeated SemanticEvidenceStore creation
+        - Duplicate daemon subscription threads
+        - Memory leaks from abandoned instances
+        """
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self, feed_path: Optional[Path] = None, enable_daemon_subscriptions: bool = False):
         """
         Initialize curiosity core.
 
         Parameters:
             feed_path: Path to write curiosity_feed.json
         """
+        if self._initialized:
+            return
+
         if feed_path is None:
             feed_path = Path("/home/kloros/.kloros/curiosity_feed.json")
 
@@ -2170,7 +2190,16 @@ class CuriosityCore:
             logger.warning(f"[curiosity_core] Failed to initialize SemanticEvidenceStore: {e}, suppression checks disabled")
 
         self.daemon_questions: List[CuriosityQuestion] = []
-        self.chem_sub: Optional[Any] = None
+        self.chem_subs: List[Any] = []  # Multiple subscriptions, one per daemon
+
+        # Initialize daemon subscriptions only once at class level
+        if enable_daemon_subscriptions and not CuriosityCore._daemon_subs_initialized:
+            self.subscribe_to_daemon_questions()
+            CuriosityCore._daemon_subs_initialized = True
+            logger.info("[curiosity_core] Daemon subscriptions initialized")
+
+        self._initialized = True
+        logger.debug("[curiosity_core] CuriosityCore singleton initialized")
 
     def should_generate_followup(self, parent_question: Dict[str, Any], investigation_result: Dict[str, Any]) -> bool:
         """
@@ -2281,24 +2310,39 @@ class CuriosityCore:
 
     def subscribe_to_daemon_questions(self):
         """
-        Subscribe to daemon question streams via ChemBus.
+        Subscribe to all daemon question streams via ChemBus.
 
-        Sets up subscription to curiosity.integration_question signal.
+        Sets up subscriptions to all 4 daemon signals:
+        - curiosity.integration_question (IntegrationMonitorDaemon)
+        - curiosity.capability_question (CapabilityDiscoveryDaemon)
+        - curiosity.exploration_question (ExplorationScannerDaemon)
+        - curiosity.knowledge_question (KnowledgeDiscoveryScannerDaemon)
         """
         if ChemSub is None:
             logger.warning("[curiosity_core] ChemSub not available, daemon subscription disabled")
             return
 
-        try:
-            self.chem_sub = ChemSub(
-                topic="curiosity.integration_question",
-                on_json=self._on_daemon_question,
-                zooid_name="curiosity_core",
-                niche="curiosity"
-            )
-            logger.info("[curiosity_core] Subscribed to curiosity.integration_question")
-        except Exception as e:
-            logger.warning(f"[curiosity_core] Failed to subscribe to daemon questions: {e}")
+        daemon_signals = [
+            "curiosity.integration_question",
+            "curiosity.capability_question",
+            "curiosity.exploration_question",
+            "curiosity.knowledge_question"
+        ]
+
+        for signal in daemon_signals:
+            try:
+                sub = ChemSub(
+                    topic=signal,
+                    on_json=self._on_daemon_question,
+                    zooid_name="curiosity_core",
+                    niche="curiosity"
+                )
+                self.chem_subs.append(sub)
+                logger.info(f"[curiosity_core] Subscribed to {signal}")
+            except Exception as e:
+                logger.warning(f"[curiosity_core] Failed to subscribe to {signal}: {e}")
+
+        logger.info(f"[curiosity_core] Successfully subscribed to {len(self.chem_subs)}/4 daemon signals")
 
     def _get_daemon_questions(self) -> List[CuriosityQuestion]:
         """
@@ -2407,18 +2451,11 @@ class CuriosityCore:
         except Exception as e:
             logger.warning(f"[curiosity_core] Failed to generate test questions: {e}")
 
-        # PROACTIVE MODULE DISCOVERY - Scan /src for undiscovered capabilities
-        # TEMPORARILY DISABLED: Causes OOM (scans entire /src every 60s)
-        # TODO: Replace with module-discovery-daemon (streaming, inotify-based)
-        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
-        # try:
-        #     discovery_monitor = ModuleDiscoveryMonitor()
-        #     discovery_questions = discovery_monitor.generate_discovery_questions()
-        #     questions.extend(discovery_questions)
-        #     logger.info(f"[curiosity_core] Generated {len(discovery_questions)} module discovery questions")
-        # except Exception as e:
-        #     logger.warning(f"[curiosity_core] Failed to generate discovery questions: {e}")
-        logger.info("[curiosity_core] ModuleDiscoveryMonitor DISABLED (memory leak mitigation)")
+        # MODULE DISCOVERY: Now handled by CapabilityDiscoveryMonitorDaemon
+        # The old ModuleDiscoveryMonitor caused OOM by scanning entire /src every 60s
+        # Now handled by: /home/kloros/src/kloros/daemons/capability_discovery_daemon.py (systemd service)
+        # Questions received via ChemBus signal: curiosity.capability_question
+        logger.debug("[curiosity_core] Module discovery now provided by CapabilityDiscoveryDaemon")
 
         # META-COGNITION: Check if my own investigations are producing meaningful results
         try:
@@ -2438,103 +2475,32 @@ class CuriosityCore:
         except Exception as e:
             logger.warning(f"[curiosity_core] Failed to generate chaos questions: {e}")
 
-        # INTEGRATION ANALYSIS: Detect broken component wiring and architectural gaps
-        # TEMPORARILY DISABLED: PRIMARY CULPRIT (parses 500+ files into AST every 60s = 150MB/min growth)
-        # TODO: Replace with integration-monitor-daemon (streaming, inotify-based incremental analysis)
-        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
-        # try:
-        #     from src.registry.integration_flow_monitor import IntegrationFlowMonitor
-        #     integration_monitor = IntegrationFlowMonitor()
-        #     integration_questions = integration_monitor.generate_integration_questions()
-        #     questions.extend(integration_questions)
-        #     logger.info(f"[curiosity_core] Generated {len(integration_questions)} integration questions")
-        # except Exception as e:
-        #     logger.warning(f"[curiosity_core] Failed to generate integration questions: {e}")
-        logger.info("[curiosity_core] IntegrationFlowMonitor DISABLED (memory leak mitigation - PRIMARY CULPRIT)")
+        # INTEGRATION ANALYSIS: Replaced by IntegrationMonitorDaemon (streaming daemon)
+        # The old IntegrationFlowMonitor caused memory leaks (150MB/min growth from parsing 500+ files every 60s)
+        # Now handled by: /home/kloros/src/kloros/daemons/integration_monitor_daemon.py (systemd service)
+        # Questions received via ChemBus signal: curiosity.integration_question
+        logger.debug("[curiosity_core] Integration questions now provided by IntegrationMonitorDaemon")
 
-        # CAPABILITY DISCOVERY: Detect missing tools, skills, patterns
-        # TEMPORARILY DISABLED: Heavy filesystem scanning every 60s
-        # TODO: Replace with capability-discovery-daemon (streaming)
-        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
-        # try:
-        #     from src.registry.capability_discovery_monitor import CapabilityDiscoveryMonitor
-        #     capability_monitor = CapabilityDiscoveryMonitor()
-        #     capability_questions = capability_monitor.generate_capability_questions()
-        #     questions.extend(capability_questions)
-        #     logger.info(f"[curiosity_core] Generated {len(capability_questions)} capability gap questions")
-        # except Exception as e:
-        #     logger.warning(f"[curiosity_core] Failed to generate capability questions: {e}")
-        logger.info("[curiosity_core] CapabilityDiscoveryMonitor DISABLED (memory leak mitigation)")
+        # CAPABILITY DISCOVERY: Replaced by CapabilityDiscoveryMonitorDaemon (streaming daemon)
+        # The old CapabilityDiscoveryMonitor caused heavy filesystem scanning every 60s
+        # Now handled by: /home/kloros/src/kloros/daemons/capability_discovery_daemon.py (systemd service)
+        # Questions received via ChemBus signal: curiosity.capability_question
+        # Includes semantic analysis to prevent phantom capability discoveries
+        logger.debug("[curiosity_core] Capability questions now provided by CapabilityDiscoveryDaemon")
 
-        # EXPLORATION: Proactive hardware and optimization opportunity discovery
-        # TEMPORARILY DISABLED: Heavy system scanning every 60s
-        # TODO: Replace with exploration-daemon (streaming, periodic GPU/hardware checks)
-        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
-        # try:
-        #     from src.registry.exploration_scanner import generate_exploration_questions
-        #     exploration_questions_raw = generate_exploration_questions()
-        #     # Convert dict questions to CuriosityQuestion objects
-        #     exploration_questions = []
-        #     for q_dict in exploration_questions_raw:
-        #         try:
-        #             q = CuriosityQuestion(
-        #                 id=q_dict["id"],
-        #                 hypothesis=q_dict["hypothesis"],
-        #                 question=q_dict["question"],
-        #                 evidence=q_dict.get("evidence", []),
-        #                 evidence_hash=q_dict.get("evidence_hash"),
-        #                 action_class=ActionClass(q_dict["action_class"]),
-        #                 autonomy=q_dict.get("autonomy", 2),
-        #                 value_estimate=q_dict.get("value_estimate", 0.5),
-        #                 cost=q_dict.get("cost", 0.5),
-        #                 status=QuestionStatus(q_dict.get("status", "ready")),
-        #                 created_at=q_dict.get("created_at", datetime.now().isoformat()),
-        #                 capability_key=q_dict.get("capability_key"),
-        #                 metadata=q_dict.get("metadata", {})
-        #             )
-        #             exploration_questions.append(q)
-        #         except Exception as conv_e:
-        #             logger.warning(f"[curiosity_core] Failed to convert exploration question: {conv_e}")
-        #     questions.extend(exploration_questions)
-        #     logger.info(f"[curiosity_core] Generated {len(exploration_questions)} proactive exploration questions")
-        # except Exception as e:
-        #     logger.warning(f"[curiosity_core] Failed to generate exploration questions: {e}")
-        logger.info("[curiosity_core] ExplorationScanner DISABLED (memory leak mitigation)")
+        # EXPLORATION: Replaced by ExplorationScannerDaemon (streaming daemon)
+        # The old ExplorationScanner caused heavy system scanning every 60s
+        # Now handled by: /home/kloros/src/kloros/daemons/exploration_scanner_daemon.py (systemd service)
+        # Questions received via ChemBus signal: curiosity.exploration_question
+        # Timer-based (300s interval) instead of file-watching, scans GPU/hardware state
+        logger.debug("[curiosity_core] Exploration questions now provided by ExplorationScannerDaemon")
 
-        # KNOWLEDGE DISCOVERY: Scan filesystem for unindexed/stale documentation and source code
-        # TEMPORARILY DISABLED: Filesystem scanning causing memory accumulation
-        # TODO: Replace with knowledge-discovery-daemon (streaming, inotify-based)
-        # See: /home/kloros/STREAMING_ARCHITECTURE_REDESIGN.md
-        # try:
-        #     from kloros.introspection.scanners.unindexed_knowledge_scanner import scan_for_unindexed_knowledge
-        #     knowledge_questions_raw, _ = scan_for_unindexed_knowledge()
-        #     # Convert dict questions to CuriosityQuestion objects
-        #     knowledge_questions = []
-        #     for q_dict in knowledge_questions_raw:
-        #         try:
-        #             q = CuriosityQuestion(
-        #                 id=q_dict["id"],
-        #                 hypothesis=q_dict["hypothesis"],
-        #                 question=q_dict["question"],
-        #                 evidence=q_dict.get("evidence", []),
-        #                 evidence_hash=q_dict.get("evidence_hash"),
-        #                 action_class=ActionClass(q_dict["action_class"]),
-        #                 autonomy=q_dict.get("autonomy", 3),
-        #                 value_estimate=q_dict.get("value_estimate", 0.5),
-        #                 cost=q_dict.get("cost", 0.3),
-        #                 status=QuestionStatus(q_dict.get("status", "ready")),
-        #                 created_at=q_dict.get("created_at", datetime.now().isoformat()),
-        #                 capability_key=q_dict.get("capability_key"),
-        #                 metadata=q_dict.get("metadata", {})
-        #             )
-        #             knowledge_questions.append(q)
-        #         except Exception as conv_e:
-        #             logger.warning(f"[curiosity_core] Failed to convert knowledge question: {conv_e}")
-        #     questions.extend(knowledge_questions)
-        #     logger.info(f"[curiosity_core] Generated {len(knowledge_questions)} knowledge discovery questions")
-        # except Exception as e:
-        #     logger.warning(f"[curiosity_core] Failed to generate knowledge questions: {e}")
-        logger.info("[curiosity_core] KnowledgeDiscoveryScanner DISABLED (memory leak mitigation)")
+        # KNOWLEDGE DISCOVERY: Replaced by KnowledgeDiscoveryScannerDaemon (streaming daemon)
+        # The old KnowledgeDiscoveryScanner caused filesystem scanning and memory accumulation
+        # Now handled by: /home/kloros/src/kloros/daemons/knowledge_discovery_daemon.py (systemd service)
+        # Questions received via ChemBus signal: curiosity.knowledge_question
+        # Watches docs/ and src/ for unindexed documentation, missing docstrings, stale files
+        logger.debug("[curiosity_core] Knowledge questions now provided by KnowledgeDiscoveryDaemon")
 
         # STREAMING DAEMON QUESTIONS: Receive questions from event-driven daemons
         try:
@@ -2805,8 +2771,11 @@ class CuriosityCore:
             if follow_up_count > 0:
                 logger.info(f"[curiosity_core] Added {follow_up_count} follow-up questions to feed")
 
-            logger.info(f"[curiosity_core] Questions re-ranked by VOI, top question: "
-                      f"{questions[0].id if questions else 'none'} (VOI: {questions[0].value_estimate:.2f})")
+            if questions:
+                logger.info(f"[curiosity_core] Questions re-ranked by VOI, top question: "
+                          f"{questions[0].id} (VOI: {questions[0].value_estimate:.2f})")
+            else:
+                logger.info(f"[curiosity_core] Questions re-ranked by VOI, top question: none")
 
         except Exception as e:
             logger.warning(f"[curiosity_core] Brainmods reasoning failed, continuing without: {e}")

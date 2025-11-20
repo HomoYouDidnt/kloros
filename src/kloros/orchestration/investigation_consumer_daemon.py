@@ -34,10 +34,11 @@ from typing import Dict, Any
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from kloros.orchestration.chem_bus_v2 import _ZmqSub, ChemPub
+from kloros.orchestration.chem_bus_v2 import _ZmqSub, ChemPub, ChemSub
 from kloros.orchestration.maintenance_mode import wait_for_normal_mode
 from registry.module_investigator import get_module_investigator
 from registry.systemd_investigator import get_systemd_investigator
+from registry.semantic_evidence import SemanticEvidenceStore
 from kloros.orchestration.generic_investigation_handler import GenericInvestigationHandler
 from config.models_config import get_ollama_url, select_best_model_for_task
 
@@ -57,6 +58,13 @@ class InvestigationConsumer:
         self.subscriber = None
         self.investigation_count = 0
         self.chem_pub = ChemPub()
+
+        try:
+            self.semantic_store = SemanticEvidenceStore()
+        except Exception as e:
+            logger.warning(f"[investigation_consumer] Failed to initialize SemanticEvidenceStore: {e}, failure tracking disabled")
+            self.semantic_store = None
+
         # Use automatic failover: remote gaming rig if available, else local
         ollama_url = get_ollama_url()
 
@@ -68,18 +76,20 @@ class InvestigationConsumer:
         self.investigator = get_module_investigator(ollama_host=ollama_url, model=model)
         self.systemd_investigator = get_systemd_investigator(ollama_host=ollama_url, model=model)
         self.generic_handler = GenericInvestigationHandler(ollama_host=ollama_url, model=model)
-        # Rate limiting: max 4 concurrent investigations (increased after fixing infinite loop)
-        self.semaphore = threading.Semaphore(4)
-        # Emergency bypass: track high-priority investigations (bypass semaphore)
+        # Dynamic concurrent investigation limiting (self-regulates under pressure)
+        self.max_concurrent_investigations = 4  # Normal: 4 concurrent
+        self.current_concurrent_investigations = 0
+        self.concurrent_lock = threading.Lock()
+        # Emergency bypass: track high-priority investigations (bypass concurrency limit)
         self.emergency_investigations = 0
         self.emergency_lock = threading.Lock()
         self.last_investigation_time = 0
-        self.min_delay_between_investigations = 5  # seconds between starting new investigations
+        self.min_delay_between_investigations = 0.5  # Minimal throttle to prevent thread explosion
         # Investigation timeouts:
         # - Normal: 10 minutes (32B models are thorough, may use RAM offloading)
         # - Emergency: 2 minutes (operational errors need faster response)
         self.normal_investigation_timeout = 600  # 10 minutes
-        self.emergency_investigation_timeout = 120  # 2 minutes
+        self.emergency_investigation_timeout = 300  # 5 minutes
 
         self.metrics_window_start = time.time()
         self.metrics_investigations_completed = 0
@@ -91,6 +101,178 @@ class InvestigationConsumer:
             daemon=True
         )
         self._metrics_thread.start()
+
+        # Self-regulation: respond to affective signals
+        self.base_delay = 0.5  # Baseline throttle
+        self.max_delay = 5.0   # Maximum throttle under pressure
+        self.pressure_level = 0  # 0=normal, 1=elevated, 2=critical
+        self.pressure_lock = threading.Lock()
+        self.last_pressure_signal = 0
+
+        # Queue depth limiting: prevent runaway queue growth
+        self.max_queue_depth = 100  # Reject investigations when queue exceeds this
+        self.queue_rejection_count = 0
+
+        # Subscribe to AFFECT_MEMORY_PRESSURE for self-regulation
+        self.affective_sub = ChemSub(
+            topic="AFFECT_MEMORY_PRESSURE",
+            on_json=self._on_memory_pressure_signal,
+            zooid_name="investigation_consumer_affective",
+            niche="consciousness"
+        )
+        logger.info("[investigation_consumer] ✅ Subscribed to AFFECT_MEMORY_PRESSURE for self-regulation")
+
+    def _on_memory_pressure_signal(self, msg: Dict[str, Any]):
+        """
+        Handle AFFECT_MEMORY_PRESSURE signal by reducing concurrency and increasing throttle.
+
+        Self-regulation: when under memory/resource pressure, drastically reduce
+        concurrent investigations and slow down start rate to allow system to recover.
+        """
+        facts = msg.get('facts', msg)
+        severity = facts.get('severity', 'high')
+        thread_count = facts.get('thread_count', 0)
+        swap_mb = facts.get('swap_used_mb', 0)
+
+        with self.pressure_lock:
+            current_time = time.time()
+
+            # Update pressure level based on severity
+            if severity == 'critical':
+                self.pressure_level = 2
+                self.min_delay_between_investigations = self.max_delay
+                self.max_concurrent_investigations = 1  # CRITICAL: Only 1 at a time
+                logger.warning(f"[investigation_consumer] 🚨 CRITICAL pressure detected "
+                             f"(threads={thread_count}, swap={swap_mb:.0f}MB) - "
+                             f"throttling to {self.max_delay}s delay, max 1 concurrent")
+            else:  # high
+                self.pressure_level = 1
+                self.min_delay_between_investigations = (self.base_delay + self.max_delay) / 2
+                self.max_concurrent_investigations = 2  # ELEVATED: Max 2 concurrent
+                logger.info(f"[investigation_consumer] ⚠️  Elevated pressure detected "
+                           f"(threads={thread_count}, swap={swap_mb:.0f}MB) - "
+                           f"throttling to {self.min_delay_between_investigations:.1f}s delay, max 2 concurrent")
+
+            self.last_pressure_signal = current_time
+
+    def _check_pressure_recovery(self):
+        """
+        Periodically check if pressure has subsided and restore normal operation.
+
+        Call this during investigation loop to gradually recover from pressure.
+        """
+        with self.pressure_lock:
+            current_time = time.time()
+            time_since_pressure = current_time - self.last_pressure_signal
+
+            # If no pressure signal for 60 seconds, gradually reduce throttle
+            if time_since_pressure > 60 and self.pressure_level > 0:
+                self.pressure_level -= 1
+
+                if self.pressure_level == 0:
+                    self.min_delay_between_investigations = self.base_delay
+                    self.max_concurrent_investigations = 4
+                    logger.info(f"[investigation_consumer] ✅ Pressure recovered - "
+                              f"baseline: {self.base_delay}s delay, max 4 concurrent")
+                elif self.pressure_level == 1:
+                    self.min_delay_between_investigations = (self.base_delay + self.max_delay) / 2
+                    self.max_concurrent_investigations = 2
+                    logger.info(f"[investigation_consumer] 📉 Pressure decreasing - "
+                              f"{self.min_delay_between_investigations:.1f}s delay, max 2 concurrent")
+
+                # Reset timer for next check
+                self.last_pressure_signal = current_time
+
+    def _is_investigation_failure(self, question_data: Dict[str, Any], result: Dict[str, Any]) -> bool:
+        """
+        Detect if an investigation has failed based on the definition of failure.
+
+        An investigation fails if ANY of:
+        1. Status is not "completed" (indicates explicit failure)
+        2. Result contains "unsolvable" tag
+        3. No evidence was gathered (empty evidence list)
+        4. Evidence hash matches previous attempt (no new information)
+
+        Args:
+            question_data: Original question with metadata
+            result: Investigation result dict
+
+        Returns:
+            True if investigation is considered a failure, False otherwise
+        """
+        status = result.get("status")
+        if status != "completed":
+            return True
+
+        tags = result.get("tags", [])
+        if "unsolvable" in tags:
+            return True
+
+        evidence = result.get("evidence", [])
+        if not evidence or len(evidence) == 0:
+            return True
+
+        evidence_hash = result.get("evidence_hash")
+        previous_hash = question_data.get("previous_evidence_hash")
+        if evidence_hash and previous_hash and evidence_hash == previous_hash:
+            return True
+
+        return False
+
+    def _get_failure_reason(self, result: Dict[str, Any]) -> str:
+        """
+        Extract a human-readable reason for investigation failure.
+
+        Args:
+            result: Investigation result dict
+
+        Returns:
+            String description of failure reason
+        """
+        status = result.get("status")
+        if status != "completed":
+            return f"Investigation failed with status: {status}"
+
+        tags = result.get("tags", [])
+        if "unsolvable" in tags:
+            return "Investigation marked as unsolvable"
+
+        evidence_hash = result.get("evidence_hash")
+        previous_hash = result.get("previous_evidence_hash")
+        if evidence_hash and previous_hash and evidence_hash == previous_hash:
+            return f"Investigation produced duplicate evidence (hash: {evidence_hash})"
+
+        evidence = result.get("evidence", [])
+        if not evidence or len(evidence) == 0:
+            return "Investigation produced no evidence"
+
+        return "Investigation failed: unknown reason"
+
+    def _record_investigation_failure(self, question_data: Dict[str, Any], result: Dict[str, Any]) -> None:
+        """
+        Record a failure in the semantic evidence store.
+
+        Only records if semantic store is available and capability_key exists.
+        Catches and logs exceptions to prevent failure tracking from breaking consumer.
+
+        Args:
+            question_data: Original question with metadata
+            result: Investigation result dict
+        """
+        if not self.semantic_store:
+            return
+
+        capability_key = question_data.get("capability_key")
+        if not capability_key:
+            logger.warning(f"[investigation_consumer] No capability_key in question_data, skipping failure tracking")
+            return
+
+        try:
+            reason = self._get_failure_reason(result)
+            self.semantic_store.record_failure(capability_key, reason=reason)
+            logger.debug(f"[investigation_consumer] Recorded failure for {capability_key}: {reason}")
+        except Exception as e:
+            logger.error(f"[investigation_consumer] Failed to record failure: {e}")
 
     def _is_meta_question(self, question_id: str) -> bool:
         """
@@ -204,6 +386,34 @@ class InvestigationConsumer:
                     self._mark_question_processed(question_id, intent_sha="meta_skipped", evidence=facts.get("evidence"))
                     return
 
+                # QUEUE DEPTH LIMITING: Reject investigations when queue is too deep
+                # Prevents runaway queue growth from exhausting memory/disk
+                current_queue_depth = self._get_queue_depth()
+                if current_queue_depth >= self.max_queue_depth:
+                    self.queue_rejection_count += 1
+                    logger.warning(
+                        f"[investigation_consumer] 🚫 Queue depth ({current_queue_depth}) "
+                        f"exceeds limit ({self.max_queue_depth}), REJECTING investigation: {question_id} "
+                        f"(total rejections: {self.queue_rejection_count})"
+                    )
+
+                    # Emit back-pressure signal to alert curiosity processors
+                    self.chem_pub.emit(
+                        signal="INVESTIGATION_QUEUE_FULL",
+                        ecosystem="consciousness",
+                        intensity=2.0,
+                        facts={
+                            "queue_depth": current_queue_depth,
+                            "limit": self.max_queue_depth,
+                            "rejected_question_id": question_id,
+                            "total_rejections": self.queue_rejection_count
+                        }
+                    )
+
+                    # Mark as processed to prevent re-queuing
+                    self._mark_question_processed(question_id, intent_sha="queue_full", evidence=facts.get("evidence"))
+                    return
+
                 logger.info(f"[investigation_consumer] Received {signal} (incident={incident_id})")
 
                 # Check priority (critical/high errors bypass limits)
@@ -221,6 +431,9 @@ class InvestigationConsumer:
                     thread.start()
                 else:
                     # Normal priority: rate limit and semaphore apply
+                    # Check if pressure has subsided and adjust throttle
+                    self._check_pressure_recovery()
+
                     # Rate limit: ensure minimum delay between investigations
                     current_time = time.time()
                     time_since_last = current_time - self.last_investigation_time
@@ -244,6 +457,38 @@ class InvestigationConsumer:
         except Exception as e:
             logger.error(f"[investigation_consumer] Failed to process message: {e}", exc_info=True)
 
+    def _on_throttle_message(self, topic: str, payload: bytes):
+        """
+        Handle INVESTIGATION_THROTTLE_REQUEST signal from cognitive actions.
+
+        Reduces investigation concurrency in response to memory pressure.
+
+        Args:
+            topic: Signal topic
+            payload: Raw JSON bytes
+        """
+        try:
+            msg = json.loads(payload.decode('utf-8'))
+            facts = msg.get('facts', {})
+            requested_concurrency = facts.get('requested_concurrency', 1)
+            reason = facts.get('reason', 'Unknown')
+            thread_count = facts.get('thread_count', 0)
+            swap_used_mb = facts.get('swap_used_mb', 0)
+            memory_used_pct = facts.get('memory_used_pct', 0)
+
+            with self.concurrent_lock:
+                old_limit = self.max_concurrent_investigations
+                self.max_concurrent_investigations = requested_concurrency
+
+            logger.warning(
+                f"[investigation_consumer] 🔻 THROTTLE REQUEST: {old_limit} → {requested_concurrency} "
+                f"(threads={thread_count}, swap={swap_used_mb}MB, mem={memory_used_pct}%) "
+                f"Reason: {reason}"
+            )
+
+        except Exception as e:
+            logger.error(f"[investigation_consumer] Failed to process throttle request: {e}", exc_info=True)
+
     def _run_emergency_investigation(self, question_data: Dict[str, Any]):
         """Emergency investigation - bypass semaphore and rate limiting."""
         with self.emergency_lock:
@@ -259,11 +504,25 @@ class InvestigationConsumer:
                 self.emergency_investigations -= 1
 
     def _run_investigation_with_semaphore(self, question_data: Dict[str, Any]):
-        """Wrapper to enforce concurrency limit via semaphore."""
-        with self.semaphore:
-            logger.info(f"[investigation_consumer] Acquired semaphore slot (active: {4 - self.semaphore._value})")
+        """Wrapper to enforce dynamic concurrency limit (self-regulates under pressure)."""
+        # Wait until we're below the concurrent investigation limit
+        while True:
+            with self.concurrent_lock:
+                if self.current_concurrent_investigations < self.max_concurrent_investigations:
+                    self.current_concurrent_investigations += 1
+                    max_allowed = self.max_concurrent_investigations
+                    active_count = self.current_concurrent_investigations
+                    break
+            # If at limit, wait a bit before checking again
+            time.sleep(0.5)
+
+        try:
+            logger.info(f"[investigation_consumer] Started investigation (active: {active_count}/{max_allowed})")
             self._run_investigation_with_timeout(question_data, timeout=self.normal_investigation_timeout)
-            logger.info(f"[investigation_consumer] Released semaphore slot")
+        finally:
+            with self.concurrent_lock:
+                self.current_concurrent_investigations -= 1
+                logger.info(f"[investigation_consumer] Completed investigation (active: {self.current_concurrent_investigations}/{self.max_concurrent_investigations})")
 
     def _run_investigation_with_timeout(self, question_data: Dict[str, Any], timeout: int):
         """Run investigation with timeout protection."""
@@ -447,15 +706,17 @@ class InvestigationConsumer:
             else:
                 # Generic investigation - adaptive handler for any question type
                 logger.info(f"[investigation_consumer] Using generic investigation handler for: {question_id}")
+                initial_evidence = question_data.get("evidence", [])
                 investigation = self.generic_handler.investigate(
                     question=question_text,
-                    question_id=question_id
+                    question_id=question_id,
+                    initial_evidence=initial_evidence
                 )
 
-                # Enrich with question context
+                # Enrich with question context (preserve gathered evidence!)
                 investigation.update({
                     "hypothesis": hypothesis,
-                    "evidence": question_data.get("evidence", []),
+                    "initial_evidence": initial_evidence,
                     "investigation_method": "generic_adaptive",
                     "status": "completed" if investigation.get("success") else "failed"
                 })
@@ -471,6 +732,10 @@ class InvestigationConsumer:
                     self.metrics_investigations_completed += 1
                 else:
                     self.metrics_investigations_failed += 1
+
+            # Track failures for learning (before marking as processed)
+            if self._is_investigation_failure(question_data, investigation):
+                self._record_investigation_failure(question_data, investigation)
 
             # Emit Q_INVESTIGATION_COMPLETE signal with performance metrics
             try:
@@ -559,11 +824,17 @@ class InvestigationConsumer:
         host = self._get_host_indicator()
         logger.info(f"[investigation_consumer] {host} Investigating module: {module_name} at {module_path}")
 
+        # Extract custom instructions if provided by meta-agent
+        custom_instructions = question_data.get('custom_instructions', None)
+        if custom_instructions:
+            logger.info(f"[investigation_consumer] Using custom instructions from meta-agent")
+
         # Use ModuleInvestigator for deep analysis
         investigation_result = self.investigator.investigate_module(
             module_path=module_path,
             module_name=module_name,
-            question=question_text
+            question=question_text,
+            custom_instructions=custom_instructions
         )
 
         # Enrich with question context
@@ -729,14 +1000,27 @@ class InvestigationConsumer:
         self.running = True
 
         logger.info("[investigation_consumer] Starting investigation consumer daemon")
-        logger.info("[investigation_consumer] Subscribing to Q_CURIOSITY_INVESTIGATE signals")
+        logger.info("[investigation_consumer] Subscribing to Q_CURIOSITY_INVESTIGATE signals (autonomous)")
+        logger.info("[investigation_consumer] Subscribing to Q_INVESTIGATION_REQUEST signals (meta-agent delegation)")
         logger.info("[investigation_consumer] Using LLM-powered deep code analysis")
 
         try:
-            # Create ZMQ subscriber
+            # Create ZMQ subscribers for both autonomous and delegated investigations
             self.subscriber = _ZmqSub(
                 topic="Q_CURIOSITY_INVESTIGATE",
                 on_message=self._on_message
+            )
+
+            # Also subscribe to meta-agent delegation requests
+            self.subscriber_delegated = _ZmqSub(
+                topic="Q_INVESTIGATION_REQUEST",
+                on_message=self._on_message
+            )
+
+            # Subscribe to throttle requests from cognitive actions
+            self.subscriber_throttle = _ZmqSub(
+                topic="INVESTIGATION_THROTTLE_REQUEST",
+                on_message=self._on_throttle_message
             )
 
             logger.info("[investigation_consumer] Consumer daemon running, waiting for signals...")
@@ -754,6 +1038,10 @@ class InvestigationConsumer:
         finally:
             if self.subscriber:
                 self.subscriber.close()
+            if hasattr(self, 'subscriber_delegated') and self.subscriber_delegated:
+                self.subscriber_delegated.close()
+            if hasattr(self, 'subscriber_throttle') and self.subscriber_throttle:
+                self.subscriber_throttle.close()
             logger.info(f"[investigation_consumer] Daemon stopped (completed {self.investigation_count} investigations)")
 
     def stop(self):

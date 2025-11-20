@@ -50,10 +50,12 @@ def is_service_intentionally_disabled(service_name: str) -> bool:
         )
 
         status = result.stdout.strip()
+        exit_code = result.returncode
 
-        logger.debug(f"Service {service_name} is-enabled status: {status}")
+        logger.debug(f"Service {service_name} is-enabled status: {status} (exit: {exit_code})")
 
-        return status in ["disabled", "masked"]
+        # Consider disabled, masked, or not-found (exit 4) as intentionally disabled
+        return status in ["disabled", "masked", "not-found"] or exit_code == 4
 
     except subprocess.TimeoutExpired:
         logger.warning(f"Timeout checking if {service_name} is disabled (assuming not disabled)")
