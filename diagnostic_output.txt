@@ -1,0 +1,156 @@
+libcst not available, using ast fallback (less precise)
+============================================================
+KLoROS Integration Diagnostic
+============================================================
+[92m[OK][0m Registry loaded (67 entries)
+[92m[OK][0m Memory system imported
+[94m[INFO][0m Testing memory
+[92m[OK][0m kloros_memory - imports OK
+[94m[INFO][0m Testing tools.tracker
+[92m[OK][0m tools.tracker - imports OK
+[94m[INFO][0m Testing tts.router
+[92m[OK][0m tts.router - imports OK
+[94m[INFO][0m Testing stt
+[92m[OK][0m stt.hybrid_backend - imports OK
+[94m[INFO][0m Testing vad.silero
+[91m[FAIL][0m audio.silero_vad - import failed: No module named 'torchaudio'
+[94m[INFO][0m Testing vad.webrtc
+[92m[OK][0m audio.vad - imports OK
+[94m[INFO][0m Testing browser_pack
+[92m[OK][0m browser_agent - imports OK
+[94m[INFO][0m Testing dev_pack
+[92m[OK][0m dev_agent - imports OK
+[94m[INFO][0m Testing scholar_pack
+[91m[FAIL][0m scholar - import failed: No module named 'scholar.citations.chroma_retriever'
+[94m[INFO][0m Testing xai_pack
+[92m[OK][0m xai - imports OK
+[94m[INFO][0m Testing brainmods.tot
+[92m[OK][0m brainmods.tot_search - imports OK
+[94m[INFO][0m Testing brainmods.debate
+[92m[OK][0m brainmods.debate - imports OK
+[94m[INFO][0m Testing brainmods.voi
+[92m[OK][0m brainmods.voi - imports OK
+[94m[INFO][0m Testing brainmods.safety
+[92m[OK][0m brainmods.safety_value - imports OK
+[94m[INFO][0m Testing brainmods.provenance
+[92m[OK][0m brainmods.provenance - imports OK
+[94m[INFO][0m Testing rag
+[92m[OK][0m rag - imports OK
+[94m[INFO][0m Testing voice
+[reflection] D-REAM evolution system available
+[reflection] Enhanced reflection system not available: No module named 'src.idle_reflection.models'
+[reflection] Falling back to basic reflection system
+[92m[OK][0m kloros_voice - imports OK
+[94m[INFO][0m Testing agentflow
+[92m[OK][0m agentflow - imports OK
+[94m[INFO][0m Testing tumix
+[92m[OK][0m tumix - imports OK
+[94m[INFO][0m Testing dream
+[92m[OK][0m dream - imports OK
+[94m[INFO][0m Testing selfcoder
+[92m[OK][0m selfcoder - imports OK
+[94m[INFO][0m Testing mcp
+[92m[OK][0m mcp.integration - imports OK
+[94m[INFO][0m Testing deepagents
+[92m[OK][0m deepagents.wrapper - imports OK
+[94m[INFO][0m Testing tool_synthesis
+[91m[FAIL][0m tool_synthesis - import failed: attempted relative import beyond top-level package
+[94m[INFO][0m Testing config
+[92m[OK][0m config - imports OK
+[94m[INFO][0m Testing audio
+[92m[OK][0m audio - imports OK
+[94m[INFO][0m Testing chroma_adapters
+[91m[FAIL][0m chroma_adapters - import failed: No module named 'chroma_adapters'
+[94m[INFO][0m Testing inference
+[91m[FAIL][0m inference - import failed: No module named 'inference'
+[94m[INFO][0m Testing common
+[92m[OK][0m common - imports OK
+[94m[INFO][0m Testing uncertainty
+[92m[OK][0m uncertainty - imports OK
+[94m[INFO][0m Testing dream_lab
+[92m[OK][0m dream_lab - imports OK
+[94m[INFO][0m Testing governance
+[92m[OK][0m governance - imports OK
+[94m[INFO][0m Testing toolforge
+[92m[OK][0m toolforge - imports OK
+[94m[INFO][0m Testing idle_reflection
+[91m[FAIL][0m idle_reflection - import failed: No module named 'idle_reflection.models'
+[94m[INFO][0m Testing meta_cognition
+[92m[OK][0m meta_cognition - imports OK
+[94m[INFO][0m Testing self_heal
+[92m[OK][0m self_heal - imports OK
+[94m[INFO][0m Testing middleware
+[92m[OK][0m middleware - imports OK
+[94m[INFO][0m Testing introspection
+[92m[OK][0m introspection - imports OK
+[94m[INFO][0m Testing style
+[92m[OK][0m style - imports OK
+[94m[INFO][0m Testing heuristics
+[92m[OK][0m heuristics - imports OK
+[94m[INFO][0m Testing cognition
+[92m[OK][0m cognition - imports OK
+[94m[INFO][0m Testing speaker
+[92m[OK][0m speaker - imports OK
+[94m[INFO][0m Testing goal_system
+[92m[OK][0m goal_system - imports OK
+[94m[INFO][0m Testing phase
+[92m[OK][0m phase - imports OK
+[94m[INFO][0m Testing zooids
+[92m[OK][0m zooids - imports OK
+[94m[INFO][0m Testing core
+[92m[OK][0m core - imports OK
+[94m[INFO][0m Testing reasoning
+[92m[OK][0m reasoning - imports OK
+[94m[INFO][0m Testing consciousness
+[92m[OK][0m consciousness - imports OK
+[94m[INFO][0m Testing dream_alerts
+[92m[OK][0m dream_alerts - imports OK
+[94m[INFO][0m Testing spica
+[92m[OK][0m spica - imports OK
+[94m[INFO][0m Testing c2c
+[92m[OK][0m c2c - imports OK
+[94m[INFO][0m Testing ra3
+[92m[OK][0m ra3 - imports OK
+[94m[INFO][0m Testing petri
+[92m[OK][0m petri - imports OK
+[94m[INFO][0m Testing ace
+[92m[OK][0m ace - imports OK
+[94m[INFO][0m Testing reflexion
+[92m[OK][0m reflexion - imports OK
+[94m[INFO][0m Testing evaluator
+[92m[OK][0m evaluator - imports OK
+[94m[INFO][0m Testing persona
+[92m[OK][0m persona - imports OK
+[94m[INFO][0m Testing tool_curation
+[92m[OK][0m tool_curation - imports OK
+[94m[INFO][0m Testing compat
+[92m[OK][0m compat - imports OK
+[94m[INFO][0m Testing utils
+[92m[OK][0m utils - imports OK
+[94m[INFO][0m Testing dream_legacy_domains
+[92m[OK][0m dream_legacy_domains - imports OK
+[94m[INFO][0m Testing kloros
+[92m[OK][0m kloros - imports OK
+[94m[INFO][0m Testing registry
+[92m[OK][0m registry - imports OK
+[94m[INFO][0m Testing gpu_workers
+[92m[OK][0m gpu_workers - imports OK
+[94m[INFO][0m Testing integrations
+[92m[OK][0m integrations - imports OK
+[94m[INFO][0m Testing test_discovery_module
+[91m[FAIL][0m test_discovery_module - import failed: No module named 'test_discovery_module'
+[94m[INFO][0m Testing routing
+[92m[OK][0m routing - imports OK
+[94m[INFO][0m Testing logic
+[92m[OK][0m logic - imports OK
+[94m[INFO][0m Testing ux
+[92m[OK][0m ux - imports OK
+[94m[INFO][0m Testing orchestrator
+[92m[OK][0m orchestrator - imports OK
+[94m[INFO][0m Testing reporting
+[92m[OK][0m reporting - imports OK
+[94m[INFO][0m Testing cache
+[92m[OK][0m cache - imports OK
+============================================================
+Results: 65 passed, 7 failed
+============================================================

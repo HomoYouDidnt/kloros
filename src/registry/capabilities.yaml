@@ -56,7 +56,7 @@ dev_pack:
   - sandbox
 scholar_pack:
   module: scholar
-  enabled: true
+  enabled: false
   description: Report generation with citations
 xai_pack:
   module: xai
@@ -143,7 +143,7 @@ deepagents:
   max_in_flight: 2
 tool_synthesis:
   module: tool_synthesis
-  enabled: true
+  enabled: false
   description: Dynamic tool generation and synthesis
   auto_discovered: true
   discovered_at: '2025-11-08T17:34:34.877162'
@@ -164,14 +164,14 @@ audio:
   py_files: 14
 chroma_adapters:
   module: chroma_adapters
-  enabled: true
+  enabled: false
   description: Module with 7 Python files
   auto_discovered: true
   discovered_at: '2025-11-09T18:59:35.323605'
   py_files: 7
 inference:
   module: inference
-  enabled: true
+  enabled: false
   description: Module with 6 Python files
   auto_discovered: true
   discovered_at: '2025-11-09T19:12:50.157009'
@@ -213,7 +213,7 @@ toolforge:
   py_files: 5
 idle_reflection:
   module: idle_reflection
-  enabled: true
+  enabled: false
   description: Module component (3 files)
   auto_discovered: true
   discovered_at: '2025-11-09T22:45:04.929665'
@@ -437,7 +437,7 @@ integrations:
   py_files: 3
 test_discovery_module:
   module: test_discovery_module
-  enabled: true
+  enabled: false
   description: Module component (1 files)
   auto_discovered: true
   discovered_at: '2025-11-14T15:22:48.923288'

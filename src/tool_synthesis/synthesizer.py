@@ -11,6 +11,10 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
+from pathlib import Path
+
+# Dynamic root determination
+ROOT_DIR = str(Path(__file__).parent.parent.parent.absolute())
 
 from ..introspection_tools import IntrospectionTool
 from .templates import ToolTemplateEngine
@@ -65,7 +69,7 @@ class ToolSynthesizer:
             True if submitted successfully to D-REAM
         """
         try:
-            sys.path.insert(0, '/home/kloros/src/dream')
+            sys.path.insert(0, os.path.join(ROOT_DIR, 'src', 'dream'))
             from tool_dream_connector import get_tool_dream_connector
             
             # Get the real D-REAM connector
@@ -494,7 +498,7 @@ Generate ONLY the Python function, no explanations or markdown:
                 pass
 
         # Also log to synthesis log file
-        log_file = "/home/kloros/.kloros/tool_synthesis.log"
+        log_file = os.path.join(ROOT_DIR, ".kloros", "tool_synthesis.log")
         try:
             os.makedirs(os.path.dirname(log_file), exist_ok=True)
             with open(log_file, 'a') as f:
@@ -558,7 +562,7 @@ import pytest
 def test_{tool_name}_exists():
     '''Test that {tool_name} function exists'''
     import sys
-    sys.path.insert(0, '/home/kloros')
+    sys.path.insert(0, '{ROOT_DIR}')
     from src.introspection_tools import IntrospectionToolRegistry
 
     registry = IntrospectionToolRegistry()
@@ -567,7 +571,7 @@ def test_{tool_name}_exists():
 def test_{tool_name}_returns_string():
     '''Test that {tool_name} returns a string'''
     import sys
-    sys.path.insert(0, '/home/kloros')
+    sys.path.insert(0, '{ROOT_DIR}')
     from src.introspection_tools import IntrospectionToolRegistry
 
     registry = IntrospectionToolRegistry()
@@ -591,7 +595,7 @@ import pytest
 def test_{tool_name}_protocol_compliance():
     '''Test that {tool_name} follows IntrospectionTool protocol'''
     import sys
-    sys.path.insert(0, '/home/kloros')
+    sys.path.insert(0, '{ROOT_DIR}')
     from src.introspection_tools import IntrospectionToolRegistry
 
     registry = IntrospectionToolRegistry()

@@ -2,11 +2,12 @@
 """KLoROS Integration Diagnostic Tool"""
 import os, sys, importlib, yaml
 
-os.environ.setdefault("KLR_MEMORY_ROOT", "/home/kloros/src/kloros_memory")
-os.environ.setdefault("KLR_REGISTRY", "/home/kloros/src/registry/capabilities.yaml")
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("KLR_MEMORY_ROOT", os.path.join(ROOT_DIR, "src", "kloros_memory"))
+os.environ.setdefault("KLR_REGISTRY", os.path.join(ROOT_DIR, "src", "registry", "capabilities.yaml"))
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
-sys.path.insert(0, "/home/kloros/src")
-sys.path.insert(0, "/home/kloros")
+sys.path.insert(0, os.path.join(ROOT_DIR, "src"))
+sys.path.insert(0, ROOT_DIR)
 
 def log(level, msg):
     colors = {"OK": "\033[92m", "FAIL": "\033[91m", "INFO": "\033[94m"}
