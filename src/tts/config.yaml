@@ -1,0 +1,44 @@
+router:
+  order: ["xtts_v2", "kokoro", "mimic3", "piper"]
+  intent_map:
+    ack: "kokoro"
+    confirm: "kokoro"
+
+audio:
+  sample_rate: 22050
+  chunk_pause_ms:
+    default: 110
+    ack: 90
+    list: 130
+    explain: 110
+
+xtts_v2:
+  enabled: true  # Available via coqui-tts, compatible with Python 3.13
+  model: "tts_models/multilingual/multi-dataset/xtts_v2"
+  device: "cpu"  # Using CPU (GPU sm_61 incompatible with PyTorch sm_70+)
+  speed: 1.0
+  language: "en"
+  refs_dir: "~/KLoROS/voice_refs/active"
+
+kokoro:
+  enabled: false
+  mode: "cli"
+  voice: "en-us"
+
+mimic3:
+  enabled: true  # Working with Python 3.13 (CLI-based)
+  voice: "en_US/vctk_low"
+
+piper:
+  enabled: true
+  model_path: "~/KLoROS/models/piper/glados_piper_medium.onnx"
+  length_scale: 1.00
+  noise_scale: 0.67
+  noise_w: 0.80
+
+dream_jobs:
+  out_dir: "~/KLoROS/dream_jobs/tts_refs"
+  dataset_glob: "~/KLoROS/voice_corpus/**/*.wav"
+  min_speech_ms: 2500
+  max_clips: 120
+  target_sr: 22050

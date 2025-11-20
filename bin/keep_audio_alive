@@ -1,0 +1,48 @@
+#!/bin/bash
+set -euo pipefail
+
+export XDG_RUNTIME_DIR=/run/user/1001
+
+ensure_runtime_dir() {
+    if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+        sudo mkdir -p "$XDG_RUNTIME_DIR"
+        sudo chown kloros:kloros "$XDG_RUNTIME_DIR"
+        sudo chmod 0700 "$XDG_RUNTIME_DIR"
+    fi
+}
+
+start_pipewire() {
+    if ! pgrep -u kloros -x pipewire > /dev/null; then
+        echo "[$(date)] Starting pipewire..."
+        pipewire > /dev/null 2>&1 &
+        sleep 0.5
+    fi
+}
+
+start_pipewire_pulse() {
+    if ! pgrep -u kloros -x pipewire-pulse > /dev/null; then
+        echo "[$(date)] Starting pipewire-pulse..."
+        pipewire-pulse > /dev/null 2>&1 &
+        sleep 0.5
+    fi
+}
+
+start_wireplumber() {
+    if ! pgrep -u kloros -x wireplumber > /dev/null; then
+        echo "[$(date)] Starting wireplumber..."
+        wireplumber > /dev/null 2>&1 &
+        sleep 1
+    fi
+}
+
+ensure_runtime_dir
+
+echo "[$(date)] KLoROS audio keepalive starting..."
+
+while true; do
+    start_pipewire
+    start_pipewire_pulse
+    start_wireplumber
+
+    sleep 5
+done

@@ -1,0 +1,58 @@
+2.0
+
+# D-REAM Version History
+
+## v2.0 (2025-10-19) - Real Metrics & Hardening Baseline
+**Baseline Run IDs**: 1f83b0bc · 9aa607d1 · b2799d97 · cc54498e · 52ef5b5e
+
+### Core Features
+- Real metric instrumentation across all runners
+- CUDA tagging & fallback verified
+- Piecewise scoring (ASR + TTS)
+- Multi-generation HP search
+- Fault-injection before/after semantics
+- Baseline comparison API operational
+
+### Files Locked
+- `/home/kloros/src/tools/real_metrics.py` (344 lines)
+- `/opt/kloros/tools/stt_bench`
+- `/opt/kloros/tools/tts_retrain`
+- `/opt/kloros/tools/vad_sweep`
+- `/opt/kloros/tools/inject_fault`
+- `/opt/kloros/tools/dream/run_hp_search`
+- `/home/kloros/src/dashboard/routes_compare.py`
+
+### Validation Reports
+- `/home/kloros/src/dream/REAL_METRICS_VALIDATION.md`
+- `/home/kloros/src/dream/ENHANCEMENT_SUMMARY.md`
+
+### Change Control
+Any edit to real_metrics.py or runner scripts requires:
+1. Bump version to v2.1
+2. Re-run validation suite
+3. Emit new validation report
+4. Update baseline run IDs
+
+---
+
+## v1.0 (2025-10-18) - Initial D-REAM Implementation
+- Stub-based metrics
+- Basic admission gates
+- Manual PHASE → D-REAM bridge
+- Flask dashboard (port 5000)
+
+---
+
+## Roadmap
+
+### v2.1 (Planned)
+- GPU benchmarking (float16 + fp32 parity)
+- PESQ/STOI integration for TTS
+- Dashboard UI for baseline comparison
+- Genetic algorithm for HP search
+
+### v3.0 (Future)
+- KL divergence anchor model checks
+- Diversity metrics (MinHash/self-BLEU)
+- Automatic D-REAM evaluation after PHASE windows
+- A/B testing shadow deployments

@@ -1,0 +1,9 @@
+spica:
+  name: spica_runner
+  path: /home/kloros/src/integrations/spica_runner.py
+  entry: run_spica
+  inputs: ["text", "candidates", "query"]
+  outputs: ["text", "selected"]
+  tags: ["language", "selection"]
+  env:
+    SPICA_CAP_REG_PATH: /home/kloros/experiments/spica/capability_registry.json

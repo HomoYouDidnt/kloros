@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Standalone KLoROS Chat Interface - No Voice Dependencies"""
+
+import sys
+import os
+sys.path.insert(0, '/home/kloros')
+
+def load_environment():
+    """Load KLoROS environment without voice imports."""
+    env_file = '/home/kloros/.kloros_env'
+    if os.path.exists(env_file):
+        with open(env_file, 'r') as f:
+            for line in f:
+                if '=' in line and not line.strip().startswith('#'):
+                    key, value = line.strip().split('=', 1)
+                    os.environ[key] = value
+
+class StandaloneKLoROS:
+    """Standalone KLoROS for chat without voice dependencies."""
+
+    def __init__(self):
+        load_environment()
+
+        # Initialize core components only
+        self.conversation_history = []
+        self.reason_backend = None
+        self.memory_enhanced = None
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b-instruct-q4_0")
+        self.reason_backend_name = "local_rag"  # Fix backend type detection
+
+        # Initialize reasoning backend
+        self._init_reasoning()
+
+        # Initialize memory if available
+        self._init_memory()
+
+    def _init_reasoning(self):
+        """Initialize reasoning backend."""
+        try:
+            from src.reasoning.local_rag_backend import LocalRagBackend
+            self.reason_backend = LocalRagBackend()
+            print("[chat] Reasoning backend initialized")
+        except Exception as e:
+            print(f"[chat] Reasoning backend failed: {e}")
+
+    def _init_memory(self):
+        """Initialize memory system."""
+        try:
+            if os.getenv('KLR_ENABLE_MEMORY', '0') == '1':
+                from src.kloros_memory.integration import create_memory_enhanced_kloros
+                self.memory_enhanced = create_memory_enhanced_kloros(self)
+                print("[chat] Memory system initialized")
+        except Exception as e:
+            print(f"[chat] Memory initialization failed: {e}")
+
+    def chat(self, message):
+        """Process chat message through reasoning system."""
+        if not self.reason_backend:
+            return "❌ Reasoning system not available"
+
+        try:
+            # Log to memory if available
+            if self.memory_enhanced and hasattr(self.memory_enhanced, 'memory_logger'):
+                self.memory_enhanced.memory_logger.log_user_input(
+                    transcript=message, confidence=0.95
+                )
+
+            # Process through reasoning with tool integration
+            import inspect
+            sig = inspect.signature(self.reason_backend.reply)
+            if 'kloros_instance' in sig.parameters:
+                result = self.reason_backend.reply(message, kloros_instance=self)
+            else:
+                result = self.reason_backend.reply(message)
+
+            response = result.reply_text
+
+            # Log response to memory
+            if self.memory_enhanced and hasattr(self.memory_enhanced, 'memory_logger'):
+                self.memory_enhanced.memory_logger.log_llm_response(
+                    response=response, model='qwen2.5:14b-instruct-q4_0'
+                )
+
+            return response
+
+        except Exception as e:
+            return f"❌ Chat processing failed: {e}"
+
+    def handle_conversation(self):
+        """Handle conversation - placeholder for memory integration compatibility."""
+        # This method exists for memory integration compatibility
+        # In standalone chat mode, conversations are handled via direct chat() calls
+        pass
+
+    def listen_for_wake_word(self):
+        """Listen for wake word - placeholder for memory integration compatibility."""
+        # This method exists for memory integration compatibility
+        # In standalone chat mode, there is no wake word detection needed
+        pass
+
+def main():
+    print("\n" + "="*60)
+    print("KLoROS Standalone Chat Interface")
+    print("="*60)
+    print("✅ No voice dependencies - pure reasoning system")
+    print("🧠 Full tool execution and memory capabilities")
+    print("💬 Conversational AI system administration")
+    print("Type 'exit' to quit.")
+    print("="*60 + "\n")
+
+    try:
+        kloros = StandaloneKLoROS()
+
+        while True:
+            try:
+                user_input = input("You: ").strip()
+
+                if not user_input:
+                    continue
+
+                if user_input.lower() in ['exit', 'quit', 'bye']:
+                    print("\nKLoROS: Session terminated.")
+                    break
+
+                response = kloros.chat(user_input)
+                print(f"\nKLoROS: {response}\n")
+
+            except KeyboardInterrupt:
+                print("\n\nKLoROS: Session interrupted.")
+                break
+            except EOFError:
+                break
+            except Exception as e:
+                print(f"\nError: {e}\n")
+
+    except Exception as e:
+        print(f"Failed to initialize KLoROS: {e}")
+
+if __name__ == "__main__":
+    main()

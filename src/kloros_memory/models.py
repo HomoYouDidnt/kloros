@@ -1,0 +1,249 @@
+"""
+Pydantic models for KLoROS episodic-semantic memory system.
+
+Defines the data structures for events, episodes, and episode summaries
+with proper type validation and serialization support.
+"""
+
+from __future__ import annotations
+
+import time
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field, validator, field_validator
+
+
+class EventType(str, Enum):
+    """Types of events that can be logged in the memory system."""
+
+    # Voice interaction events
+    WAKE_DETECTED = "wake_detected"
+    STT_TRANSCRIPTION = "stt_transcription"
+    USER_INPUT = "user_input"
+    LLM_RESPONSE = "llm_response"
+    TTS_OUTPUT = "tts_output"
+
+    # System events
+    CONVERSATION_START = "conversation_start"
+    CONVERSATION_END = "conversation_end"
+    CONTEXT_RETRIEVAL = "context_retrieval"
+    ERROR_OCCURRED = "error_occurred"
+
+    # Memory events
+    EPISODE_CREATED = "episode_created"
+    EPISODE_CONDENSED = "episode_condensed"
+    MEMORY_HOUSEKEEPING = "memory_housekeeping"
+    SELF_REFLECTION = "self_reflection"
+    REAL_TIME_INTROSPECTION = "real_time_introspection"
+    DOCUMENTATION_LEARNED = "documentation_learned"
+
+    # Cognitive events
+    REASONING_TRACE = "reasoning_trace"
+    TOOL_EXECUTION = "tool_execution"
+    REFLECTION_INSIGHT = "reflection_insight"
+
+    # Consciousness events
+    AFFECTIVE_EVENT = "affective_event"
+
+
+class Event(BaseModel):
+    """
+    A single logged event in the KLoROS memory system.
+
+    Events are the atomic units of memory - each interaction, response,
+    or system action gets logged as an event with metadata.
+    """
+
+    id: Optional[int] = Field(None, description="Database ID (auto-generated)")
+    timestamp: float = Field(default_factory=time.time, description="Unix timestamp")
+    event_type: EventType = Field(..., description="Type of event")
+    content: str = Field("", description="Main content of the event")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional event metadata")
+    conversation_id: Optional[str] = Field(None, description="ID linking related events")
+    confidence: Optional[float] = Field(None, description="Confidence score (0.0-1.0)")
+    token_count: Optional[int] = Field(None, description="Token count for LLM events")
+
+    @validator('timestamp')
+    def validate_timestamp(cls, v):
+        """Ensure timestamp is reasonable."""
+        if v < 0:
+            raise ValueError("Timestamp cannot be negative")
+        return v
+
+    @field_validator('event_type', mode='before')
+    @classmethod
+    def validate_event_type(cls, v):
+        """Ensure event_type is always an EventType enum."""
+        if isinstance(v, EventType):
+            return v
+        if isinstance(v, str):
+            return EventType(v)
+        return v
+
+    @validator('confidence')
+    def validate_confidence(cls, v):
+        """Ensure confidence is between 0 and 1."""
+        if v is not None and (v < 0.0 or v > 1.0):
+            raise ValueError("Confidence must be between 0.0 and 1.0")
+        return v
+
+    @property
+    def datetime(self) -> datetime:
+        """Convert timestamp to datetime object."""
+        return datetime.fromtimestamp(self.timestamp)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return self.dict()
+
+    class Config:
+        """Pydantic configuration."""
+        use_enum_values = True
+        validate_by_name = True
+
+
+class Episode(BaseModel):
+    """
+    A grouped collection of related events forming a conversational episode.
+
+    Episodes represent coherent chunks of interaction that can be condensed
+    and summarized for long-term memory storage.
+    """
+
+    id: Optional[int] = Field(None, description="Database ID (auto-generated)")
+    start_time: float = Field(..., description="Unix timestamp of first event")
+    end_time: float = Field(..., description="Unix timestamp of last event")
+    conversation_id: str = Field(..., description="Conversation identifier")
+    event_count: int = Field(0, description="Number of events in episode")
+    token_count: int = Field(0, description="Total token count for episode")
+    is_condensed: bool = Field(False, description="Whether episode has been condensed")
+    condensed_at: Optional[float] = Field(None, description="When episode was condensed")
+
+    @validator('end_time')
+    def validate_time_order(cls, v, values):
+        """Ensure end_time is after start_time."""
+        if 'start_time' in values and v < values['start_time']:
+            raise ValueError("end_time must be after start_time")
+        return v
+
+    @property
+    def duration(self) -> float:
+        """Episode duration in seconds."""
+        return self.end_time - self.start_time
+
+    @property
+    def start_datetime(self) -> datetime:
+        """Convert start_time to datetime object."""
+        return datetime.fromtimestamp(self.start_time)
+
+    @property
+    def end_datetime(self) -> datetime:
+        """Convert end_time to datetime object."""
+        return datetime.fromtimestamp(self.end_time)
+
+    class Config:
+        """Pydantic configuration."""
+        validate_by_name = True
+
+
+class EpisodeSummary(BaseModel):
+    """
+    An LLM-generated summary of an episode for long-term memory storage.
+
+    Summaries capture the essence of an episode in a compressed format
+    that can be efficiently retrieved and used for context.
+    """
+
+    id: Optional[int] = Field(None, description="Database ID (auto-generated)")
+    episode_id: int = Field(..., description="ID of the episode being summarized")
+    summary_text: str = Field(..., description="LLM-generated summary")
+    key_topics: List[str] = Field(default_factory=list, description="Main topics discussed")
+    emotional_tone: Optional[str] = Field(None, description="Overall emotional tone")
+    importance_score: float = Field(0.5, description="Importance score (0.0-1.0)")
+    created_at: float = Field(default_factory=time.time, description="When summary was created")
+    model_used: str = Field("qwen2.5:14b-instruct-q4_0", description="LLM model used for summarization")
+    token_budget_used: int = Field(0, description="Tokens used in summarization")
+
+    @validator('importance_score')
+    def validate_importance_score(cls, v):
+        """Ensure importance score is between 0 and 1."""
+        if v < 0.0 or v > 1.0:
+            raise ValueError("Importance score must be between 0.0 and 1.0")
+        return v
+
+    @validator('summary_text')
+    def validate_summary_text(cls, v):
+        """Ensure summary is not empty."""
+        if not v or not v.strip():
+            raise ValueError("Summary text cannot be empty")
+        return v.strip()
+
+    @property
+    def created_datetime(self) -> datetime:
+        """Convert created_at to datetime object."""
+        return datetime.fromtimestamp(self.created_at)
+
+    class Config:
+        """Pydantic configuration."""
+        validate_by_name = True
+
+
+class ContextRetrievalRequest(BaseModel):
+    """
+    Request for retrieving relevant context from memory.
+
+    Used to specify what kind of memory context is needed
+    for a given interaction.
+    """
+
+    query: str = Field(..., description="Query for context retrieval")
+    max_events: int = Field(10, description="Maximum number of events to retrieve")
+    max_summaries: int = Field(5, description="Maximum number of summaries to retrieve")
+    time_window_hours: Optional[float] = Field(None, description="Time window for search (hours)")
+    conversation_id: Optional[str] = Field(None, description="Limit to specific conversation")
+    min_importance: float = Field(0.0, description="Minimum importance score")
+
+    @validator('max_events', 'max_summaries')
+    def validate_positive(cls, v):
+        """Ensure counts are positive."""
+        if v <= 0:
+            raise ValueError("Count must be positive")
+        return v
+
+    @validator('min_importance')
+    def validate_min_importance(cls, v):
+        """Ensure importance is between 0 and 1."""
+        if v < 0.0 or v > 1.0:
+            raise ValueError("Minimum importance must be between 0.0 and 1.0")
+        return v
+
+
+class ContextRetrievalResult(BaseModel):
+    """
+    Result of a context retrieval operation.
+
+    Contains the retrieved events and summaries along with
+    metadata about the retrieval process.
+    """
+
+    events: List[Event] = Field(default_factory=list, description="Retrieved events")
+    summaries: List[EpisodeSummary] = Field(default_factory=list, description="Retrieved summaries")
+    total_tokens: int = Field(0, description="Total token count of retrieved content")
+    retrieval_time: float = Field(default_factory=time.time, description="When retrieval occurred")
+    query_hash: str = Field("", description="Hash of the original query")
+
+    @property
+    def event_count(self) -> int:
+        """Number of events retrieved."""
+        return len(self.events)
+
+    @property
+    def summary_count(self) -> int:
+        """Number of summaries retrieved."""
+        return len(self.summaries)
+
+    class Config:
+        """Pydantic configuration."""
+        validate_by_name = True

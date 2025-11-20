@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""
+Ring buffer visualizer for ok_rate_window.
+
+Decodes the 64-bit hex ring buffer and shows T/F pattern.
+"""
+import json
+import sys
+from pathlib import Path
+
+
+def load_registry():
+    """Load lifecycle registry."""
+    path = Path.home() / ".kloros/registry/niche_map.json"
+    return json.loads(path.read_text())
+
+
+def render_ring(bits_hex, idx, N, evidence):
+    """
+    Render ring buffer as T/F string.
+
+    Args:
+        bits_hex: Hex string of ring buffer state
+        idx: Current write index
+        N: Window size
+        evidence: Total observations seen
+
+    Returns:
+        Tuple of (full_ring, warm_up_indicator)
+    """
+    bits = int(bits_hex, 16)
+    denom = min(evidence, N)
+
+    # Build ring string (oldest → newest)
+    ring = []
+    for offset in range(N - 1, -1, -1):
+        pos = (idx - offset) % N
+        val = "T" if (bits >> pos) & 1 else "F"
+        ring.append(val)
+
+    full_ring = "".join(ring)
+
+    # Warm-up indicator: show which positions are "filled"
+    if evidence < N:
+        # During warm-up, only first 'evidence' positions are meaningful
+        warm = "·" * (N - evidence) + "".join(ring[-(evidence):])
+    else:
+        # After warm-up, all positions are meaningful
+        warm = full_ring
+
+    return full_ring, warm
+
+
+def main():
+    """Main entry point."""
+    if len(sys.argv) < 2:
+        print("usage: klr_print_ok_window <zooid_name>")
+        print("")
+        print("Examples:")
+        print("  klr_print_ok_window LatencyTracker_v1")
+        print("  klr_print_ok_window QueueFlowRegulator_v3")
+        sys.exit(2)
+
+    name = sys.argv[1]
+
+    try:
+        reg = load_registry()
+    except Exception as e:
+        print(f"Error loading registry: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if name not in reg["zooids"]:
+        print(f"Zooid not found: {name}", file=sys.stderr)
+        available = ", ".join(sorted(reg["zooids"].keys())[:5])
+        print(f"Available zooids: {available}...", file=sys.stderr)
+        sys.exit(1)
+
+    z = reg["zooids"][name]
+    prod = z.get("prod", {})
+
+    bits_hex = prod.get("ok_window_bits", "0x0")
+    idx = int(prod.get("ok_window_idx", -1))
+    N = int(prod.get("ok_window_n", 20))
+    evidence = int(prod.get("evidence", 0))
+    ok_rate_window = float(prod.get("ok_rate_window", 0.0))
+
+    full_ring, warm = render_ring(bits_hex, idx, N, evidence)
+
+    print(f"zooid: {name}")
+    print(f"ring:  {full_ring}  (oldest → newest)")
+    print(f"warm:  {warm}  (· = not yet filled)")
+    print(f"")
+    print(f"ok_rate_window: {ok_rate_window:.3f}")
+    print(f"evidence:       {evidence}")
+    print(f"window_n:       {N}")
+    print(f"write_idx:      {idx}")
+
+
+if __name__ == "__main__":
+    main()

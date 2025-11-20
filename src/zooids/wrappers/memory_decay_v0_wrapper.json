@@ -1,0 +1,10 @@
+{
+  "genome_id": "memory_decay_v0_wrapper",
+  "niche": "memory_decay",
+  "generation": 0,
+  "parent_lineage": [],
+  "legacy_system": "decay_daemon",
+  "legacy_module": "kloros_memory.decay_daemon",
+  "legacy_class": "DecayDaemon",
+  "wrapper": true
+}

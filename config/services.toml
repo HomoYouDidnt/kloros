@@ -1,0 +1,44 @@
+# KLoROS Services Configuration
+
+[http]
+port = 8124
+host = "127.0.0.1"
+enable_cors = false
+
+[mqtt]
+enabled = true
+broker = "localhost"
+port = 1883
+topics = ["kloros/#"]
+
+[audio]
+backend = "pulseaudio"
+sample_rate = 44100
+channels = 1
+device_index = 11
+input_gain = 1.0
+
+[vad]
+type = "silero"
+threshold = 0.5
+speech_pad_ms = 300
+
+[features]
+enable_streaming = true
+enable_memory = true
+enable_housekeeping = false
+enable_reflection = true
+enable_dream = true
+enable_mqtt = true
+
+[modes]
+stt_backend = "hybrid"
+tts_backend = "piper"
+reason_backend = "rag"
+speaker_backend = "embedding"
+
+[paths]
+models_dir = "/home/kloros/models"
+logs_dir = "/home/kloros/.kloros/logs"
+vecstore_dir = "/home/kloros/.kloros/vecstore"
+cache_dir = "/home/kloros/.cache"

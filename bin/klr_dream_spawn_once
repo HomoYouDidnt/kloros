@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+import sys
+sys.path.insert(0, "/home/kloros/src")
+
+from kloros.dream.spawner import dream_spawn_tick
+from kloros.registry.lifecycle_registry import load_lifecycle_policy
+
+if __name__ == "__main__":
+    spawned = dream_spawn_tick(load_lifecycle_policy())
+    print(f"Spawned {len(spawned)} variants")
+    for name in spawned:
+        print(f"  - {name}")

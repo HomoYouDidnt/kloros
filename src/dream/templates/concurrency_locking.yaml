@@ -1,0 +1,48 @@
+# Concurrency test: Add thread safety
+family: concurrency.locking
+
+payload:
+  type: add_thread_safety
+  target_pattern: "shared state access"
+  synchronization:
+    - threading.Lock
+    - threading.RLock
+    - threading.Condition
+  description: "Add locks to protect shared state from race conditions"
+
+base:
+  diff_limit: 90
+  max_files_changed: 8
+  preserve_api: true
+  timeout_s: 75
+
+slots:
+  # Common race condition patterns
+  lock_patterns:
+    - ["shared_counter", "threading.Lock()", "increment"]
+    - ["cache_dict", "threading.RLock()", "get/set"]
+    - ["connection_pool", "threading.Condition()", "acquire/release"]
+    - ["queue_size", "threading.Lock()", "append/pop"]
+
+mutators:
+  - type: stricter_concurrency
+    trigger: last_passed_false
+    action: reduce_diff_limit
+    factor: 0.85
+  - type: add_more_locks
+    trigger: race_condition_detected
+    action: increase_lock_granularity
+    factor: 1.0
+
+expected:
+  tests_pass: true
+  no_crashes: true
+  no_race_conditions: true
+  no_deadlocks: true
+  reasonable_contention: true
+
+validation:
+  - check: "lock acquisition before shared access"
+  - check: "lock release in finally block"
+  - check: "no nested locks (deadlock risk)"
+  - check: "minimal critical section size"

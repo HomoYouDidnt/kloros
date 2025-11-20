@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="/home/kloros"
+TASKS="$ROOT/_tasks"
+mkdir -p "$TASKS"
+
+case "${1:-}" in
+  start)
+    NAME="${2:?task name}"; DIR="$TASKS/$NAME"; mkdir -p "$DIR"
+    cat >"$DIR/PLAN.md" <<'MD'
+# Minimal change plan
+- Files to touch (max 3):
+- Why these files:
+- Risk:
+- Tests to prove done:
+MD
+    : > "$DIR/EVIDENCE.log"
+    : > "$DIR/PATCH.diff"
+    echo "Task scaffold at $DIR";;
+  evidence)
+    NAME="${2:?task name}"; DIR="$TASKS/$NAME"; shift 2
+    { echo -e "\n# Evidence $(date)"; "$@"; } |& tee -a "$DIR/EVIDENCE.log";;
+  apply)
+    NAME="${2:?task name}"; DIR="$TASKS/$NAME"
+    [ -s "$DIR/PLAN.md" ] || { echo "No PLAN.md"; exit 1; }
+    [ -s "$DIR/PATCH.diff" ] || { echo "No PATCH.diff"; exit 1; }
+    SNAP="$DIR/_snap_$(date +%s).tar.gz"
+    tar -C "$ROOT" -czf "$SNAP" src || { echo "snapshot failed"; exit 1; }
+    echo "Applying patch…"; patch -p0 -d "$ROOT" < "$DIR/PATCH.diff"
+    set +e
+    if /home/kloros/scripts/verify_all.sh; then OK=0; else OK=$?; fi
+    set -e
+    if [ $OK -ne 0 ]; then
+      echo "❌ verify failed—rolling back"; tar -C "$ROOT" -xzf "$SNAP"
+      exit 1
+    fi
+    echo "✅ task applied";;
+  *)
+    echo "Usage: task {start|evidence|apply} <name> [cmd…]"; exit 2;;
+esac

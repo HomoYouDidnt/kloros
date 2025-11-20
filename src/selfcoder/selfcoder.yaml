@@ -1,0 +1,27 @@
+limits:
+  max_files_changed: 3
+  max_patch_bytes: 50000
+  timeout_seconds: 180
+allow_paths:
+  - "/home/kloros/src/"
+  - "/home/kloros/scripts/"
+deny_globs:
+  - "**/.venv/**"
+  - "/home/kloros/src/memory/**"
+  - "/home/kloros/src/kloros_memory/**"
+  - "/home/kloros/src/security/**"
+verify:
+  commands:
+    - "/home/kloros/scripts/verify_all.sh"
+    - "python /home/kloros/diagnose_kloros.py"
+    - "python /home/kloros/scripts/e2e_packs_ping.py"
+    - "python /home/kloros/scripts/smoke_tts.py"
+    - "python /home/kloros/scripts/verify_asr_vad.py /tmp/e2e_voice_reply.wav"
+policy:
+  refuse_if:
+    - "touches files outside allow_paths"
+    - "adds new top-level package"
+    - "adds network calls not behind PETRI"
+  must_include_evidence:
+    - "ripgrep outputs for symbols to be edited"
+    - "import success of affected modules"

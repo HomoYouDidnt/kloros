@@ -1,0 +1,7 @@
+[families]
+list = [
+    "bugfix.core"
+]
+
+[family_templates]
+"bugfix.core" = ["src/dream/templates/bugfix_div_zero.yaml"]

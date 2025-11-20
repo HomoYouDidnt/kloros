@@ -1,0 +1,1822 @@
+"""Local RAG backend wrapper for KLoROS with tool integration."""
+
+from __future__ import annotations
+import os
+import re
+import numpy as np
+from .base import ReasoningResult
+
+try:
+    from src.self_heal.adapters.kloros_rag import emit_synth_timeout
+except ImportError:
+    emit_synth_timeout = None
+
+
+# Fast-path routing for common queries (bypass LLM for instant responses)
+FAST_PATHS = {
+    "status": "component_status",
+    "system status": "component_status",
+    "component status": "component_status",
+    "system update": "component_status",
+    "how are you": "component_status",
+    "memory status": "memory_status",
+    "audio status": "audio_device_info",
+    "what time is it": "current_time",
+    "current time": "current_time",
+}
+
+
+class LocalRagBackend:
+    """Local RAG backend that wraps src.rag module with tool execution capabilities."""
+
+    def __init__(self, **kwargs):
+        """Initialize local RAG backend.
+
+        Args:
+            **kwargs: Passed to RAG constructor if needed
+                heal_bus: Optional HealBus for emitting events
+
+        Raises:
+            RuntimeError: If RAG module is unavailable
+        """
+        # Extract heal_bus before passing kwargs to RAG
+        self.heal_bus = kwargs.pop("heal_bus", None)
+
+        try:
+            from src import simple_rag as rag_mod
+            self.rag_mod = rag_mod
+        except ImportError as e:
+            raise RuntimeError("rag backend unavailable") from e
+
+        # Set default bundle path if not provided
+        if "bundle_path" not in kwargs:
+            kwargs["bundle_path"] = "/home/kloros/rag_data/rag_store.npz"
+
+        self.rag_kwargs = kwargs
+
+        # Initialize embedder
+        self._embedder = None
+        self._embedder_func = None
+
+        # Initialize RAG instance once
+        try:
+            self.rag_instance = self.rag_mod.RAG(**self.rag_kwargs)
+            print(f"[rag] Loaded {len(self.rag_instance.metadata)} training documents")
+        except Exception as e:
+            print(f"[rag] Failed to load RAG data: {e}")
+            self.rag_instance = None
+
+        # Initialize tool synthesizer for dynamic tool creation
+        self.tool_synthesizer = None
+        try:
+            from src.tool_synthesis.synthesizer import ToolSynthesizer
+            self.tool_synthesizer = ToolSynthesizer()
+            print("[rag] Tool synthesizer initialized")
+        except Exception as e:
+            print(f"[rag] Tool synthesizer unavailable: {e}")
+
+        # Initialize semantic tool matcher ONCE at startup to avoid delays during queries
+        self.semantic_matcher = None
+        try:
+            from src.tool_synthesis.semantic_tool_matcher import SemanticToolMatcher
+            from src.introspection_tools import IntrospectionToolRegistry
+            registry = IntrospectionToolRegistry()
+            self.semantic_matcher = SemanticToolMatcher(tool_registry=registry)
+            print(f"[rag] Semantic tool matcher initialized ({len(self.semantic_matcher.tool_embeddings)} tools embedded)")
+        except Exception as e:
+            print(f"[rag] Semantic matcher unavailable: {e}")
+
+        # Initialize bandit-enhanced tool selector for learning-based tool selection
+        self.tool_selector = None
+        try:
+            from src.kloros.learning.tool_selector import BanditToolSelector
+            self.tool_selector = BanditToolSelector(
+                semantic_matcher=self.semantic_matcher,
+                enable_learning=True
+            )
+            print("[rag] Bandit tool selector initialized")
+        except Exception as e:
+            print(f"[rag] Bandit selector unavailable: {e}")
+
+        # Initialize conversation logger for episodic memory
+        self.conversation_logger = None
+        self.chroma_client = None
+        self.chroma_embedder = None
+        try:
+            from src.memory.chroma_client import get_client, get_embedder, init_collections
+            from src.memory.conversation_logger import ConversationLogger
+
+            # Initialize ChromaDB client
+            self.chroma_client = get_client()
+            self.chroma_embedder = get_embedder("BAAI/bge-small-en-v1.5")
+            collections = init_collections(self.chroma_client, self.chroma_embedder)
+
+            # Create logger instance
+            self.conversation_logger = ConversationLogger(self.chroma_client, collections)
+            print("[rag] Episodic memory logger initialized")
+        except Exception as e:
+            print(f"[rag] Episodic memory unavailable: {e}")
+
+        # Initialize AgentFlow + ACE for structured reasoning
+        self.agentflow_runner = None
+        self.ace_store = None
+        enable_agentflow = os.getenv("KLR_ENABLE_AGENTFLOW", "1") == "1"
+        if enable_agentflow and self.chroma_client:
+            try:
+                from src.agentflow.planner import SimplePlanner
+                from src.agentflow.executor import Executor
+                from src.agentflow.verifier import Verifier
+                from src.agentflow.generator import Generator
+                from src.agentflow.runner import AgentFlowRunner
+                from src.ace.store import BulletStore
+                from src.config import load_config
+
+                # Load config
+                config = load_config()
+
+                # Initialize ACE bullet store
+                self.ace_store = BulletStore(self.chroma_client, self.chroma_embedder)
+
+                # Initialize AgentFlow components
+                # Pass full config to planner (includes agentflow, ra3, etc.)
+                planner = SimplePlanner(config=config)
+                executor = Executor(
+                    tool_registry=self.tool_synthesizer if hasattr(self, 'tool_synthesizer') else None,
+                    petri_config=config.get("petri", {})
+                )
+                verifier = Verifier()
+                generator = Generator()
+
+                # Create runner
+                self.agentflow_runner = AgentFlowRunner(
+                    planner=planner,
+                    executor=executor,
+                    verifier=verifier,
+                    generator=generator,
+                    ace_store=self.ace_store,
+                    config=config
+                )
+
+                print("[agentflow] AgentFlow + ACE initialized")
+            except Exception as e:
+                print(f"[agentflow] Failed to initialize: {e}")
+
+        # Extract ack_broker from kwargs if provided (wired from kloros_voice.py)
+        self.ack_broker = kwargs.get("ack_broker", None)
+        if self.ack_broker:
+            print("[rag] AckBroker available for user feedback during long operations")
+
+        # Cache for model tool support detection
+        self._model_tool_support_cache = {}
+
+    def _check_model_tool_support(self, ollama_url: str, model: str) -> bool:
+        """Check if a model supports tool calling via /api/chat.
+
+        Args:
+            ollama_url: Base Ollama URL (e.g., http://127.0.0.1:11434)
+            model: Model name (e.g., qwen2.5:14b-instruct-q4_0)
+
+        Returns:
+            True if model supports .Tools parameter, False otherwise
+        """
+        import requests
+
+        # Check cache first
+        cache_key = f"{ollama_url}:{model}"
+        if cache_key in self._model_tool_support_cache:
+            return self._model_tool_support_cache[cache_key]
+
+        # Query Ollama API for model template
+        try:
+            show_url = ollama_url.replace("/api/chat", "").replace("/api/generate", "") + "/api/show"
+            response = requests.post(show_url, json={"name": model}, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                template = data.get("template", "")
+                supports_tools = ".Tools" in template
+                self._model_tool_support_cache[cache_key] = supports_tools
+                if not supports_tools:
+                    print(f"[rag] Model {model} does not support .Tools - will use /api/generate fallback")
+                return supports_tools
+            else:
+                # On error, assume no tool support (safer fallback)
+                print(f"[rag] Failed to check model capabilities (HTTP {response.status_code}), assuming no tool support")
+                self._model_tool_support_cache[cache_key] = False
+                return False
+        except Exception as e:
+            print(f"[rag] Model capability check failed: {e}, assuming no tool support")
+            self._model_tool_support_cache[cache_key] = False
+            return False
+
+    def _log_xai_trace(self, xai_record):
+        """Log XAI trace in human-readable format.
+
+        Args:
+            xai_record: DecisionRecord returned by xai.finalize()
+        """
+        if not xai_record:
+            return
+
+        try:
+            print(f"[XAI] Query: {xai_record.query}")
+            print(f"[XAI] Uncertainty: {xai_record.uncertainty_before:.2f} → {xai_record.uncertainty_after:.2f}")
+
+            if xai_record.evidence:
+                print(f"[XAI] Retrieved {len(xai_record.evidence)} evidence items")
+                for i, ev in enumerate(xai_record.evidence[:3], 1):  # Show top 3
+                    print(f"[XAI]   {i}. {ev.source} (score={ev.score:.3f}, weight={ev.weight:.3f})")
+
+            if xai_record.tools:
+                print(f"[XAI] Executed {len(xai_record.tools)} tools:")
+                for tool in xai_record.tools:
+                    status = "✓" if tool.success else "✗"
+                    duration_ms = tool.end_ms - tool.start_ms
+                    print(f"[XAI]   {status} {tool.name} ({duration_ms}ms, gain={tool.expected_gain:.2f}, risk={tool.expected_risk:.2f})")
+
+            if xai_record.rationale_outline:
+                print(f"[XAI] Rationale: {xai_record.rationale_outline}")
+        except Exception as e:
+            print(f"[XAI] Failed to log trace: {e}")
+
+    def _get_embedder_function(self):
+        """Get the best available embedder function."""
+        if self._embedder_func is not None:
+            return self._embedder_func
+
+        # Try to use sentence transformers with models that produce 384 dimensions
+        try:
+            from sentence_transformers import SentenceTransformer
+            from src.config.models_config import get_embedder_model, get_embedder_fallbacks
+
+            # Use centralized config for consistent embeddings across components
+            models = [get_embedder_model()] + get_embedder_fallbacks()
+
+            for model_name in models:
+                try:
+                    self._embedder = SentenceTransformer(model_name)
+                    self._embedder_func = lambda text: self._embedder.encode(text)
+                    print(f"[rag] Using SentenceTransformer embedder: {model_name}")
+                    return self._embedder_func
+                except Exception as e:
+                    print(f"[rag] Failed to load {model_name}: {e}")
+                    continue
+
+        except ImportError:
+            print("[rag] SentenceTransformer not available, using fallback embedder")
+
+        # Fallback to simple hash-based embedder
+        self._embedder_func = self._simple_hash_embedder
+        print("[rag] Using simple hash embedder fallback")
+        return self._embedder_func
+
+    def _simple_hash_embedder(self, text: str) -> np.ndarray:
+        """Simple hash-based embedder as fallback."""
+        import hashlib
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        # Convert hex to numbers and expand to 384 dimensions
+        hash_nums = [int(c, 16) for c in text_hash]
+        embedding = np.array(hash_nums * (384 // len(hash_nums) + 1))[:384]
+        embedding = embedding.astype(np.float32)
+        embedding = embedding / (np.linalg.norm(embedding) + 1e-8)
+        return embedding
+
+    def _handle_validation_failure(
+        self,
+        tool_name: str,
+        validation_result,
+        parameters: dict,
+        kloros_instance,
+        transcript: str,
+        registry,
+        validator
+    ) -> str | None:
+        """
+        Handle tool validation failure by trying suggestions and synthesizing if needed.
+
+        Returns:
+            Alternative tool name if found/synthesized, None if all recovery failed
+        """
+        print(f"[validation] Tool '{tool_name}' validation failed: {validation_result.error_message}")
+
+        # Parse suggested tool names from validation result
+        suggested_tools = []
+        if validation_result.suggestions:
+            for suggestion in validation_result.suggestions:
+                # Extract tool names from suggestions like:
+                # "Consider instead: component_status, system_diagnostic"
+                # "Did you mean: check_recent_errors?"
+                if ":" in suggestion:
+                    tool_names = suggestion.split(":", 1)[1].strip()
+                    for tool in tool_names.replace("?", "").split(","):
+                        tool = tool.strip()
+                        if tool and tool in registry.tools:
+                            suggested_tools.append(tool)
+
+        # Try each suggested tool
+        for suggested_tool in suggested_tools:
+            print(f"[validation] Trying suggested alternative: {suggested_tool}")
+
+            suggestion_validation = validator.validate_tool_request(
+                tool_name=suggested_tool,
+                tool_args=parameters,
+                kloros_instance=kloros_instance,
+                context=transcript
+            )
+
+            if suggestion_validation.is_valid:
+                print(f"[validation] ✓ Alternative '{suggested_tool}' validated")
+                return suggested_tool
+
+        # All suggestions failed - attempt tool synthesis
+        if self.tool_synthesizer:
+            print(f"[synthesis] No valid alternatives found, attempting synthesis")
+
+            # Generate a NEW tool name from the user's query
+            # Don't re-use the tool that just failed validation
+            desired_tool_name = self._infer_tool_name_from_query(transcript)
+
+            # Fallback if inference fails
+            if not desired_tool_name or desired_tool_name == tool_name or desired_tool_name in registry.tools:
+                # Generate a unique descriptive name based on query keywords
+                import re
+                keywords = [w for w in re.findall(r'\b\w+\b', transcript.lower())
+                           if w not in ['the', 'a', 'an', 'can', 'you', 'please', 'would', 'could', 'help', 'me', 'my', 'i', 'is', 'are', 'for', 'to']]
+                if keywords:
+                    desired_tool_name = '_'.join(keywords[:4])  # Use first 4 meaningful words
+                else:
+                    desired_tool_name = f"synthesized_tool_{hash(transcript) % 10000}"
+
+            # Validate tool name before attempting synthesis
+            if not self._is_valid_tool_name(desired_tool_name, transcript):
+                print(f"[synthesis] ❌ Rejected invalid tool name: {desired_tool_name}")
+                return None
+
+            print(f"[synthesis] Synthesizing new tool: {desired_tool_name}")
+
+            # Give user immediate feedback before slow synthesis operation
+            if self.ack_broker:
+                self.ack_broker.maybe_ack("Let me check that…")
+
+            if self.tool_synthesizer.capture_failed_tool_request(desired_tool_name, context=transcript):
+                try:
+                    # Wrap synthesis with timeout to prevent infinite hangs
+                    import signal
+
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError("Tool synthesis exceeded 30 second timeout")
+
+                    # Set 30 second timeout
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(30)
+
+                    try:
+                        synthesized_tool = self.tool_synthesizer.synthesize_tool(desired_tool_name, context=transcript)
+                    finally:
+                        signal.alarm(0)  # Cancel alarm
+
+                    if synthesized_tool:
+                        registry.register(synthesized_tool)
+                        print(f"[synthesis] ✅ Synthesized and registered: {desired_tool_name}")
+                        return desired_tool_name
+                    else:
+                        print(f"[synthesis] ❌ Synthesis failed for: {desired_tool_name}")
+
+                except TimeoutError as e:
+                    print(f"[synthesis] ⏱️ Timeout: {e}")
+
+                    # Emit heal event for self-healing
+                    if emit_synth_timeout and self.heal_bus:
+                        emit_synth_timeout(self.heal_bus, desired_tool_name, 30)
+
+                    if self.ack_broker:
+                        self.ack_broker.maybe_ack("That path is slow. I'll try another route.")
+                    return None
+
+        # All recovery attempts failed
+        return None
+
+    def _is_valid_tool_name(self, tool_name: str, query_context: str) -> bool:
+        """
+        Validate tool name before attempting synthesis.
+        Rejects nonsense, conversational fragments, and echo artifacts.
+
+        Args:
+            tool_name: Proposed tool name
+            query_context: Original user query for context validation
+
+        Returns:
+            True if tool name is valid for synthesis, False otherwise
+        """
+        import re
+
+        # Reject if tool name is too short or too long
+        if not tool_name or len(tool_name) < 3 or len(tool_name) > 60:
+            return False
+
+        # Reject if tool name contains invalid characters (only allow alphanumeric + underscore)
+        if not re.match(r'^[a-zA-Z0-9_]+$', tool_name):
+            return False
+
+        # Extract words from tool name
+        tool_words = tool_name.lower().replace('_', ' ').split()
+
+        # Reject if tool name starts with conversational/filler words (echo detection)
+        conversational_starts = {
+            'yeah', 'yes', 'yep', 'yup', 'nope', 'no', 'oh', 'um', 'uh', 'like',
+            'okay', 'ok', 'sure', 'fine', 'alright', 'well', 'so', 'just',
+            'i', 'you', 'me', 'my', 'your', 'we', 'they', 'it', 'is', 'are',
+            'dont', 'don', 't', 'can', 'could', 'would', 'should', 'hear', 'beep'
+        }
+
+        if tool_words and tool_words[0] in conversational_starts:
+            return False
+
+        # Reject if >50% of tool name words are filler/conversational
+        filler_count = sum(1 for word in tool_words if word in conversational_starts)
+        if len(tool_words) > 0 and filler_count / len(tool_words) > 0.5:
+            return False
+
+        # Reject if query context looks like conversational fragment
+        query_lower = query_context.lower().strip()
+        conversational_patterns = [
+            r'^(yeah|yes|yep|yup|no|nope|oh|um|uh)\s+',
+            r'^(i|you)\s+(don\'t|didn\'t|can\'t|couldn\'t|won\'t|wouldn\'t)\s+hear',
+            r'^(okay|ok|sure|fine|alright)\s*$',
+        ]
+
+        for pattern in conversational_patterns:
+            if re.match(pattern, query_lower):
+                return False
+
+        # Passed all validation checks
+        return True
+
+    def _infer_tool_name_from_query(self, query: str) -> str:
+        """
+        Infer a descriptive tool name from user's query using simple heuristics.
+
+        Args:
+            query: User's natural language query
+
+        Returns:
+            Suggested tool name (snake_case)
+        """
+        import re
+
+        # Extract key action verbs and nouns
+        query_lower = query.lower()
+
+        # Common patterns for tool requests
+        patterns = [
+            r'tool (?:that )?(?:can |will )?([a-z\s]+?)(?:\s+for|\s+your|\s*$)',
+            r'(?:create|make|build|generate) (?:a |an )?(?:tool )?(?:to |that )?([a-z\s]+?)(?:\s+for|\s+your|\s*$)',
+            r'(?:check|get|show|list|display|find|search) (?:the |my |your )?([a-z\s]+?)(?:\s*$|\s+for)',
+            r'(?:monitor|track|watch|observe) (?:the |my |your )?([a-z\s]+)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                description = match.group(1).strip()
+                # Convert to snake_case
+                tool_name = re.sub(r'[^\w\s]', '', description)
+                tool_name = re.sub(r'\s+', '_', tool_name)
+                if tool_name and len(tool_name) > 3:
+                    return tool_name
+
+        return ""
+
+    def _parse_tool_command(self, response: str) -> tuple[str | None, str]:
+        """Parse tool commands from response (supports both JSON envelope and legacy TOOL: pattern).
+
+        Returns:
+            Tuple of (tool_name, remaining_response)
+        """
+        import json
+
+        # First, try to parse as JSON envelope (dual-channel format)
+        try:
+            # Strip markdown code blocks if present
+            json_text = response.strip()
+            if json_text.startswith('```json'):
+                json_text = json_text[7:]  # Remove ```json
+            if json_text.startswith('```'):
+                json_text = json_text[3:]  # Remove ```
+            if json_text.endswith('```'):
+                json_text = json_text[:-3]  # Remove trailing ```
+            json_text = json_text.strip()
+
+            # Try to parse as JSON
+            envelope = json.loads(json_text)
+
+            # Check if it's a valid dual-channel envelope
+            if isinstance(envelope, dict) and 'actions' in envelope:
+                actions = envelope.get('actions', [])
+                user_text = envelope.get('text', '')
+
+                # Extract first action's tool name
+                if actions and isinstance(actions, list) and len(actions) > 0:
+                    first_action = actions[0]
+                    if isinstance(first_action, dict) and 'name' in first_action:
+                        tool_name = first_action['name']
+                        print(f"[parse] JSON envelope detected: tool={tool_name}, text={user_text[:50]}")
+                        return tool_name, user_text
+
+        except (json.JSONDecodeError, ValueError, KeyError):
+            # Not a JSON envelope, continue to legacy pattern
+            pass
+
+        # Fall back to legacy TOOL: pattern
+        # Enhanced regex to capture tool names even with separators like "and", "or"
+        tool_match = re.match(r'^TOOL:\s*([\w\s,&]+)', response.strip(), re.IGNORECASE)
+        if tool_match:
+            tool_spec = tool_match.group(1).strip()
+
+            # Handle multiple tool requests: "tool1 and tool2" or "tool1, tool2"
+            # Split by common separators and take the first valid tool name
+            for separator in [' and ', ' or ', ', ', ' & ']:
+                if separator in tool_spec:
+                    parts = [p.strip() for p in tool_spec.split(separator)]
+                    # Take first non-empty part as the tool to execute
+                    for part in parts:
+                        if part and re.match(r'^\w+$', part):  # Valid tool name (word characters only)
+                            print(f"[parse] Multi-tool request detected: '{tool_spec}' → using first: '{part}'")
+                            # Remove the entire TOOL: command from response
+                            remaining = response[tool_match.end():].strip()
+                            return part, remaining
+
+            # Single tool case
+            if re.match(r'^\w+$', tool_spec):
+                remaining = response[tool_match.end():].strip()
+                return tool_spec, remaining
+
+        return None, response
+
+    def _execute_tool(self, tool_name: str, kloros_instance=None) -> str:
+        """Execute a system tool by name.
+
+        Args:
+            tool_name: Name of the tool to execute
+            kloros_instance: KLoROS instance for tool context
+
+        Returns:
+            Tool execution result
+        """
+        try:
+            from src.introspection_tools import IntrospectionToolRegistry
+
+            # Create tool registry
+            registry = IntrospectionToolRegistry()
+
+            # Execute the requested tool
+            if tool_name in registry.tools:
+                print(f"[tool] Executing: {tool_name}")
+
+                # Bridge missing methods for synthesized tools
+                if kloros_instance and tool_name in registry.tools:
+                    tool_obj = registry.tools[tool_name]
+                    # Check if this is a synthesized tool by looking for stored code
+                    try:
+                        from src.tool_synthesis import SynthesizedToolStorage
+                        from src.tool_synthesis.method_bridge import MethodBridge
+
+                        storage = SynthesizedToolStorage()
+                        tool_data = storage.load_tool(tool_name)
+
+                        if tool_data:
+                            # This is a synthesized tool - ensure bridges exist
+                            tool_code, metadata = tool_data
+                            bridge = MethodBridge(kloros_instance)
+                            bridge_success, bridges_created = bridge.bridge_tool_requirements(tool_code, tool_name)
+
+                            if bridges_created:
+                                print(f"[bridge] Pre-execution: Created {len(bridges_created)} bridges for {tool_name}")
+
+                    except Exception as bridge_error:
+                        # Bridging failed, but continue - tool might work anyway
+                        print(f"[bridge] Warning: Bridging failed for {tool_name}: {bridge_error}")
+
+                try:
+                    result = registry.tools[tool_name].func(kloros_instance)
+                    return f"SUCCESS:{result}"  # Internal marker for success detection
+                except Exception as exec_error:
+                    # Tool exists but has broken dependencies - submit to D-REAM for repair
+                    print(f"[synthesis] Tool '{tool_name}' execution failed: {exec_error}")
+                    if self.tool_synthesizer:
+                        self.tool_synthesizer.submit_to_dream(
+                            tool_name, "", {}, success=False,
+                            error_msg=f"Broken tool dependency: {exec_error}"
+                        )
+                    return f"FAILURE:{exec_error}"  # Internal marker for failure detection
+            else:
+                available_tools = list(registry.tools.keys())
+                # Check for similar existing tools first
+                similar_mappings = {
+                    "diagnose_library_availability": "check_dependencies",
+                    "diagnose_package_availability": "check_dependencies",
+                    "check_library_availability": "check_dependencies",
+                    "check_package_availability": "check_dependencies",
+                    "verify_dependencies": "check_dependencies",
+                    "process_audio_data": "audio_status",
+                    "analyze_audio": "audio_status",
+                    "validate_system_components": "component_status",
+                    "check_system_components": "component_status",
+                    "analyze_logs": "audio_log_check",
+                    "check_logs": "audio_log_check",
+                    "generate_report": "system_diagnostic",
+                    "create_report": "system_diagnostic",
+                    "system_report": "system_diagnostic",
+                    # Error investigation patterns
+                    "check_error": "check_recent_errors",
+                    "check_errors": "check_recent_errors",
+                    "what_error": "check_recent_errors",
+                    "show_error": "check_recent_errors",
+                    "get_error": "check_recent_errors",
+                    "see_error": "check_recent_errors",
+                    "view_error": "check_recent_errors",
+                    "last_error": "check_recent_errors",
+                    "recent_error": "check_recent_errors",
+                    "error_details": "check_recent_errors",
+                    "error_info": "check_recent_errors",
+                    # Extended investigation patterns (COMPREHENSIVE FIX)
+                    "investigate_SentenceTransformer": "check_dependencies",
+                    "investigate_dependencies": "check_dependencies",
+                    "analyze_dependencies": "check_dependencies",
+                    "examine_dependencies": "check_dependencies",
+                    "inspect_dependencies": "check_dependencies",
+                    # Research patterns (COMPREHENSIVE FIX)
+                    "research_sentence_transformer": "check_dependencies",
+                    "research_dependencies": "check_dependencies",
+                    "search_sentence_transformer_info": "check_dependencies",
+                    # Extended patterns for comprehensive coverage (PATTERN-BASED FIX)
+                    "study_dependencies": "check_dependencies",
+                    "explore_dependencies": "check_dependencies",
+                    "inspect_sentence_transformer": "check_dependencies",
+                    "diagnose_sentence_transformer": "check_dependencies",
+                    "verify_sentence_transformer": "check_dependencies",
+                    "test_dependencies": "check_dependencies",
+                    "validate_dependencies": "check_dependencies",
+                    "probe_dependencies": "check_dependencies",
+                    "scan_dependencies": "check_dependencies"
+                }
+
+                similar_tool = similar_mappings.get(tool_name)
+                if similar_tool and similar_tool in registry.tools:
+                    print(f"[synthesis] Found similar tool: {similar_tool}")
+                    try:
+                        result = registry.tools[similar_tool].func(kloros_instance)
+                        return f"SUCCESS:{result}"  # Internal marker (similar tool execution)
+                    except Exception as exec_error:
+                        # Tool exists but has broken dependencies - submit to D-REAM for repair
+                        print(f"[synthesis] Similar tool '{similar_tool}' execution failed: {exec_error}")
+                        if self.tool_synthesizer:
+                            self.tool_synthesizer.submit_to_dream(
+                                similar_tool, "", {}, success=False,
+                                error_msg=f"Broken tool dependency: {exec_error}"
+                            )
+                        return f"❌ Tool execution failed: {exec_error}"
+
+                # If no similar tool found, try intelligent fallback resolution (FALLBACK FIX)
+                fallback_tool = self._fallback_tool_resolution(tool_name, available_tools)
+                if fallback_tool:
+                    print(f"[fallback] Using closest match: {fallback_tool} for '{tool_name}'")
+                    try:
+                        result = registry.tools[fallback_tool].func(kloros_instance)
+                        return f"✅ Used closest match '{fallback_tool}' for '{tool_name}':\n{result}"
+                    except Exception as exec_error:
+                        # Tool exists but has broken dependencies - submit to D-REAM for repair
+                        print(f"[synthesis] Fallback tool '{fallback_tool}' execution failed: {exec_error}")
+                        if self.tool_synthesizer:
+                            self.tool_synthesizer.submit_to_dream(
+                                fallback_tool, "", {}, success=False,
+                                error_msg=f"Broken tool dependency: {exec_error}"
+                            )
+                        return f"❌ Tool execution failed: {exec_error}"
+                
+                # Attempt to synthesize the missing tool if synthesizer is available
+                if self.tool_synthesizer:
+                    print(f"[synthesis] Attempting to synthesize tool: {tool_name}")
+                    if self.tool_synthesizer.capture_failed_tool_request(tool_name, context=""):
+                        synthesized_tool = self.tool_synthesizer.synthesize_tool(tool_name, context="")
+                        if synthesized_tool:
+                            # Register the new tool
+                            registry.register(synthesized_tool)
+                            print(f"[synthesis] Successfully synthesized and registered: {tool_name}")
+                            # Execute the newly synthesized tool
+                            try:
+                                result = synthesized_tool.func(kloros_instance)
+                                return f"✅ {tool_name} (synthesized) executed successfully:\n{result}"
+                            except Exception as exec_error:
+                                # Tool execution failed - submit to D-REAM for repair
+                                print(f"[synthesis] Tool execution failed: {exec_error}")
+                                error_details = {
+                                    "tool_name": tool_name,
+                                    "error": str(exec_error),
+                                    "phase": "execution"
+                                }
+                                # Let synthesizer handle D-REAM submission with execution error context
+                                self.tool_synthesizer.submit_to_dream(
+                                    tool_name, "", {}, success=False, 
+                                    error_msg=f"Execution failed: {exec_error}"
+                                )
+                                return f"❌ Tool '{tool_name}' synthesized but failed execution. Submitted to D-REAM for repair.\n{exec_error}"
+                        else:
+                            print(f"[synthesis] Failed to synthesize: {tool_name}")
+                
+                # If all resolution methods fail, list available tools
+                return f"❌ Tool ''{tool_name}'' not found. Available tools: {', '.join(available_tools)}"
+
+        except Exception as e:
+            return f"❌ Tool execution failed: {e}"
+
+    
+    def _preprocess_tool_request(self, tool_name: str, remaining_response: str, original_input: str) -> tuple[str, dict]:
+        """Preprocess tool requests to fix wrong names and extract parameters."""
+        # Common tool name corrections
+        tool_corrections = {
+            'develop_tool': 'create_code_solution',
+            'generate_code_map_from_audio_transcript': 'create_code_solution',
+            'system_capabilities_map': 'component_status',
+            'capabilities_map': 'component_status',
+            'system_restart': 'restart_service',
+            'create_tool': 'create_code_solution',
+            # Investigation pattern mappings (EXTENDED FIX)
+            'investigate_SentenceTransformer': 'check_dependencies',
+            'investigate_dependencies': 'check_dependencies',
+            'analyze_dependencies': 'check_dependencies',
+            'check_SentenceTransformer': 'check_dependencies',
+            # Research pattern mappings (COMPREHENSIVE FIX)
+            'research_sentence_transformer': 'check_dependencies',
+            'research_dependencies': 'check_dependencies',
+            'search_sentence_transformer_info': 'check_dependencies',
+            'examine_sentence_transformer': 'check_dependencies',
+            # Extended investigation patterns (PATTERN-BASED FIX)
+            'study_dependencies': 'check_dependencies',
+            'explore_dependencies': 'check_dependencies',
+            'inspect_sentence_transformer': 'check_dependencies',
+            'diagnose_sentence_transformer': 'check_dependencies',
+            'verify_sentence_transformer': 'check_dependencies',
+            'test_dependencies': 'check_dependencies',
+            'validate_dependencies': 'check_dependencies'
+        }
+        
+        # Fix wrong tool names (ENHANCED WITH PATTERN MAPPING)
+        corrected_tool = tool_corrections.get(tool_name, tool_name)
+
+        # If no exact mapping found, try intelligent pattern matching
+        if corrected_tool == tool_name:
+            pattern_mapped = self._intelligent_tool_mapping(tool_name)
+            if pattern_mapped != tool_name:
+                corrected_tool = pattern_mapped
+                print(f'[mapping] Pattern matched: {tool_name} → {corrected_tool}')
+
+        # If still no good mapping, try bandit-enhanced tool selection
+        if corrected_tool == tool_name:
+            try:
+                # Use bandit selector if available (combines semantic + learning)
+                if self.tool_selector:
+                    embedder = self._get_embedder_function()
+                    selected_tool, score, candidates = self.tool_selector.select_tool(
+                        query=original_input,
+                        embedder=embedder,
+                        top_k=3,
+                        threshold=0.5,  # Raised from 0.4 to reduce low-confidence matches
+                        baseline_tool=corrected_tool
+                    )
+
+                    if selected_tool and score > 0.65:  # Raised from 0.5 to require higher confidence
+                        corrected_tool = selected_tool
+                        print(f'[bandit] Selected: {tool_name} → {corrected_tool} (score: {score:.2f})')
+                        print(f'[bandit] Candidates: {[(t, f"{s:.2f}") for t, s in candidates[:3]]}')
+                    elif selected_tool:
+                        print(f'[bandit] Low confidence: {selected_tool} (score: {score:.2f}), keeping: {tool_name}')
+
+                # Fall back to pure semantic matching if bandit unavailable
+                elif self.semantic_matcher:
+                    matches = self.semantic_matcher.find_matching_tools(original_input, top_k=3, threshold=0.5)
+
+                    if matches:
+                        best_tool, similarity, description = matches[0]
+                        if similarity > 0.65:  # High confidence threshold - raised from 0.5
+                            corrected_tool = best_tool
+                            print(f'[semantic] Matched: {tool_name} → {corrected_tool} (similarity: {similarity:.2f})')
+                        else:
+                            # Lower confidence - log but don't change
+                            print(f'[semantic] Possible match: {best_tool} (similarity: {similarity:.2f}), keeping: {tool_name}')
+            except Exception as e:
+                print(f'[selection] Tool selection failed: {e}')
+
+        # Extract parameters from various sources
+        parameters = {}
+
+        # Look for explicit problem/solution in original input
+        if 'problem=' in original_input and 'solution=' in original_input:
+            import re
+            problem_match = re.search(r'problem="([^"]+)"', original_input)
+            solution_match = re.search(r'solution="([^"]+)"', original_input)
+            if problem_match:
+                parameters['problem'] = problem_match.group(1)
+            if solution_match:
+                parameters['solution'] = solution_match.group(1)
+
+        # Infer parameters from context
+        if corrected_tool == 'create_code_solution' and not parameters:
+            if 'system_restart' in original_input.lower():
+                parameters['problem'] = 'Missing system_restart tool'
+                parameters['solution'] = 'Create system restart functionality'
+            elif 'capabilities' in original_input.lower():
+                parameters['problem'] = 'Missing system capabilities mapping tool'
+                parameters['solution'] = 'Create comprehensive system capabilities overview'
+
+        # Extract parameters for voice sample tools
+        if corrected_tool in ['search_voice_samples', 'play_voice_sample']:
+            import re
+
+            # Normalize input for better matching
+            normalized = original_input.lower().replace('underscore', '_')
+
+            # Convert number words to digits for better pattern matching
+            number_words = {
+                'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+                'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+                'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
+                'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
+                'eighteen': '18', 'nineteen': '19', 'twenty': '20'
+            }
+            print(f"[param_extract] Original input: {original_input}")
+            print(f"[param_extract] Normalized before number conversion: {normalized}")
+            for word, digit in number_words.items():
+                normalized = normalized.replace(word, digit)
+            print(f"[param_extract] Normalized after number conversion: {normalized}")
+
+            # Try to extract full filename first (highest priority)
+            full_filename_match = re.search(r'(glados[_\s]+potatos?[_\s]+[a-z0-9_\s]+\.wav)', normalized)
+            if full_filename_match:
+                filename = full_filename_match.group(1).replace(' ', '_')
+                if corrected_tool == 'search_voice_samples':
+                    # Use the full filename as pattern (without .wav for better matching)
+                    parameters['pattern'] = filename.replace('.wav', '')
+                else:  # play_voice_sample
+                    parameters['filename'] = filename
+            else:
+                # Try specific pattern extraction (priority order: specific to general)
+                # 1. Episode + number patterns (e.g., "fall18", "fall 18", "a3_00_fall18")
+                episode_match = re.search(r'((?:a\d+[_\s]+\d+[_\s]+)?fall[_\s]*\d+)', normalized)
+                # 2. Potato variants
+                potato_match = re.search(r'(potatos?)', normalized)
+                # 3. Character name
+                glados_match = re.search(r'(glados)', normalized)
+
+                if corrected_tool == 'search_voice_samples':
+                    # Use most specific pattern available
+                    if episode_match:
+                        parameters['pattern'] = episode_match.group(1).replace(' ', '_')
+                    elif potato_match:
+                        parameters['pattern'] = 'potatos'  # Use correct spelling
+                    elif glados_match:
+                        parameters['pattern'] = 'glados'
+                    else:
+                        # Fallback: extract any word longer than 3 chars
+                        words = [w for w in normalized.split() if len(w) > 3 and w not in ['search', 'find', 'play', 'please', 'voice', 'sample']]
+                        if words:
+                            parameters['pattern'] = words[0]
+                elif corrected_tool == 'play_voice_sample':
+                    # For play, try to construct filename from parts
+                    if episode_match and potato_match:
+                        # Construct likely filename
+                        episode = episode_match.group(1).replace(' ', '_')
+                        parameters['filename'] = f'GLaDOS_potatos_sp_{episode}.wav'
+                    elif episode_match:
+                        parameters['filename'] = episode_match.group(1).replace(' ', '_') + '.wav'
+
+        return corrected_tool, parameters
+
+    def _intelligent_tool_mapping(self, tool_name: str) -> str:
+        """Intelligent pattern-based tool mapping for dynamic tool name resolution.
+        
+        Args:
+            tool_name: The tool name to map
+            
+        Returns:
+            Mapped tool name or original if no mapping found
+        """
+        tool_lower = tool_name.lower()
+        
+        # Dependency/library investigation patterns (COMPREHENSIVE)
+        dependency_keywords = ['sentence_transformer', 'dependencies', 'library', 'package', 'transformers', 'torch', 'vosk']
+        investigation_prefixes = ['investigate_', 'research_', 'examine_', 'study_', 'analyze_', 'check_', 'diagnose_', 'explore_', 'inspect_']
+        
+        # Check for dependency investigation patterns
+        if any(keyword in tool_lower for keyword in dependency_keywords):
+            if any(tool_lower.startswith(prefix) for prefix in investigation_prefixes):
+                return 'check_dependencies'
+            # Also catch suffix patterns like 'sentence_transformer_check'
+            if any(suffix in tool_lower for suffix in ['_check', '_status', '_info', '_availability']):
+                return 'check_dependencies'
+        
+        # System operation patterns
+        system_keywords = ['restart', 'reboot', 'reload', 'service']
+        if any(keyword in tool_lower for keyword in system_keywords):
+            if any(prefix in tool_lower for prefix in ['system_', 'service_', '']) and 'restart' in tool_lower:
+                return 'restart_service'
+        
+        # Tool creation patterns (EXPANDED)
+        creation_indicators = ['create_tool', 'make_tool', 'build_tool', 'generate_tool', 'develop_tool']
+        if any(indicator in tool_lower for indicator in creation_indicators):
+            return 'create_code_solution'
+        
+        # Audio/speech patterns
+        audio_keywords = ['audio', 'speech', 'stt', 'microphone', 'sound']
+        if any(keyword in tool_lower for keyword in audio_keywords):
+            if any(prefix in tool_lower for prefix in investigation_prefixes):
+                return 'audio_status'
+        
+        # Component/system status patterns  
+        status_keywords = ['component', 'system', 'status', 'health', 'diagnostic']
+        if any(keyword in tool_lower for keyword in status_keywords):
+            if 'component' in tool_lower or 'system' in tool_lower:
+                return 'component_status'
+        
+        
+        # Error investigation patterns
+        error_keywords = ['error', 'exception', 'failure', 'problem', 'issue']
+        if any(keyword in tool_lower for keyword in error_keywords):
+            if any(prefix in tool_lower for prefix in investigation_prefixes + ['check_', 'show_', 'get_', 'view_']):
+                return 'check_recent_errors'
+            if any(suffix in tool_lower for suffix in ['_error', '_errors', '_exception']):
+                return 'check_recent_errors'
+        return tool_name  # No pattern match found
+    def _fallback_tool_resolution(self, tool_name: str, available_tools: list) -> str | None:
+        """Fallback tool resolution using partial matching and similarity scoring.
+        
+        Args:
+            tool_name: The tool name that wasn't found
+            available_tools: List of available tool names
+            
+        Returns:
+            Best matching tool name or None if no good match found
+        """
+        tool_lower = tool_name.lower()
+        
+        # First, try substring matching (high confidence)
+        for available_tool in available_tools:
+            available_lower = available_tool.lower()
+            
+            # Check if tool name contains available tool name or vice versa
+            if available_tool in tool_name or tool_name in available_tool:
+                return available_tool
+                
+            # Check for partial word matches
+            tool_words = tool_lower.split('_')
+            available_words = available_lower.split('_')
+            
+            # If more than half the words match, consider it a good match
+            matches = sum(1 for word in tool_words if word in available_words)
+            if len(tool_words) > 1 and matches >= len(tool_words) // 2:
+                return available_tool
+        
+        # Second, try semantic similarity for common patterns
+        semantic_mappings = {
+            'dependencies': ['check_dependencies'],
+            'sentence': ['check_dependencies'],
+            'transformer': ['check_dependencies'],
+            'audio': ['audio_status', 'audio_quality'],
+            'speech': ['audio_status', 'stt_status'], 
+            'system': ['component_status', 'system_diagnostic'],
+            'status': ['component_status', 'audio_status'],
+            'restart': ['restart_service'],
+            'memory': ['memory_status'],
+            'models': ['list_models'],
+            'diagnostic': ['system_diagnostic']
+        }
+        
+        for keyword, candidates in semantic_mappings.items():
+            if keyword in tool_lower:
+                for candidate in candidates:
+                    if candidate in available_tools:
+                        return candidate
+        
+        return None  # No fallback found
+
+
+
+    def _execute_tool_with_params(self, tool_name: str, parameters: dict, kloros_instance=None, query: str = "") -> str:
+        """Execute tool with extracted parameters."""
+        import time
+        t_start = time.time()
+        success = False
+
+        try:
+            from src.introspection_tools import IntrospectionToolRegistry
+            registry = IntrospectionToolRegistry()
+
+            if tool_name in registry.tools:
+                print(f"[tool] Executing: {tool_name} with params: {parameters}")
+
+                # Pass parameters to the tool
+                if parameters:
+                    result = registry.tools[tool_name].func(kloros_instance, **parameters)
+                else:
+                    result = registry.tools[tool_name].func(kloros_instance)
+
+                success = True
+                latency_ms = int((time.time() - t_start) * 1000)
+
+                # Record outcome for bandit learning
+                if self.tool_selector and query:
+                    embedder = self._get_embedder_function()
+                    self.tool_selector.record_outcome(
+                        tool=tool_name,
+                        query=query,
+                        success=True,
+                        latency_ms=latency_ms,
+                        tool_hops=1,
+                        embedder=embedder
+                    )
+
+                return f"SUCCESS:{result}"  # Internal marker for success detection
+            else:
+                # Fall back to normal tool execution (with synthesis)
+                result = self._execute_tool(tool_name, kloros_instance)
+                success = result.startswith("SUCCESS:")
+                latency_ms = int((time.time() - t_start) * 1000)
+
+                # Record outcome
+                if self.tool_selector and query:
+                    embedder = self._get_embedder_function()
+                    self.tool_selector.record_outcome(
+                        tool=tool_name,
+                        query=query,
+                        success=success,
+                        latency_ms=latency_ms,
+                        tool_hops=1,
+                        embedder=embedder
+                    )
+
+                return result
+
+        except Exception as e:
+            latency_ms = int((time.time() - t_start) * 1000)
+
+            # Record failure
+            if self.tool_selector and query:
+                embedder = self._get_embedder_function()
+                self.tool_selector.record_outcome(
+                    tool=tool_name,
+                    query=query,
+                    success=False,
+                    latency_ms=latency_ms,
+                    tool_hops=1,
+                    embedder=embedder
+                )
+
+            return f"FAILURE:{e}"  # Internal marker for failure detection
+
+
+    def reply(self, transcript: str, kloros_instance=None, mode: str = None) -> ReasoningResult:
+        """Generate a response using the RAG module with tool integration.
+
+        Args:
+            transcript: Input transcript to process
+            kloros_instance: KLoROS instance for tool context
+            mode: Optional model mode - 'live' (default), 'think', or 'deep' (for async/background tasks)
+
+        Returns:
+            ReasoningResult with RAG response and sources, or tool execution result
+        """
+        from .query_classifier import classify_query
+        import time
+
+        # Initialize XAI tracing for this turn
+        try:
+            from src.xai import middleware as xai
+            user_id = getattr(kloros_instance, 'operator_id', None) if kloros_instance else None
+            xai.start_turn(query=transcript, user_id=user_id, mode="rag", uncertainty=0.5)
+            xai_enabled = True
+        except Exception as e:
+            print(f"[xai] Failed to initialize XAI tracing: {e}")
+            xai_enabled = False
+
+        if not transcript.strip():
+            if xai_enabled:
+                xai_record = xai.finalize(answer_summary="", citations=[], uncertainty_after=1.0, rationale_outline="Empty input received")
+                self._log_xai_trace(xai_record)
+            return ReasoningResult(reply_text="", sources=[], meta={"empty_input": True})
+
+        if self.rag_instance is None:
+            if xai_enabled:
+                xai_record = xai.finalize(answer_summary="RAG system not available", citations=[], uncertainty_after=1.0, rationale_outline="RAG instance is None")
+                self._log_xai_trace(xai_record)
+            return ReasoningResult(
+                reply_text="RAG system not available",
+                sources=[],
+                meta={"backend": "local_rag", "error": "rag_instance_none"},
+            )
+
+        # Fast-path: check for common queries and route directly to tools (bypass LLM)
+        normalized_query = transcript.strip().lower()
+
+        # Remove common prefixes and phrases to improve matching
+        prefixes = [
+            "can you ", "could you ", "please ", "will you ", "would you ",
+            "i need ", "i want ", "give me ", "get me ", "show me ",
+            "i'd like ", "i'm ", "i am ", "and i ", "what's "
+        ]
+        for prefix in prefixes:
+            if normalized_query.startswith(prefix):
+                normalized_query = normalized_query[len(prefix):].strip()
+                break  # Only remove one prefix
+
+        # Also try to extract fast-path keywords from longer queries
+        # Check if any fast-path key appears in the query
+        matched_key = None
+        for key in FAST_PATHS:
+            if key in normalized_query:
+                matched_key = key
+                break
+
+        # Check fast-paths dict (exact match or substring match)
+        if normalized_query in FAST_PATHS:
+            matched_key = normalized_query
+
+        if matched_key:
+            tool_name = FAST_PATHS[matched_key]
+            print(f"[fast-path] Matched '{transcript}' → {tool_name} (key: '{matched_key}', bypassing LLM)")
+
+            # Execute tool directly
+            try:
+                from src.introspection_tools import IntrospectionToolRegistry
+                registry = IntrospectionToolRegistry()
+
+                if tool_name in registry.tools:
+                    tool = registry.tools[tool_name]
+                    result = tool.func(kloros_instance) if kloros_instance else tool.func()
+
+                    if xai_enabled:
+                        xai_record = xai.finalize(
+                            answer_summary=result,
+                            citations=[f"Fast-path: {tool_name}"],
+                            uncertainty_after=0.1,
+                            rationale_outline=f"Fast-path match for common query, executed {tool_name} directly"
+                        )
+                        self._log_xai_trace(xai_record)
+
+                    return ReasoningResult(
+                        reply_text=result,
+                        sources=[f"tool:{tool_name}"],
+                        meta={"backend": "local_rag", "fast_path": True, "tool": tool_name}
+                    )
+            except Exception as e:
+                print(f"[fast-path] Tool execution failed: {e}")
+                # Fall through to normal processing
+
+        try:
+            # Get conversation history for context-aware classification
+            conversation_history = []
+            if self.conversation_logger:
+                try:
+                    recent_turns = self.conversation_logger.get_recent_turns(n=4)  # Last 2 exchanges
+                    conversation_history = recent_turns
+                except Exception:
+                    pass  # If we can't get history, proceed without it
+
+            # Classify query to determine RAG strategy (context-aware)
+            query_type, should_use_rag = classify_query(transcript, conversation_history=conversation_history)
+
+            # Use IntentRouter for capability-based routing
+            from src.config.routing import get_intent_router
+
+            router = get_intent_router()
+            model_mode, selected_model, selected_url = router.route(transcript, explicit_mode=mode)
+
+            if model_mode != "live":
+                print(f"[rag] Using {model_mode.upper()} mode: {selected_model} @ {selected_url}")
+
+            # Handle nonsense/gibberish queries quickly without heavy processing
+            if query_type == "nonsense":
+                dismissive_responses = [
+                    "Unclear.",
+                    "Repeat that?",
+                    "Didn't catch that.",
+                    "Come again?",
+                ]
+                import random
+                response = random.choice(dismissive_responses)
+
+                if xai_enabled:
+                    xai_record = xai.finalize(
+                        answer_summary=response,
+                        citations=[],
+                        uncertainty_after=0.9,
+                        rationale_outline=f"Query classified as nonsense/gibberish, skipped processing"
+                    )
+                    self._log_xai_trace(xai_record)
+
+                return ReasoningResult(
+                    reply_text=response,
+                    sources=[],
+                    meta={"backend": "local_rag", "query_type": "nonsense", "skipped_processing": True}
+                )
+
+            # Handle conversational queries: invoke LLM with PERSONA_PROMPT but no tools/RAG
+            # This ensures hallucination guards apply while preventing tool hallucination
+            if query_type == "conversational":
+                print(f"[conversational] Invoking LLM with PERSONA_PROMPT (no tools/RAG)")
+
+                # Build minimal prompt with PERSONA_PROMPT only (no RAG context, no tools)
+                from src.persona.kloros import PERSONA_PROMPT
+                minimal_prompt = f"{PERSONA_PROMPT}\n\nUser: {transcript}\n\nAssistant:"
+
+                # Use fast model for low latency
+                try:
+                    import requests
+                    payload = {
+                        "model": selected_model,
+                        "prompt": minimal_prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "num_predict": 100  # Keep responses brief
+                        }
+                    }
+
+                    api_response = requests.post(
+                        f"{selected_url}/api/generate",
+                        json=payload,
+                        timeout=10
+                    )
+                    api_response.raise_for_status()
+                    response = api_response.json().get("response", "").strip()
+
+                    if not response:
+                        response = "Yes?"  # Fallback if LLM returns empty
+
+                except Exception as e:
+                    print(f"[conversational] LLM invocation failed: {e}, using fallback")
+                    response = "Yes?"  # Fallback on error
+
+                if xai_enabled:
+                    xai_record = xai.finalize(
+                        answer_summary=response,
+                        citations=[],
+                        uncertainty_after=0.1,
+                        rationale_outline=f"Conversational query: invoked LLM with PERSONA_PROMPT, no tools/RAG"
+                    )
+                    self._log_xai_trace(xai_record)
+
+                return ReasoningResult(
+                    reply_text=response,
+                    sources=[],
+                    meta={"backend": "local_rag", "query_type": "conversational", "persona_applied": True}
+                )
+
+            # Adaptive retrieval based on query type (knowledge base now contains technical docs)
+            if query_type == "factual":
+                top_k = 5  # Full retrieval for technical questions
+            else:  # ambiguous
+                top_k = 2  # Light retrieval for context
+
+            # Get the best available embedder
+            embedder = self._get_embedder_function()
+
+            # Retrieve relevant past conversations from ChromaDB
+            memory_context = ""
+            if self.conversation_logger and query_type != "conversational":
+                try:
+                    # ALWAYS include recent conversation turns for immediate context continuity
+                    recent_turns = self.conversation_logger.get_recent_turns(n=6)  # Last 3 exchanges (query+response pairs)
+                    recent_context_items = []
+
+                    if recent_turns:
+                        for mem in recent_turns:
+                            doc = mem['document'].replace('\n', ' ')
+                            recent_context_items.append(f"- {doc}")
+
+                    # Also retrieve semantically similar past memories (broader time window)
+                    relevant_memories = self.conversation_logger.retrieve_context(
+                        query=transcript,
+                        k=5,
+                        time_window_hours=24  # Last 24 hours
+                    )
+                    semantic_context_items = []
+
+                    if relevant_memories:
+                        for mem in relevant_memories[:3]:  # Top 3 most relevant
+                            doc = mem['document'].replace('\n', ' ')
+                            distance = mem.get('distance', 1.0)
+                            # Relaxed threshold to 0.6 for better recall
+                            if distance < 0.6:
+                                # Avoid duplicating recent turns
+                                if doc not in [r['document'].replace('\n', ' ') for r in recent_turns]:
+                                    semantic_context_items.append(f"- {doc}")
+
+                    # Combine recent turns (immediate context) + semantic matches (relevant history)
+                    all_context_items = recent_context_items + semantic_context_items
+
+                    if all_context_items:
+                        memory_context = "\n\nConversation history:\n" + "\n".join(all_context_items) + "\n"
+                        print(f"[memory] Injected {len(recent_context_items)} recent turns + {len(semantic_context_items)} semantic matches")
+                except Exception as e:
+                    print(f"[memory] Context retrieval failed: {e}")
+
+            # Get tool definitions for LLM (both text and structured formats)
+            tool_descriptions = ""
+            tools_for_chat_api = []
+            registry = None
+            try:
+                from src.introspection_tools import IntrospectionToolRegistry
+                registry = IntrospectionToolRegistry()
+                tool_descriptions = registry.get_tools_description()
+                tools_for_chat_api = registry.get_tools_for_ollama_chat()
+                print(f"[DEBUG] Loaded {len(registry.tools)} tools for /api/chat")
+                print(f"[DEBUG] Text descriptions: {len(tool_descriptions)} chars")
+                print(f"[DEBUG] Structured tools: {len(tools_for_chat_api)} definitions")
+            except Exception as e:
+                print(f"[rag] Failed to get tool definitions: {e}")
+
+            # Create stream callback if KLoROS instance has speak method
+            # NOTE: Streaming is disabled when using turn orchestrator to prevent duplicate TTS playback
+            stream_callback = None
+            use_streaming = os.getenv("KLR_ENABLE_STREAMING_TTS", "0") == "1"
+            if use_streaming and kloros_instance and hasattr(kloros_instance, 'speak'):
+                def streaming_speak(sentence: str):
+                    """Callback to speak sentences as they're generated."""
+                    print(f"[streaming] Speaking: {sentence[:50]}...")
+                    kloros_instance.speak(sentence)
+                stream_callback = streaming_speak
+
+            # Check if model supports tool calling via /api/chat
+            model_supports_tools = self._check_model_tool_support(selected_url, selected_model)
+
+            # Use /api/chat with structured tools if available, otherwise fall back to /api/generate
+            use_chat_api = bool(tools_for_chat_api) and not use_streaming and model_supports_tools
+
+            if use_chat_api:
+                print(f"[rag] Using /api/chat with {len(tools_for_chat_api)} structured tools")
+                # Get RAG context first
+                query_embedding = embedder(transcript)
+                retrieved = self.rag_instance.retrieve_by_embedding(query_embedding, top_k=top_k)
+                # Build prompt with context
+                prompt = self.rag_instance.build_prompt(
+                    transcript,
+                    retrieved,
+                    tool_descriptions="",  # Don't add text tools, using structured instead
+                    additional_context=memory_context
+                )
+                # Call chat API with tools
+                chat_result = self.rag_instance.generate_with_ollama_chat(
+                    prompt=prompt,
+                    ollama_url=f"{selected_url}/api/chat",
+                    model=selected_model,
+                    tools=tools_for_chat_api
+                )
+                # Wrap in same format as answer()
+                rag_result = {
+                    "response": chat_result.get("response", ""),
+                    "retrieved": retrieved,
+                    "tool_calls": chat_result.get("tool_calls", [])
+                }
+            else:
+                # Fall back to /api/generate with text-based tool descriptions
+                if use_streaming:
+                    print(f"[rag] Using /api/generate (streaming enabled, chat API not supported)")
+                else:
+                    print(f"[rag] Using /api/generate (no tools or fallback mode)")
+                rag_result = self.rag_instance.answer(
+                    transcript,
+                    embedder=embedder,
+                    top_k=top_k,  # Adaptive based on query type
+                    model=selected_model,
+                    ollama_url=f"{selected_url}/api/generate",
+                    stream_callback=stream_callback,
+                    tool_descriptions=tool_descriptions,
+                    additional_context=memory_context  # Inject ChromaDB memories
+                )
+
+            if isinstance(rag_result, dict):
+                response = rag_result.get("response", "")
+                retrieved = rag_result.get("retrieved", [])
+
+                # Strip verbose reasoning tags from deepseek-r1 output
+                if model_mode == "think" and "<think>" in response:
+                    import re
+                    # Remove <think>...</think> blocks but keep the answer after
+                    response = re.sub(r'<think>.*?</think>\s*', '', response, flags=re.DOTALL)
+                    response = response.strip()
+
+                # Handle structured tool calls from /api/chat
+                tool_calls_from_chat = rag_result.get("tool_calls", [])
+                if tool_calls_from_chat and registry:
+                    print(f"[chat_api] Executing {len(tool_calls_from_chat)} tool calls from LLM")
+                    tool_results = []
+                    for tool_call in tool_calls_from_chat:
+                        func = tool_call.get("function", {})
+                        tool_name = func.get("name", "")
+                        tool_args = func.get("arguments", {})
+                        print(f"[chat_api] Tool: {tool_name}, args: {tool_args}")
+
+                        if tool_name in registry.tools:
+                            try:
+                                tool = registry.tools[tool_name]
+                                result = tool.execute(kloros_instance, **tool_args) if kloros_instance else tool.execute(None, **tool_args)
+                                tool_results.append(f"**{tool_name}**:\n{result}")
+                                print(f"[chat_api] Tool {tool_name} executed successfully")
+                                if xai_enabled:
+                                    xai.log_tool_call(tool_name, tool_args, result, success=True)
+                            except Exception as e:
+                                error_msg = f"Tool {tool_name} failed: {e}"
+                                tool_results.append(f"**{tool_name}**: ERROR - {e}")
+                                print(f"[chat_api] {error_msg}")
+                                if xai_enabled:
+                                    xai.log_tool_call(tool_name, tool_args, str(e), success=False)
+                        else:
+                            tool_results.append(f"**{tool_name}**: Tool not found in registry")
+                            print(f"[chat_api] Tool {tool_name} not in registry")
+
+                    # Prepend tool results to response
+                    if tool_results:
+                        response = "\n\n".join(tool_results) + "\n\n" + response
+
+                # Log retrieval for XAI
+                if xai_enabled and retrieved:
+                    hits = []
+                    for i, (doc, score) in enumerate(retrieved):
+                        if isinstance(doc, dict):
+                            snippet = doc.get("text", doc.get("quote", ""))[:200]
+                            source = doc.get("context", doc.get("file", f"doc_{i}"))
+                            hits.append({
+                                "doc_id": f"doc_{i}",
+                                "source": source,
+                                "snippet": snippet,
+                                "score": score
+                            })
+                    xai.log_retrieval(hits)
+
+                # Check if response contains a tool command
+                tool_name, cleaned_response = self._parse_tool_command(response)
+
+                if tool_name:
+                    # Preprocess and fix tool name if needed
+                    corrected_tool, parameters = self._preprocess_tool_request(tool_name, cleaned_response, transcript)
+
+                    # Validate tool request before execution
+                    try:
+                        from src.tool_synthesis.pre_execution_validator import PreExecutionValidator, ValidationResult
+                        from src.introspection_tools import IntrospectionToolRegistry
+                        from src.tool_synthesis.semantic_tool_matcher import SemanticToolMatcher
+
+                        registry = IntrospectionToolRegistry()
+                        semantic_matcher = SemanticToolMatcher(tool_registry=registry)
+                        validator = PreExecutionValidator(
+                            tool_registry=registry,
+                            semantic_matcher=semantic_matcher,
+                            heal_bus=self.heal_bus
+                        )
+
+                        validation_result = validator.validate_tool_request(
+                            tool_name=corrected_tool,
+                            tool_args=parameters,
+                            kloros_instance=kloros_instance,
+                            context=transcript
+                        )
+
+                        if not validation_result.is_valid:
+                            # Validation failed - try suggestions and synthesis
+                            alternative_tool = self._handle_validation_failure(
+                                tool_name=corrected_tool,
+                                validation_result=validation_result,
+                                parameters=parameters,
+                                kloros_instance=kloros_instance,
+                                transcript=transcript,
+                                registry=registry,
+                                validator=validator
+                            )
+
+                            if alternative_tool:
+                                # Found valid alternative or synthesized new tool
+                                print(f"[validation] Using alternative: {alternative_tool}")
+                                corrected_tool = alternative_tool
+                            else:
+                                # All recovery attempts failed - log internally but respond naturally
+                                error_msg = f"⚠️ Tool validation failed: {validation_result.error_message}"
+
+                                if validation_result.suggestions:
+                                    error_msg += "\n\n💡 Suggestions:\n"
+                                    for suggestion in validation_result.suggestions:
+                                        error_msg += f"  • {suggestion}\n"
+
+                                error_msg += "\n\n❌ Synthesis attempts also failed."
+                                print(f"[validation] {error_msg}")
+
+                                # Generate natural conversational response instead of returning error message
+                                conversational_responses = [
+                                    "I'm not sure I can help with that right now.",
+                                    "I don't have the capability for that yet.",
+                                    "That's beyond my current functions.",
+                                ]
+                                import random
+                                natural_response = random.choice(conversational_responses)
+
+                                # Log validation failure to XAI
+                                if xai_enabled:
+                                    xai_record = xai.finalize(
+                                        answer_summary=natural_response,
+                                        citations=[],
+                                        uncertainty_after=0.8,
+                                        rationale_outline=f"Tool validation failed for '{corrected_tool}': {validation_result.error_message}. Responded naturally instead of exposing internal error."
+                                    )
+                                    self._log_xai_trace(xai_record)
+
+                                return ReasoningResult(
+                                    reply_text=natural_response,
+                                    sources=[],
+                                    meta={
+                                        "backend": "local_rag",
+                                        "validation_failed": True,
+                                        "tool_name": corrected_tool,
+                                        "confidence": validation_result.confidence,
+                                        "internal_error": error_msg  # Keep for debugging
+                                    }
+                                )
+
+                        # Validation passed - log confidence
+                        print(f"[validation] Tool '{corrected_tool}' validated (confidence: {validation_result.confidence:.2f})")
+
+                    except Exception as validation_error:
+                        print(f"[validation] Validation system error: {validation_error}")
+                        # Continue with execution if validation fails to initialize
+
+                    # Acknowledge tool execution before running (for user feedback)
+                    if kloros_instance and hasattr(kloros_instance, 'speak'):
+                        # Use text from JSON envelope if present, otherwise use hardcoded acknowledgment
+                        if cleaned_response.strip():
+                            ack = cleaned_response.strip()
+                            print(f"[tool] Acknowledging (from envelope): {ack}")
+                        else:
+                            # Fallback for legacy TOOL: pattern without accompanying text
+                            acknowledgments = {
+                                'component_status': 'Running diagnostics.',
+                                'system_diagnostic': 'Generating system report.',
+                                'audio_status': 'Checking audio pipeline.',
+                                'check_dependencies': 'Analyzing dependencies.',
+                                'restart_service': 'Restarting service.',
+                                'memory_status': 'Checking memory system.',
+                            }
+                            ack = acknowledgments.get(corrected_tool, 'Working on that.')
+                            print(f"[tool] Acknowledging (fallback): {ack}")
+                        kloros_instance.speak(ack)
+
+                    # Execute the corrected tool with parameters
+                    tool_start = time.time()
+                    tool_result = self._execute_tool_with_params(corrected_tool, parameters, kloros_instance)
+                    tool_end = time.time()
+
+                    # Log tool execution for XAI
+                    if xai_enabled:
+                        tool_success = tool_result.startswith("SUCCESS:")
+                        output_summary = tool_result[:400]
+                        # Simple heuristics for cost/benefit/risk
+                        expected_gain = 0.8 if tool_success else 0.1
+                        expected_cost = (tool_end - tool_start) * 1000  # ms
+                        expected_risk = 0.1 if corrected_tool in ['restart_service'] else 0.01
+                        delta_uncertainty = -0.3 if tool_success else 0.1
+
+                        xai.log_tool(
+                            name=corrected_tool,
+                            args=parameters,
+                            start_ms=int(tool_start * 1000),
+                            end_ms=int(tool_end * 1000),
+                            success=tool_success,
+                            output_summary=output_summary,
+                            eg=expected_gain,
+                            ec=expected_cost,
+                            er=expected_risk,
+                            d_unc=delta_uncertainty
+                        )
+
+                    # Finalize XAI trace for tool execution
+                    if xai_enabled:
+                        uncertainty_after = 0.2 if tool_result.startswith("SUCCESS:") else 0.7
+                        xai_record = xai.finalize(
+                            answer_summary=tool_result[:400],
+                            citations=[corrected_tool],
+                            uncertainty_after=uncertainty_after,
+                            rationale_outline=f"Detected tool command '{tool_name}', mapped to '{corrected_tool}', executed with result"
+                        )
+                        self._log_xai_trace(xai_record)
+
+                    # Log tool execution to episodic memory
+                    if self.conversation_logger:
+                        try:
+                            self.conversation_logger.log_turn(
+                                user_query=transcript,
+                                system_response=tool_result,
+                                tool_used=corrected_tool,
+                                tool_result=tool_result[:200],
+                                metadata={
+                                    "tool_original": tool_name,
+                                    "tool_corrected": corrected_tool,
+                                    "duration_ms": (tool_end - tool_start) * 1000
+                                }
+                            )
+                        except Exception as e:
+                            print(f"[memory] Failed to log tool execution: {e}")
+
+                    # Strip internal SUCCESS:/FAILURE: markers and naturalize
+                    tool_success = tool_result.startswith("SUCCESS:")
+                    if tool_result.startswith("SUCCESS:"):
+                        tool_result = tool_result[8:]  # Strip "SUCCESS:" prefix
+                    elif tool_result.startswith("FAILURE:"):
+                        tool_result = tool_result[8:]  # Strip "FAILURE:" prefix
+
+                    # Apply natural_summary style to structured tool outputs
+                    try:
+                        from src.style.policy_engine import _is_structured_output
+                        from src.style.technique_library import apply_technique
+
+                        if _is_structured_output(tool_result):
+                            naturalized = apply_technique(tool_result, "natural_summary")
+                            print(f"[style] Naturalized tool output ({len(tool_result)} → {len(naturalized)} chars)")
+                            tool_result = naturalized
+                        elif not tool_success:
+                            # For failures, always provide a natural response instead of raw error
+                            tool_result = f"I encountered an issue while trying to help with that: {tool_result}"
+                    except Exception as style_err:
+                        print(f"[style] Failed to naturalize tool output: {style_err}")
+
+                    # Return tool execution result
+                    return ReasoningResult(
+                        reply_text=tool_result,
+                        sources=[f"Tool executed: {tool_name}"],
+                        meta={
+                            "backend": "local_rag",
+                            "tool_executed": tool_name,
+                            "tool_calls": 1,
+                            "original_response": response,
+                            "input_length": len(transcript)
+                        }
+                    )
+
+                # Extract sources from retrieved voice quotes
+                sources = []
+                if isinstance(retrieved, list):
+                    for doc, score in retrieved:
+                        if isinstance(doc, dict) and "text" in doc:
+                            quote = doc["text"][:150]
+                            context = doc.get("context", "Unknown")
+                            sources.append(f"[{context}] {quote}...")
+
+                embedder_type = "sentence_transformer" if self._embedder is not None else "simple_hash"
+
+                # Finalize XAI trace for RAG response
+                if xai_enabled:
+                    citations = [doc.get("context", f"doc_{i}") for i, (doc, score) in enumerate(retrieved) if isinstance(doc, dict)][:5]
+                    # Estimate uncertainty based on top retrieval scores
+                    if retrieved:
+                        top_scores = [score for _, score in retrieved[:3]]
+                        avg_score = sum(top_scores) / len(top_scores) if top_scores else 0.5
+                        uncertainty_after = 1.0 - avg_score  # Higher score = lower uncertainty
+                    else:
+                        uncertainty_after = 0.6  # Moderate uncertainty without retrieval
+
+                    xai_record = xai.finalize(
+                        answer_summary=response[:400],
+                        citations=citations,
+                        uncertainty_after=uncertainty_after,
+                        rationale_outline=f"Query classified as '{query_type}', retrieved {len(retrieved)} documents, generated response using {embedder_type} embedder"
+                    )
+                    self._log_xai_trace(xai_record)
+
+                # Log conversation turn to episodic memory
+                if self.conversation_logger:
+                    try:
+                        self.conversation_logger.log_turn(
+                            user_query=transcript,
+                            system_response=response,
+                            metadata={
+                                "query_type": query_type,
+                                "retrieved_count": len(retrieved),
+                                "embedder": embedder_type
+                            }
+                        )
+                    except Exception as e:
+                        print(f"[memory] Failed to log conversation: {e}")
+
+                # === Style Pipeline Integration ===
+                # Apply GLaDOS-style techniques with parrot-guard
+                style_technique = None
+                style_guard_result = None
+                style_max_sim = 0.0
+
+                try:
+                    from src.style.context_classifier import classify_context
+                    from src.style.policy_engine import choose_technique
+                    from src.style.technique_library import apply_technique, seed_style
+                    from src.style.parrot_guard import parrot_guard
+                    from src.style.corpus_loader import load_corpus_index, get_corpus_index
+
+                    # Seed RNG per session for deterministic variation
+                    if not hasattr(kloros_instance, '_style_session_seeded'):
+                        session_id = getattr(kloros_instance, 'session_id', 'default')
+                        seed_style(session_id)
+                        kloros_instance._style_session_seeded = True
+
+                    # Initialize turn tracking
+                    if not hasattr(kloros_instance, '_style_turn_idx'):
+                        kloros_instance._style_turn_idx = 0
+                        kloros_instance._style_last_styled_turn = -10
+                    kloros_instance._style_turn_idx += 1
+
+                    # Only style natural language responses (not tools, errors, stack traces)
+                    if response.strip() and not response.startswith("❌") and not response.startswith("✅"):
+                        # Language safety: English only for now
+                        # Simple heuristic: check for non-ASCII or specific non-English patterns
+                        is_english = all(ord(c) < 128 or c.isspace() for c in response[:100])
+
+                        if is_english:
+                            # Classify context
+                            ctx = classify_context(transcript, kloros_instance)
+
+                            # Choose technique based on policy (pass response for structured output detection)
+                            style_technique = choose_technique(ctx, response_text=response)
+
+                            if style_technique:
+                                # Apply technique
+                                styled_response = apply_technique(response, style_technique)
+
+                                # Load corpus index (lazy initialization)
+                                corpus_index = get_corpus_index()
+                                if corpus_index is None:
+                                    try:
+                                        corpus_index = load_corpus_index()
+                                    except Exception as load_err:
+                                        print(f"[style] Failed to load corpus index: {load_err}")
+                                        corpus_index = None
+
+                                # Parrot-guard check
+                                if corpus_index:
+                                    is_safe, reason = parrot_guard(styled_response, corpus_index, embedder)
+
+                                    if is_safe:
+                                        # Style approved! Update response and tracking
+                                        response = styled_response
+                                        kloros_instance._style_last_styled_turn = kloros_instance._style_turn_idx
+                                        print(f"[style] ✓ Applied: {style_technique} ({reason})")
+                                    else:
+                                        # Style rejected by guard
+                                        print(f"[style] ✗ Rejected by guard: {style_technique} ({reason})")
+
+                                    style_guard_result = reason
+
+                                    # Extract max similarity for telemetry
+                                    if "maxsim_" in reason:
+                                        try:
+                                            style_max_sim = float(reason.split("maxsim_")[1])
+                                        except:
+                                            pass
+                                else:
+                                    # No corpus index available, skip guard check (conservative)
+                                    print(f"[style] Corpus index unavailable, skipping style")
+                                    style_technique = None
+
+                except Exception as style_err:
+                    print(f"[style] Pipeline error: {style_err}")
+                    # Continue with un-styled response on error
+
+                return ReasoningResult(
+                    reply_text=response,
+                    sources=sources,
+                    meta={
+                        "backend": "local_rag",
+                        "embedder": embedder_type,
+                        "input_length": len(transcript),
+                        "retrieved_count": len(retrieved),
+                        "style_technique": style_technique,
+                        "style_guard": style_guard_result,
+                        "style_max_sim": style_max_sim,
+                    },
+                )
+            else:
+                return ReasoningResult(
+                    reply_text=str(rag_result),
+                    sources=[],
+                    meta={"backend": "local_rag", "input_length": len(transcript)},
+                )
+
+        except Exception as e:
+            # Finalize XAI trace with error
+            if xai_enabled:
+                xai_record = xai.finalize(
+                    answer_summary=f"Error: {str(e)[:200]}",
+                    citations=[],
+                    uncertainty_after=1.0,
+                    rationale_outline=f"Exception occurred during processing: {type(e).__name__}"
+                )
+                self._log_xai_trace(xai_record)
+
+            # Fallback for any errors
+            return ReasoningResult(
+                reply_text=f"RAG processing failed: {str(e)}",
+                sources=[],
+                meta={"backend": "local_rag", "error": str(e)},
+            )

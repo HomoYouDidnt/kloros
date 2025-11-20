@@ -1,0 +1,340 @@
+"""
+Memory integration for KLoROS voice pipeline.
+
+This module provides memory-enhanced functionality by extending the existing
+KLoROS voice assistant with episodic-semantic memory capabilities.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+import uuid
+from typing import Any, Dict, List, Optional
+
+from .logger import MemoryLogger
+from .storage import MemoryStore
+from .condenser import EpisodeCondenser
+from .retriever import ContextRetriever
+from .models import EventType, ContextRetrievalRequest, ContextRetrievalResult
+
+
+class MemoryEnhancedKLoROS:
+    """
+    Memory-enhanced wrapper for KLoROS voice assistant.
+
+    Integrates episodic-semantic memory into the voice pipeline
+    without modifying the core KLoROS class.
+    """
+
+    def __init__(self, kloros_instance):
+        """
+        Initialize memory enhancement for KLoROS.
+
+        Args:
+            kloros_instance: Existing KLoROS voice assistant instance
+        """
+        self.kloros = kloros_instance
+
+        # Initialize memory components
+        self.memory_store = MemoryStore()
+        self.memory_logger = MemoryLogger(self.memory_store)
+        self.episode_condenser = EpisodeCondenser(self.memory_store)
+        self.context_retriever = ContextRetriever(self.memory_store)
+
+        # Current conversation tracking
+        self.current_conversation_id: Optional[str] = None
+        self.conversation_start_time: Optional[float] = None
+
+        # Memory configuration
+        self.enable_memory = int(os.getenv("KLR_ENABLE_MEMORY", "1"))
+        self.auto_condense = int(os.getenv("KLR_AUTO_CONDENSE", "1"))
+        self.context_in_chat = int(os.getenv("KLR_CONTEXT_IN_CHAT", "1"))
+        self.max_context_events = int(os.getenv("KLR_MAX_CONTEXT_EVENTS", "10"))
+        self.max_context_summaries = int(os.getenv("KLR_MAX_CONTEXT_SUMMARIES", "3"))
+
+        # Wrap key methods
+        self._wrap_kloros_methods()
+
+    def _wrap_kloros_methods(self):
+        """Wrap KLoROS methods to add memory functionality."""
+        # Store original methods
+        self._original_chat = self.kloros.chat
+        self._original_handle_conversation = self.kloros.handle_conversation
+        self._original_listen_for_wake_word = self.kloros.listen_for_wake_word
+
+        # Replace with memory-enhanced versions
+        self.kloros.chat = self._memory_enhanced_chat
+        self.kloros.handle_conversation = self._memory_enhanced_handle_conversation
+        self.kloros.listen_for_wake_word = self._memory_enhanced_listen_for_wake_word
+
+    def __getattr__(self, name):
+        """Proxy attribute access to the wrapped KLoROS instance."""
+        # Avoid infinite recursion by using object.__getattribute__
+        try:
+            kloros = object.__getattribute__(self, 'kloros')
+            return getattr(kloros, name)
+        except AttributeError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def _memory_enhanced_listen_for_wake_word(self):
+        """Memory-enhanced wake word detection."""
+        if not self.enable_memory:
+            return self._original_listen_for_wake_word()
+
+        # Call original method first
+        self._original_listen_for_wake_word()
+
+    def _memory_enhanced_handle_conversation(self):
+        """Memory-enhanced conversation handling."""
+        if not self.enable_memory:
+            return self._original_handle_conversation()
+
+        # Start new conversation session
+        self.current_conversation_id = str(uuid.uuid4())
+        self.conversation_start_time = time.time()
+
+        # Log conversation start
+        self.memory_logger.start_conversation(self.current_conversation_id)
+
+        try:
+            # Call original conversation handler
+            self._original_handle_conversation()
+        finally:
+            # End conversation session
+            if self.current_conversation_id:
+                self.memory_logger.end_conversation()
+
+                # Auto-condense episodes if enabled
+                if self.auto_condense:
+                    self._auto_condense_episodes()
+
+                self.current_conversation_id = None
+                self.conversation_start_time = None
+
+    def _memory_enhanced_chat(self, user_message: str) -> str:
+        """Memory-enhanced chat with context retrieval."""
+        if not self.enable_memory:
+            return self._original_chat(user_message)
+
+        # Log user input
+        self.memory_logger.log_user_input(
+            transcript=user_message,
+            confidence=0.95
+        )
+
+        # Get relevant context if enabled
+        context_text = ""
+        if self.context_in_chat and user_message.strip():
+            context_result = self._retrieve_context(user_message)
+            context_text = self._format_context_for_prompt(context_result)
+
+        # Modify the chat behavior to include context
+        if context_text:
+            # Add context to conversation history temporarily
+            original_history = self.kloros.conversation_history.copy()
+
+            # Insert context before the current user message
+            context_entry = f"[Context from memory]: {context_text}"
+            self.kloros.conversation_history.append(context_entry)
+
+            # Log context retrieval
+            self.memory_logger.log_context_retrieval(
+                query=user_message,
+                retrieved_events=len(context_result.events),
+                retrieved_summaries=len(context_result.summaries),
+                total_tokens=context_result.total_tokens,
+                retrieval_time=context_result.retrieval_time
+            )
+
+        try:
+            # Call original chat method
+            response = self._original_chat(user_message)
+
+            # Log LLM response
+            self.memory_logger.log_llm_response(
+                response=response,
+                model=self.kloros.ollama_model,
+                
+            )
+
+            return response
+
+        except Exception as e:
+            # Log error
+            self.memory_logger.log_error(
+                error_message=str(e),
+                error_type=type(e).__name__,
+                component="chat_enhanced"
+            )
+            raise
+        finally:
+            # Restore original conversation history if we modified it
+            if context_text and 'original_history' in locals():
+                self.kloros.conversation_history = original_history
+
+    def _retrieve_context(self, query: str) -> Any:
+        """Retrieve relevant context for a query."""
+        request = ContextRetrievalRequest(
+            query=query,
+            max_events=self.max_context_events,
+            max_summaries=self.max_context_summaries,
+            time_window_hours=24.0,  # Look back 24 hours
+            conversation_id=self.current_conversation_id,
+            min_importance=0.3
+        )
+
+        return self.context_retriever.retrieve_context(request)
+
+    def _format_context_for_prompt(self, context_result) -> str:
+        """Format retrieved context for inclusion in LLM prompt."""
+        context_parts = []
+
+        # Add recent summaries
+        if context_result.summaries:
+            context_parts.append("Recent conversation summaries:")
+            for summary in context_result.summaries[:3]:  # Limit to 3 most relevant
+                context_parts.append(f"- {summary.summary_text}")
+
+        # Add relevant events
+        if context_result.events:
+            context_parts.append("Recent relevant interactions:")
+            for event in context_result.events[:5]:  # Limit to 5 most relevant
+                if event.event_type if isinstance(event.event_type, str) else event.event_type.value in ["user_input", "llm_response"]:
+                    context_parts.append(f"- {event.content}")
+
+        return " ".join(context_parts)[:500]  # Limit context length
+
+    def _auto_condense_episodes(self):
+        """Automatically condense recent episodes."""
+        try:
+            if self.current_conversation_id:
+                # Group events into episodes
+                episodes = self.episode_condenser.group_events_into_episodes(
+                    self.current_conversation_id
+                )
+
+                # Condense each episode
+                for episode in episodes:
+                    if not episode.is_condensed:
+                        summary = self.episode_condenser.condense_episode(episode)
+                        if summary:
+                            self.memory_logger.log_event(
+                                event_type=EventType.EPISODE_CONDENSED,
+                                content=f"Condensed episode {episode.id}",
+                                metadata={
+                                    "episode_id": episode.id,
+                                    "summary_length": len(summary.summary_text),
+                                    "importance_score": summary.importance_score
+                                }
+                            )
+        except Exception as e:
+            # Log condensation errors but don't interrupt conversation
+            self.memory_logger.log_error(
+                error_message=f"Auto-condensation failed: {e}",
+                error_type=type(e).__name__,
+                component="auto_condenser"
+            )
+
+    def log_wake_detection(self, transcript: str, confidence: float, wake_phrase: str):
+        """Log wake word detection event."""
+        if self.enable_memory:
+            self.memory_logger.log_wake_detection(
+                transcript=transcript,
+                confidence=confidence,
+                wake_phrase=wake_phrase
+            )
+
+    def log_tts_output(self, text: str, voice_model: str = "piper"):
+        """Log TTS synthesis event."""
+        if self.enable_memory:
+            self.memory_logger.log_tts_output(
+                text=text,
+                voice_model=voice_model
+            )
+
+    def log_error_event(self, error_message: str, error_type: str, component: str):
+        """Log error event."""
+        if self.enable_memory:
+            self.memory_logger.log_error(
+                error_message=error_message,
+                error_type=error_type,
+                component=component
+            )
+
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get memory system statistics."""
+        if not self.enable_memory:
+            return {"memory_enabled": False}
+
+        stats = self.memory_store.get_stats()
+        stats["memory_enabled"] = True
+        stats["current_conversation"] = self.current_conversation_id
+        return stats
+
+    def search_memory(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+        """Search memory for specific content."""
+        if not self.enable_memory:
+            return []
+
+        result = self.context_retriever.search_memory(
+            query=query,
+            max_events=max_results // 2,
+            max_summaries=max_results // 2
+        )
+
+        # Format results for display
+        formatted_results = []
+
+        for event in result.events:
+            formatted_results.append({
+                "type": "event",
+                "timestamp": event.timestamp,
+                "content": event.content,
+                "event_type": event.event_type if isinstance(event.event_type, str) else event.event_type.value
+            })
+
+        for summary in result.summaries:
+            formatted_results.append({
+                "type": "summary",
+                "timestamp": summary.created_at,
+                "content": summary.summary_text,
+                "importance": summary.importance_score,
+                "topics": summary.key_topics
+            })
+
+        return formatted_results
+
+    def cleanup_old_memories(self, keep_days: int = 30) -> int:
+        """Clean up old memories beyond retention period."""
+        if not self.enable_memory:
+            return 0
+
+        deleted_count = self.memory_store.cleanup_old_events(keep_days)
+
+        # Log housekeeping event
+        self.memory_logger.log_event(
+            event_type=EventType.MEMORY_HOUSEKEEPING,
+            content=f"Cleaned up {deleted_count} old events",
+        )
+
+        return deleted_count
+
+    def close(self):
+        """Close memory system and flush any pending operations."""
+        if self.enable_memory:
+            self.memory_logger.close()
+            self.memory_store.close()
+
+
+def create_memory_enhanced_kloros(kloros_instance):
+    """
+    Factory function to create memory-enhanced KLoROS instance.
+
+    Args:
+        kloros_instance: Existing KLoROS voice assistant instance
+
+    Returns:
+        MemoryEnhancedKLoROS wrapper instance
+    """
+    return MemoryEnhancedKLoROS(kloros_instance)

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DOC="${1:?usage: klr_snapshot_doc <path/to/doc.md>}"
+BASE="$(basename "$DOC")"
+NOW="$(date -u +%Y%m%dT%H%M%SZ)"
+SNAPDIR="/home/kloros/.kloros/snapshots/docs"
+JOURNAL="/home/kloros/.kloros/journal/design_doc.jsonl"
+LOCK="/home/kloros/.kloros/locks/snapshot.lock"
+KEY="/home/kloros/.kloros/keys/hmac.key"
+
+mkdir -p "$SNAPDIR" "$(dirname "$JOURNAL")" "/home/kloros/.kloros/locks"
+
+# Atomic copy: tmp → fsync → rename
+SNAP="$SNAPDIR/${BASE%.md}.$NOW.md"
+TMP="$SNAP.tmp"
+cp "$DOC" "$TMP"
+sync -f "$(dirname "$TMP")" 2>/dev/null || true
+mv -f "$TMP" "$SNAP"
+
+# Hash + optional HMAC
+SHA="$(sha256sum "$SNAP" | awk '{print $1}')"
+SIG=""
+if [[ -f "$KEY" ]]; then
+  SIG="$(printf '%s' "$SHA" | openssl dgst -sha256 -mac HMAC -macopt "key:$(cat "$KEY")" -binary | od -An -tx1 | tr -d ' \n')"
+fi
+
+# Append-only JSONL journal (under lock)
+flock "$LOCK" bash -c '
+  mkdir -p "'"$(dirname "$JOURNAL")"'"
+  printf "{\"ts\":\"'"$NOW"'\",\"doc\":\"'"$BASE"'\",\"snapshot\":\"'"$SNAP"'\",\"sha256\":\"'"$SHA"'\"%s}\n" '"${SIG:+",\"sig\":\"$SIG\""}"' >> "'"$JOURNAL"'"
+'
+echo "snapshotted: $SNAP  sha256:$SHA"

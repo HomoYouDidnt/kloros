@@ -1,0 +1,84 @@
+# KLoROS Tool Registry - Capability Definitions
+
+- name: check_recent_errors
+  synonyms: ["check errors", "error check", "scan logs", "show errors", "recent failures"]
+  utterance_patterns: ["\\b(check|show|list|scan)\\b.*\\b(errors?|failures?|problems?)\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["diagnostics", "logs", "errors"]
+  description: "Check recent error logs for system issues"
+
+- name: system_diagnostic
+  synonyms: ["full diagnostic", "health check", "end-to-end diagnostic", "system status", "system health"]
+  utterance_patterns: ["\\b(system|full|end-to-end)\\b.*\\b(diagnostic|health|check|status)\\b"]
+  orchestrates: ["check_recent_errors", "memory_status", "component_status"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["diagnostics", "system", "health"]
+  description: "Run comprehensive system diagnostic"
+
+- name: memory_status
+  synonyms: ["memory check", "memory state", "memory info"]
+  utterance_patterns: ["\\b(memory|storage)\\b.*\\b(status|state|check|info)\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["diagnostics", "memory"]
+  description: "Check memory system status"
+
+- name: audio_status
+  synonyms: ["audio check", "audio state", "audio info", "sound status"]
+  utterance_patterns: ["\\b(audio|sound|voice)\\b.*\\b(status|state|check|info)\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["diagnostics", "audio"]
+  description: "Check audio system status"
+
+- name: component_status
+  synonyms: ["components", "parts status", "module status"]
+  utterance_patterns: ["\\b(component|module|part)s?\\b.*\\b(status|state|check)\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["diagnostics", "components"]
+  description: "Check all component initialization status"
+
+- name: check_service_status
+  synonyms: ["service check", "service state"]
+  utterance_patterns: ["\\b(service|daemon)\\b.*\\b(status|state|check)\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["diagnostics", "services"]
+  description: "Check systemd service status"
+
+- name: get_dream_report
+  synonyms: ["dream results", "dream status", "evolution report"]
+  utterance_patterns: ["\\b(dream|evolution)\\b.*\\b(report|results?|status)\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["dream", "evolution"]
+  description: "Get D-REAM evolution report"
+
+- name: start_enrollment
+  synonyms: ["enroll", "register voice", "voice enrollment"]
+  utterance_patterns: ["\\b(start|begin)\\b.*\\b(enrollment|registration)\\b"]
+  required_slots: []
+  forbidden_modes: ["passive"]
+  tags: ["enrollment", "voice"]
+  description: "Start voice enrollment for speaker recognition"
+
+- name: explain_reasoning
+  synonyms: ["explain", "reasoning", "how did you decide"]
+  utterance_patterns: ["\\b(explain|describe|tell me about)\\b.*\\b(reasoning|thinking|decision)\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["meta", "reasoning"]
+  description: "Explain reasoning process for last response"
+
+- name: current_time_query
+  synonyms: ["what time", "current time", "time now"]
+  utterance_patterns: ["\\b(what|current|tell me)\\b.*\\btime\\b"]
+  required_slots: []
+  forbidden_modes: []
+  tags: ["utility", "time"]
+  description: "Get current time"
+
+# Metadata section removed - use embeddings.lock.json instead

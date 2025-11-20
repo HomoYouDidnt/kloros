@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""
+Migrate zooids from old registry format to new lifecycle-aware registry.
+
+Old format: ecosystems → niches → [zooid_names]
+New format: niches → zooids (with state) + genomes hash map
+"""
+import json
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / "src"))
+
+from kloros.registry.lifecycle_registry import LifecycleRegistry
+
+OLD_REGISTRY_PATH = Path.home() / ".kloros/registry/niche_map.json.old_format"
+NEW_REGISTRY_PATH = Path.home() / ".kloros/registry/niche_map.json"
+
+
+def load_old_registry():
+    """Load old ecosystems-based registry format."""
+    with open(OLD_REGISTRY_PATH, 'r') as f:
+        return json.load(f)
+
+
+def migrate_zooids():
+    """Migrate zooids from old to new registry format."""
+    print("=" * 60)
+    print("KLoROS Registry Migration")
+    print("=" * 60)
+
+    if not OLD_REGISTRY_PATH.exists():
+        print(f"\n❌ Old registry not found: {OLD_REGISTRY_PATH}")
+        print("   Nothing to migrate.")
+        return 0
+
+    old_reg = load_old_registry()
+    print(f"\n✓ Loaded old registry from {OLD_REGISTRY_PATH}")
+
+    reg_mgr = LifecycleRegistry(registry_path=NEW_REGISTRY_PATH)
+
+    with reg_mgr.lock():
+        new_reg = reg_mgr.load()
+
+        now = time.time()
+        migrated_count = 0
+
+        for ecosystem, eco_data in old_reg.get("ecosystems", {}).items():
+            print(f"\n[Ecosystem: {ecosystem}]")
+
+            for niche_name, zooid_names in eco_data.get("niches", {}).items():
+                print(f"  Niche: {niche_name}")
+
+                # Ensure niche exists in new registry
+                if niche_name not in new_reg["niches"]:
+                    new_reg["niches"][niche_name] = {
+                        "dormant": [],
+                        "probation": [],
+                        "active": [],
+                        "retired": []
+                    }
+
+                for zooid_name in zooid_names:
+                    # Check if zooid already exists
+                    if zooid_name in new_reg["zooids"]:
+                        print(f"    ✓ {zooid_name} (already migrated)")
+                        continue
+
+                    # Create zooid with ACTIVE state (assume running zooids are active)
+                    new_reg["zooids"][zooid_name] = {
+                        "niche": niche_name,
+                        "lifecycle_state": "ACTIVE",
+                        "genome_hash": None,  # Will be set when genome is registered
+                        "created_ts": now,
+                        "state_changed_ts": now,
+                        "probation": {
+                            "started_ts": None,
+                            "phase_submitted_ts": None,
+                            "evidence": 0
+                        },
+                        "prod": {
+                            "ok_rate": 0.0,
+                            "ttr_ms_mean": 0.0,
+                            "evidence": 0,
+                            "last_heartbeat_ts": None
+                        },
+                        "promoted_ts": now,  # Assume already promoted
+                        "retired_ts": None,
+                        "demotions": 0,
+                        "cooldown_until_ts": None,
+                        "retirement_reason": None
+                    }
+
+                    # Add to niche's active list
+                    new_reg["niches"][niche_name]["active"].append(zooid_name)
+
+                    print(f"    ✓ {zooid_name} → ACTIVE")
+                    migrated_count += 1
+
+        # Save migrated registry
+        if migrated_count > 0:
+            reg_mgr.snapshot_then_atomic_write(new_reg)
+            print(f"\n✅ Migrated {migrated_count} zooids to lifecycle registry")
+            print(f"   Registry version: {new_reg['version']}")
+        else:
+            print("\n  No new zooids to migrate")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(migrate_zooids())

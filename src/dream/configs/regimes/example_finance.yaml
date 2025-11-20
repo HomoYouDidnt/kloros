@@ -1,0 +1,65 @@
+# Financial Domain Evaluation Regimes
+# Walk-forward analysis with market regime awareness
+
+metadata:
+  domain: finance
+  description: Multi-regime financial backtesting
+
+# Training/test regime windows
+regimes:
+  - name: "Pre-COVID Bull Market"
+    train: ["2014-01-01", "2018-12-31"]
+    test: ["2019-01-01", "2020-02-29"]
+    embargo_days: 5
+    metadata:
+      market_regime: bull
+      volatility: low
+      
+  - name: "COVID Crash Period"
+    train: ["2016-01-01", "2019-12-31"]
+    test: ["2020-03-01", "2020-06-30"]
+    embargo_days: 5
+    metadata:
+      market_regime: crisis
+      volatility: extreme
+      
+  - name: "Recovery Rally"
+    train: ["2017-01-01", "2020-06-30"]
+    test: ["2020-07-01", "2021-03-31"]
+    embargo_days: 5
+    metadata:
+      market_regime: recovery
+      volatility: high
+      
+  - name: "Post-Vaccine Market"
+    train: ["2018-01-01", "2021-03-31"]
+    test: ["2021-04-01", "2021-12-31"]
+    embargo_days: 5
+    metadata:
+      market_regime: bull
+      volatility: moderate
+      
+  - name: "Rate Hike Environment"
+    train: ["2019-01-01", "2021-12-31"]
+    test: ["2022-01-01", "2022-12-31"]
+    embargo_days: 5
+    metadata:
+      market_regime: bear
+      volatility: high
+
+# Minimum requirements
+min_train_days: 1095  # 3 years
+min_test_days: 90     # 3 months
+
+# Domain-specific fitness adjustments
+fitness_overrides:
+  weights:
+    perf: 1.0        # Sharpe ratio
+    stability: 1.0   # Increased for financial domain
+    maxdd: 5.0       # Critical for risk management
+    turnover: 0.5    # Transaction costs matter
+    corr: 0.3        # Diversification importance
+    risk: 2.0        # CVaR/VaR weight
+  hard_caps:
+    maxdd: 0.4       # 40% max drawdown
+    risk: 0.95       # 95% VaR limit

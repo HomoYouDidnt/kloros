@@ -1,0 +1,97 @@
+# src/reasoning/base.py
+from __future__ import annotations
+import os
+import requests
+from typing import List, Dict, Any
+
+# ---- Result types ----
+
+class ReasoningResult:
+    """Result from a reasoning backend."""
+    
+    def __init__(self, reply_text: str, sources: List[str] = None, meta: Dict[str, Any] = None):
+        self.reply_text = reply_text
+        self.sources = sources or []
+        self.meta = meta or {}
+
+# ---- Minimal adapters ----
+
+class MockReasoner:
+    def generate(self, text: str) -> str:
+        return "ok"
+    
+    def reply(self, text: str) -> ReasoningResult:
+        return ReasoningResult("ok")
+
+class OllamaReasoner:
+    def __init__(self, base_url: str, model: str, system_prompt: str, temperature: float = 0.6, timeout: int = 120):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.system_prompt = system_prompt
+        self.temperature = temperature
+        self.timeout = timeout
+        print(f"[reasoning] Initialized ollama backend: {base_url} model={model}")
+
+    def generate(self, text: str) -> str:
+        r = requests.post(
+            f"{self.base_url}/api/generate",
+            json={
+                "model": self.model,
+                "prompt": text,
+                "system": self.system_prompt,
+                "options": {
+                    "temperature": self.temperature,
+                    "num_gpu": 999,
+                    "main_gpu": 0
+                },
+                "stream": False,
+            },
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        return (r.json().get("response") or "").strip()
+    
+    def reply(self, text: str) -> ReasoningResult:
+        response = self.generate(text)
+        return ReasoningResult(response)
+
+# ---- Factory ----
+
+def create_reasoning_backend(name: str):
+    """
+    Create the requested reasoning backend, or raise ValueError for unknown.
+    Recognized: 'mock', 'ollama', 'rag', 'qa'
+    """
+    b = (name or "mock").lower()
+
+    if b in ("mock", "none", "disabled"):
+        return MockReasoner()
+
+    if b in ("ollama", "llm", "local"):
+        host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+        model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+        
+        # Connect to persona system
+        try:
+            from src.persona.kloros import PERSONA_PROMPT
+            prompt = PERSONA_PROMPT.strip()
+            print(f"[reasoning] Using KLoROS persona system")
+        except ImportError:
+            # Fallback to environment or default
+            prompt = os.getenv("LLM_SYSTEM_PROMPT", "You are KLoROS, a precise and measured AI assistant.")
+            print(f"[reasoning] Using fallback prompt")
+        
+        return OllamaReasoner(base_url=host, model=model, system_prompt=prompt)
+    
+    if b in ("rag",):
+        from .local_rag_backend import LocalRagBackend
+        print(f"[reasoning] Initialized RAG backend")
+        return LocalRagBackend()
+    
+    if b in ("qa",):
+        from .local_qa_backend import LocalQaBackend  
+        print(f"[reasoning] Initialized QA backend")
+        return LocalQaBackend()
+
+    # Preserve existing test behavior for unknown backends
+    raise ValueError(f"Unknown reasoning backend: {b}")

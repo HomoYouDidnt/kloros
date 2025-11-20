@@ -92,3 +92,11 @@ htmlcov/
 MILESTONES/
 .config/procps/
 .config/pulse/
+
+# Audio/voice files
+*.wav
+*.mp3
+*.flac
+*.ogg
+voice_samples/
+audio_samples/

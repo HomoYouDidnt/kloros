@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""
+Tool Synthesis → D-REAM Bridge
+
+Processes tool_synthesis_queue.jsonl and converts synthesized tools into
+D-REAM candidate format for ASTRAEA admission and PHASE validation.
+
+This completes Pathway 1: Automatic tool synthesis → D-REAM evolution
+"""
+
+import json
+import os
+import sys
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Paths
+TOOL_QUEUE_FILE = "/home/kloros/src/dream/artifacts/tool_synthesis_queue.jsonl"
+DREAM_ARTIFACTS_DIR = "/home/kloros/src/dream/artifacts"
+PHASE_RAW_DIR = f"{DREAM_ARTIFACTS_DIR}/phase_raw"
+PROCESSED_LOG = f"{DREAM_ARTIFACTS_DIR}/tool_synthesis_processed.jsonl"
+
+
+class ToolSynthesisToDreamBridge:
+    """Bridge to convert tool synthesis queue items to D-REAM candidates."""
+
+    def __init__(self):
+        """Initialize bridge."""
+        self.queue_file = Path(TOOL_QUEUE_FILE)
+        self.phase_raw_dir = Path(PHASE_RAW_DIR)
+        self.processed_log = Path(PROCESSED_LOG)
+
+        # Ensure directories exist
+        self.phase_raw_dir.mkdir(parents=True, exist_ok=True)
+
+        # Track processed items
+        self.processed_ids = self._load_processed_ids()
+
+    def _load_processed_ids(self) -> set:
+        """Load IDs of already processed items."""
+        if not self.processed_log.exists():
+            return set()
+
+        processed = set()
+        try:
+            with open(self.processed_log) as f:
+                for line in f:
+                    if line.strip():
+                        record = json.loads(line)
+                        processed.add(record.get('tool_name'))
+        except Exception as e:
+            logger.error(f"Failed to load processed log: {e}")
+
+        return processed
+
+    def _mark_as_processed(self, tool_name: str, candidate_file: str):
+        """Mark a tool as processed."""
+        try:
+            record = {
+                "timestamp": datetime.now().isoformat(),
+                "tool_name": tool_name,
+                "candidate_file": candidate_file,
+                "status": "submitted_to_dream"
+            }
+
+            with open(self.processed_log, 'a') as f:
+                f.write(json.dumps(record) + '\n')
+
+            self.processed_ids.add(tool_name)
+        except Exception as e:
+            logger.error(f"Failed to mark tool as processed: {e}")
+
+    def _read_queue(self) -> List[Dict[str, Any]]:
+        """Read unprocessed items from tool synthesis queue."""
+        if not self.queue_file.exists():
+            logger.warning(f"Queue file not found: {self.queue_file}")
+            return []
+
+        unprocessed = []
+        try:
+            with open(self.queue_file) as f:
+                for line in f:
+                    if line.strip():
+                        item = json.loads(line)
+                        tool_name = item.get('tool_name')
+
+                        # Skip if already processed
+                        if tool_name not in self.processed_ids:
+                            unprocessed.append(item)
+        except Exception as e:
+            logger.error(f"Failed to read queue: {e}")
+
+        return unprocessed
+
+    def _convert_to_candidate(self, tool_item: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert a tool synthesis queue item to D-REAM candidate format.
+
+        Args:
+            tool_item: Tool from queue with keys: tool_name, code, analysis, status, etc.
+
+        Returns:
+            D-REAM candidate dict
+        """
+        tool_name = tool_item.get('tool_name', 'unknown_tool')
+        code = tool_item.get('code', '')
+        analysis = tool_item.get('analysis', {})
+        status = tool_item.get('status', 'unknown')
+        error = tool_item.get('error', '')
+        priority = tool_item.get('priority', 'medium')
+
+        # Calculate initial score based on synthesis status and analysis
+        if status == 'success':
+            base_score = 0.7
+        elif status == 'failed':
+            base_score = 0.3
+        else:
+            base_score = 0.5
+
+        # Adjust score based on safety level
+        safety_level = analysis.get('safety_level', 'unknown')
+        safety_scores = {
+            'safe': 0.9,
+            'moderate': 0.6,
+            'caution': 0.4,
+            'dangerous': 0.1
+        }
+        safety_score = safety_scores.get(safety_level, 0.5)
+
+        # Adjust score based on complexity
+        complexity = analysis.get('complexity', 'unknown')
+        complexity_scores = {
+            'low': 0.8,
+            'medium': 0.6,
+            'high': 0.4
+        }
+        complexity_score = complexity_scores.get(complexity, 0.5)
+
+        # Combined score
+        final_score = (base_score * 0.5) + (safety_score * 0.3) + (complexity_score * 0.2)
+
+        # Calculate novelty based on category and purpose
+        category = analysis.get('category', 'utility')
+        novelty_map = {
+            'system': 0.9,
+            'introspection': 0.8,
+            'memory': 0.7,
+            'utility': 0.6
+        }
+        novelty = novelty_map.get(category, 0.5)
+
+        # Priority scores
+        priority_scores = {
+            'critical': 1.0,
+            'high': 0.8,
+            'medium': 0.5,
+            'low': 0.3
+        }
+        priority_score = priority_scores.get(priority, 0.5)
+
+        # Build D-REAM candidate
+        candidate = {
+            "id": f"tool_{tool_name}_{uuid.uuid4().hex[:8]}",
+            "domain": "tool_synthesis",
+            "params": {
+                "tool_name": tool_name,
+                "tool_code": code,
+                "analysis": analysis,
+                "synthesis_status": status,
+                "synthesis_error": error if error else None,
+                "priority": priority
+            },
+            "metrics": {
+                "score": round(final_score, 3),
+                "novelty": round(novelty, 3),
+                "safety_score": round(safety_score, 3),
+                "complexity_score": round(complexity_score, 3),
+                "priority_score": round(priority_score, 3),
+                "synthesis_success": 1.0 if status == 'success' else 0.0
+            },
+            "notes": f"Tool synthesized: {analysis.get('purpose', 'No description')}"
+        }
+
+        return candidate
+
+    def process_queue(self, dry_run: bool = False) -> Dict[str, Any]:
+        """
+        Process tool synthesis queue and submit candidates to D-REAM.
+
+        Args:
+            dry_run: If True, show what would be done without actually doing it
+
+        Returns:
+            Result dict with processing statistics
+        """
+        result = {
+            "timestamp": datetime.now().isoformat(),
+            "unprocessed_count": 0,
+            "candidates_created": 0,
+            "submitted_to_dream": 0,
+            "errors": [],
+            "dry_run": dry_run
+        }
+
+        try:
+            # Read unprocessed queue items
+            unprocessed = self._read_queue()
+            result['unprocessed_count'] = len(unprocessed)
+
+            if not unprocessed:
+                logger.info("No unprocessed tools in queue")
+                return result
+
+            logger.info(f"Processing {len(unprocessed)} tools from synthesis queue")
+
+            # Convert to candidates
+            candidates = []
+            for tool_item in unprocessed:
+                try:
+                    candidate = self._convert_to_candidate(tool_item)
+                    candidates.append({
+                        'candidate': candidate,
+                        'tool_name': tool_item.get('tool_name')
+                    })
+                    result['candidates_created'] += 1
+                except Exception as e:
+                    error_msg = f"Failed to convert tool {tool_item.get('tool_name')}: {e}"
+                    logger.error(error_msg)
+                    result['errors'].append(error_msg)
+
+            if dry_run:
+                logger.info(f"[DRY RUN] Would submit {len(candidates)} candidates to D-REAM")
+                for item in candidates[:3]:  # Show first 3
+                    logger.info(f"  - {item['tool_name']}: score={item['candidate']['metrics']['score']}")
+                return result
+
+            # Write candidates to phase_raw for D-REAM admission
+            if candidates:
+                episode_id = f"tool_synthesis_{datetime.now().strftime('%Y%m%dT%H%M%S')}"
+                candidate_file = self.phase_raw_dir / f"{episode_id}.jsonl"
+
+                with open(candidate_file, 'w') as f:
+                    for item in candidates:
+                        f.write(json.dumps(item['candidate']) + '\n')
+
+                        # Mark as processed
+                        self._mark_as_processed(item['tool_name'], str(candidate_file))
+                        result['submitted_to_dream'] += 1
+
+                logger.info(f"✓ Submitted {len(candidates)} tool candidates to D-REAM: {candidate_file}")
+                result['candidate_file'] = str(candidate_file)
+
+        except Exception as e:
+            error_msg = f"Queue processing failed: {e}"
+            logger.error(error_msg)
+            result['errors'].append(error_msg)
+
+        return result
+
+
+def main():
+    """Main entry point for bridge."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Bridge tool synthesis queue to D-REAM')
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be done without doing it')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
+    args = parser.parse_args()
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format='[tool-synthesis-bridge] %(message)s'
+    )
+
+    # Run bridge
+    bridge = ToolSynthesisToDreamBridge()
+    result = bridge.process_queue(dry_run=args.dry_run)
+
+    # Print summary
+    print(json.dumps(result, indent=2))
+
+    # Exit code
+    if result['errors']:
+        sys.exit(1)
+    elif result['submitted_to_dream'] > 0:
+        sys.exit(0)
+    else:
+        sys.exit(0)  # No error, just nothing to process
+
+
+if __name__ == '__main__':
+    main()

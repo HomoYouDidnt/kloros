@@ -1,0 +1,47 @@
+[
+  {
+    "id": "ace2025",
+    "title": "Agentic Context Engineering",
+    "authors": ["A. Researcher", "B. Engineer"],
+    "year": 2025,
+    "venue": "TechRxiv",
+    "url": "https://example.org/ace",
+    "abstract": "Incremental bullet-style context updates for agent adaptation."
+  },
+  {
+    "id": "ra3_2025",
+    "title": "Reasoning as Action Abstractions",
+    "authors": ["C. Scientist", "D. Thinker"],
+    "year": 2025,
+    "venue": "ArXiv",
+    "url": "https://example.org/ra3",
+    "abstract": "Learning temporally-extended macros to reduce reasoning horizon."
+  },
+  {
+    "id": "dre_am",
+    "title": "D-REAM: Evolutionary Agent Selection",
+    "authors": ["E. Darwin"],
+    "year": 2024,
+    "venue": "Workshop on Adaptive Agents",
+    "url": "https://example.org/dream",
+    "abstract": "Evolutionary tournaments for agent policies."
+  },
+  {
+    "id": "tumix",
+    "title": "TUMIX: Committee-of-Approaches Aggregation",
+    "authors": ["F. Council"],
+    "year": 2025,
+    "venue": "ArXiv",
+    "url": "https://example.org/tumix",
+    "abstract": "Committee aggregation strategies for robust inference."
+  },
+  {
+    "id": "safety_petri",
+    "title": "PETRI: Parallel Risk Probes for Agents",
+    "authors": ["G. BioSafe"],
+    "year": 2025,
+    "venue": "SafeAI",
+    "url": "https://example.org/petri",
+    "abstract": "Sandboxed probes for risky interactions."
+  }
+]

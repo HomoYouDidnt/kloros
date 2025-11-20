@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# KLoROS Maintenance Mode Control
+# Uses chemical signal bus for coordinated system-wide suspension
+
+set -euo pipefail
+
+# Ensure we're running as kloros user
+if [[ "$(whoami)" != "kloros" ]]; then
+    exec sudo -u kloros "$0" "$@"
+fi
+
+MARKER="/home/kloros/.kloros/maintenance_mode"
+PYTHON="/home/kloros/.venv/bin/python3"
+
+enable_maintenance() {
+    echo "🔧 Entering maintenance mode..."
+
+    # Create marker FIRST - consumers check this to stay suspended
+    touch "$MARKER"
+    echo "timestamp=$(date -Iseconds)" > "$MARKER"
+    echo "reason=${1:-Manual maintenance}" >> "$MARKER"
+
+    # Emit maintenance signal on chemical bus
+    echo "  Broadcasting maintenance signal on chem_bus..."
+    $PYTHON -c "
+import sys
+sys.path.insert(0, '/home/kloros/src')
+from kloros.orchestration.chem_bus_v2 import ChemPub
+import time
+
+pub = ChemPub()
+pub.emit(
+    signal='MAINTENANCE_SUSPEND',
+    ecosystem='governance',
+    intensity=1.0,
+    facts={'reason': '${1:-Manual maintenance}'},
+    incident_id=f'maintenance_{int(time.time())}'
+)
+print('  ✓ Maintenance signal broadcast')
+time.sleep(1)  # Give consumers time to process
+pub.close()
+" || echo "  ⚠️  Failed to emit maintenance signal (consumers may not suspend)"
+
+    # Disable any systemd services
+    echo "  Disabling systemd auto-restart..."
+    if systemctl --user list-units --state=running "kloros*.service" --no-legend 2>/dev/null | awk '{print $1}' | grep -q .; then
+        systemctl --user list-units --state=running "kloros*.service" --no-legend 2>/dev/null | awk '{print $1}' | while read -r unit; do
+            echo "    Stopping $unit"
+            systemctl --user stop "$unit" || true
+            systemctl --user mask "$unit" || true
+        done
+    else
+        echo "    No systemd services running"
+    fi
+
+    # Give processes time to suspend (they check marker file continuously)
+    echo "  Waiting for subsystems to suspend..."
+    sleep 3
+
+    echo ""
+    echo "✅ KLoROS is now in maintenance mode"
+    echo "   All services stopped and auto-restart disabled"
+    echo "   Use: kloros_maintenance disable"
+}
+
+disable_maintenance() {
+    if [[ ! -f "$MARKER" ]]; then
+        echo "⚠️  Not in maintenance mode"
+        exit 1
+    fi
+
+    echo "🚀 Exiting maintenance mode..."
+
+    # Emit resume signal on chemical bus
+    echo "  Broadcasting resume signal on chem_bus..."
+    $PYTHON -c "
+import sys
+sys.path.insert(0, '/home/kloros/src')
+from kloros.orchestration.chem_bus_v2 import ChemPub
+import time
+
+pub = ChemPub()
+pub.emit(
+    signal='MAINTENANCE_RESUME',
+    ecosystem='governance',
+    intensity=1.0,
+    facts={'action': 'resume'},
+    incident_id=f'maintenance_resume_{int(time.time())}'
+)
+print('  ✓ Resume signal broadcast')
+time.sleep(1)  # Give consumers time to process
+pub.close()
+" || echo "  ⚠️  Failed to emit resume signal"
+
+    # Remove marker to allow operation
+    rm -f "$MARKER"
+
+    # Re-enable systemd services
+    echo "  Re-enabling systemd services..."
+    systemctl --user list-unit-files --state=masked "kloros*.service" --no-legend 2>/dev/null | awk '{print $1}' | while read -r unit; do
+        echo "    Unmasking $unit"
+        systemctl --user unmask "$unit" || true
+        systemctl --user start "$unit" || true
+    done
+
+    # Give processes time to resume
+    echo "  Waiting for subsystems to resume..."
+    sleep 2
+
+    echo ""
+    echo "✅ KLoROS maintenance mode disabled"
+    echo "   Subsystems resuming normal operation"
+}
+
+status() {
+    if [[ -f "$MARKER" ]]; then
+        echo "🔧 KLoROS is in MAINTENANCE MODE"
+        echo ""
+        cat "$MARKER"
+        echo ""
+        echo "System state: SUSPENDED"
+        echo "All subsystems are listening to marker file and paused."
+    else
+        echo "🟢 KLoROS is in NORMAL MODE"
+        echo ""
+        echo "System state: ACTIVE"
+        echo "All subsystems operating normally."
+    fi
+}
+
+case "${1:-}" in
+    enable)
+        enable_maintenance "${2:-Manual maintenance}"
+        ;;
+    disable)
+        disable_maintenance
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Usage: kloros_maintenance {enable|disable|status} [reason]"
+        echo ""
+        echo "Commands:"
+        echo "  enable [reason]  - Enter maintenance mode (stops all services)"
+        echo "  disable          - Exit maintenance mode (restarts services)"
+        echo "  status           - Show current mode and process status"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,325 @@
+"""Hybrid VOSK-Whisper STT backend with real-time feedback loop."""
+
+from __future__ import annotations
+
+import asyncio
+import queue
+import threading
+import time
+from typing import Optional, Tuple, Union
+
+import numpy as np
+from rapidfuzz import fuzz
+
+from .memory_integration import ASRMemoryLogger, AdaptiveThresholdManager
+
+from .base import SttResult
+from .vosk_backend import VoskSttBackend
+from .whisper_backend import WhisperSttBackend
+
+
+class HybridSttBackend:
+    """Hybrid STT backend combining VOSK speed with Whisper accuracy."""
+
+    def __init__(
+        self,
+        vosk_model_dir: Optional[str] = None,
+        whisper_model_size: str = "medium",
+        whisper_device: str = "auto",
+        whisper_device_index: Union[int, list] = 0,
+        correction_threshold: float = 0.75,
+        confidence_boost_threshold: float = 0.9,
+        enable_corrections: bool = True,
+        **kwargs,
+    ):
+        """Initialize hybrid STT backend.
+
+        Args:
+            vosk_model_dir: VOSK model directory
+            whisper_model_size: Whisper model size
+            whisper_device: Whisper device ("auto", "cuda", "cpu")
+            whisper_device_index: GPU device index for Whisper
+            correction_threshold: Similarity threshold for corrections (0.0-1.0)
+            confidence_boost_threshold: Confidence threshold for trust boosting
+            enable_corrections: Whether to enable Whisper corrections
+            **kwargs: Additional arguments
+        """
+        # Initialize both backends
+        self.vosk_backend = VoskSttBackend(model_dir=vosk_model_dir)
+        
+        self.whisper_backend = WhisperSttBackend(
+            model_size=whisper_model_size,
+            device=whisper_device,
+            device_index=whisper_device_index,
+        )
+
+        # Configuration
+        self.correction_threshold = correction_threshold
+        self.confidence_boost_threshold = confidence_boost_threshold
+        self.enable_corrections = enable_corrections
+
+        # Statistics tracking
+        self.stats = {
+            "total_transcriptions": 0,
+            "corrections_applied": 0,
+            "confidence_boosts": 0,
+            "vosk_wins": 0,
+            "whisper_wins": 0,
+        }
+
+        # Correction history for learning
+        self.correction_history = []
+
+        # Initialize memory integration
+        self.memory_logger = ASRMemoryLogger(enable_logging=True)
+        self.threshold_manager = AdaptiveThresholdManager(self.memory_logger)
+
+    def transcribe(
+        self, audio: np.ndarray, sample_rate: int, lang: Optional[str] = None
+    ) -> SttResult:
+        """Transcribe audio using hybrid VOSK-Whisper approach.
+
+        Args:
+            audio: Audio samples as float32 mono array in range [-1, 1]
+            sample_rate: Sample rate in Hz
+            lang: Language code (optional)
+
+        Returns:
+            SttResult with the best transcript and metadata
+        """
+        self.stats["total_transcriptions"] += 1
+
+        # Step 1: Get immediate VOSK result (fast path)
+        vosk_result = self.vosk_backend.transcribe(audio, sample_rate, lang)
+
+        # If corrections are disabled, return VOSK result immediately
+        if not self.enable_corrections:
+            self.stats["vosk_wins"] += 1
+            return vosk_result
+
+        # Step 2: Get Whisper result (accurate path)
+        whisper_result = self.whisper_backend.transcribe(audio, sample_rate, lang)
+
+        # Step 3: Apply hybrid logic to determine best result
+        final_result = self._apply_hybrid_logic(vosk_result, whisper_result, audio)
+
+        return final_result
+
+    def _apply_hybrid_logic(
+        self, vosk_result: SttResult, whisper_result: SttResult, audio: np.ndarray
+    ) -> SttResult:
+        """Apply hybrid logic to combine VOSK and Whisper results.
+
+        Args:
+            vosk_result: VOSK transcription result
+            whisper_result: Whisper transcription result
+            audio: Original audio for metadata
+
+        Returns:
+            Best combined result
+        """
+        vosk_text = vosk_result.transcript.strip().lower()
+        whisper_text = whisper_result.transcript.strip().lower()
+
+        # Calculate similarity between transcripts
+        similarity = fuzz.ratio(vosk_text, whisper_text) / 100.0
+
+        # Decision logic
+        if similarity >= self.correction_threshold:
+            # Transcripts are similar - boost confidence and prefer higher confidence
+            if whisper_result.confidence > vosk_result.confidence:
+                result = self._create_boosted_result(whisper_result, similarity, "whisper_confidence")
+                self.stats["whisper_wins"] += 1
+            else:
+                result = self._create_boosted_result(vosk_result, similarity, "vosk_confidence")
+                self.stats["vosk_wins"] += 1
+        else:
+            # Transcripts differ significantly - apply correction logic
+            if whisper_result.confidence > self.confidence_boost_threshold:
+                # High-confidence Whisper correction
+                result = self._create_correction_result(
+                    whisper_result, vosk_result, similarity, "whisper_correction"
+                )
+                self.stats["corrections_applied"] += 1
+                self.stats["whisper_wins"] += 1
+                
+                # Log correction for learning
+                self._log_correction(vosk_text, whisper_text, similarity)
+            else:
+                # Low confidence - prefer VOSK for responsiveness
+                result = vosk_result
+                self.stats["vosk_wins"] += 1
+
+        return result
+
+    def _create_boosted_result(
+        self, base_result: SttResult, similarity: float, reason: str
+    ) -> SttResult:
+        """Create a confidence-boosted result.
+
+        Args:
+            base_result: Base STT result
+            similarity: Similarity score between transcripts
+            reason: Reason for confidence boost
+
+        Returns:
+            Boosted STT result
+        """
+        # Boost confidence based on similarity
+        boosted_confidence = min(1.0, base_result.confidence * (1.0 + similarity * 0.2))
+        
+        self.stats["confidence_boosts"] += 1
+
+        # Log confidence boost to memory
+        self.memory_logger.log_confidence_boost(
+            transcript=base_result.transcript,
+            original_confidence=base_result.confidence,
+            boosted_confidence=boosted_confidence,
+            similarity_score=similarity,
+            boost_reason=reason,
+        )
+
+        return SttResult(
+            transcript=base_result.transcript,
+            confidence=boosted_confidence,
+            lang=base_result.lang,
+            raw={
+                **base_result.raw,
+                "hybrid_info": {
+                    "method": "confidence_boost",
+                    "reason": reason,
+                    "original_confidence": base_result.confidence,
+                    "similarity": similarity,
+                    "boost_factor": boosted_confidence / base_result.confidence,
+                },
+            },
+        )
+
+    def _create_correction_result(
+        self, 
+        whisper_result: SttResult, 
+        vosk_result: SttResult, 
+        similarity: float, 
+        reason: str
+    ) -> SttResult:
+        """Create a correction result using Whisper to correct VOSK.
+
+        Args:
+            whisper_result: Whisper transcription result
+            vosk_result: VOSK transcription result
+            similarity: Similarity score between transcripts
+            reason: Reason for correction
+
+        Returns:
+            Corrected STT result
+        """
+        return SttResult(
+            transcript=whisper_result.transcript,
+            confidence=whisper_result.confidence,
+            lang=whisper_result.lang,
+            raw={
+                **whisper_result.raw,
+                "hybrid_info": {
+                    "method": "correction",
+                    "reason": reason,
+                    "original_transcript": vosk_result.transcript,
+                    "original_confidence": vosk_result.confidence,
+                    "similarity": similarity,
+                    "correction_applied": True,
+                },
+            },
+        )
+
+    def _log_correction(self, vosk_text: str, whisper_text: str, similarity: float):
+        """Log a correction for learning purposes.
+
+        Args:
+            vosk_text: Original VOSK transcript
+            whisper_text: Corrected Whisper transcript
+            similarity: Similarity score
+        """
+        correction_entry = {
+            "timestamp": time.time(),
+            "vosk_text": vosk_text,
+            "whisper_text": whisper_text,
+            "similarity": similarity,
+        }
+        
+        self.correction_history.append(correction_entry)
+
+        # Log correction to memory
+        self.memory_logger.log_correction(
+            vosk_transcript=vosk_text,
+            whisper_transcript=whisper_text,
+            similarity_score=similarity,
+            confidence_vosk=0.0,  # Will be updated in calling method
+            confidence_whisper=0.0,  # Will be updated in calling method
+            correction_applied=True,
+            correction_reason="similarity_threshold",
+        )
+        
+        # Keep only recent corrections (last 100)
+        if len(self.correction_history) > 100:
+            self.correction_history = self.correction_history[-100:]
+
+    def get_stats(self) -> dict:
+        """Get hybrid backend statistics.
+
+        Returns:
+            Dictionary with performance statistics
+        """
+        total = self.stats["total_transcriptions"]
+        if total == 0:
+            return self.stats
+
+        return {
+            **self.stats,
+            "correction_rate": self.stats["corrections_applied"] / total,
+            "confidence_boost_rate": self.stats["confidence_boosts"] / total,
+            "vosk_win_rate": self.stats["vosk_wins"] / total,
+            "whisper_win_rate": self.stats["whisper_wins"] / total,
+        }
+
+    def get_recent_corrections(self, limit: int = 10) -> list:
+        """Get recent corrections for analysis.
+
+        Args:
+            limit: Maximum number of corrections to return
+
+        Returns:
+            List of recent correction entries
+        """
+        return self.correction_history[-limit:]
+
+    def update_thresholds(
+        self, 
+        correction_threshold: Optional[float] = None,
+        confidence_boost_threshold: Optional[float] = None
+    ):
+        """Update correction thresholds for adaptive tuning.
+
+        Args:
+            correction_threshold: New similarity threshold for corrections
+            confidence_boost_threshold: New confidence threshold for trust boosting
+        """
+        if correction_threshold is not None:
+            self.correction_threshold = max(0.0, min(1.0, correction_threshold))
+        
+        if confidence_boost_threshold is not None:
+            self.confidence_boost_threshold = max(0.0, min(1.0, confidence_boost_threshold))
+
+    def get_info(self) -> dict:
+        """Get backend information.
+
+        Returns:
+            Dictionary with backend details
+        """
+        return {
+            "backend": "hybrid",
+            "vosk_info": self.vosk_backend.get_info() if hasattr(self.vosk_backend, 'get_info') else {},
+            "whisper_info": self.whisper_backend.get_info(),
+            "correction_threshold": self.correction_threshold,
+            "confidence_boost_threshold": self.confidence_boost_threshold,
+            "enable_corrections": self.enable_corrections,
+            "stats": self.get_stats(),
+        }

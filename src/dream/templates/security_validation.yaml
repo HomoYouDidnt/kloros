@@ -1,0 +1,48 @@
+# Security test: Add input validation
+family: security.validation
+
+payload:
+  type: add_validation
+  target_pattern: "user input handling functions"
+  validation_types:
+    - type_checking
+    - range_checking
+    - sanitization
+  description: "Add input validation to prevent injection/overflow"
+
+base:
+  diff_limit: 100
+  max_files_changed: 10
+  preserve_api: true
+  timeout_s: 45
+
+slots:
+  # Common validation scenarios
+  validation_pairs:
+    - ["user_input", "validated_input", "str"]
+    - ["file_path", "safe_path", "pathlib.Path"]
+    - ["sql_query", "sanitized_query", "str"]
+    - ["user_age", "validated_age", "int"]
+    - ["email_address", "validated_email", "str"]
+
+mutators:
+  - type: stricter_security
+    trigger: last_passed_false
+    action: reduce_diff_limit
+    factor: 0.8
+  - type: add_more_checks
+    trigger: security_test_failed
+    action: increase_validation_depth
+    factor: 1.0
+
+expected:
+  tests_pass: true
+  no_crashes: true
+  no_injection_vulnerabilities: true
+  input_properly_sanitized: true
+
+validation:
+  - check: "type validation present"
+  - check: "range/bounds checking"
+  - check: "special characters escaped"
+  - check: "error handling for invalid input"

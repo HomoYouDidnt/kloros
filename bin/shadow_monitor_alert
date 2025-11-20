@@ -1,0 +1,140 @@
+#!/bin/bash
+# Shadow Mode Monitor with TTS Alerts
+# Watches shadow validation run and alerts on failures
+
+METRICS_DIR="$HOME/.kloros/metrics"
+LOGS_DIR="$HOME/.kloros/logs"
+CHECK_INTERVAL=60  # Check every 60 seconds
+
+alert() {
+    local message="$1"
+    echo "[ALERT] $message"
+
+    # Try multiple TTS engines in order of preference
+    if command -v espeak-ng &> /dev/null; then
+        espeak-ng -v en-us -s 150 "$message" 2>/dev/null
+    elif command -v espeak &> /dev/null; then
+        espeak -v en-us -s 150 "$message" 2>/dev/null
+    elif command -v festival &> /dev/null; then
+        echo "$message" | festival --tts 2>/dev/null
+    elif command -v spd-say &> /dev/null; then
+        spd-say "$message" 2>/dev/null
+    else
+        # Fallback: system bell
+        for i in {1..5}; do
+            echo -ne '\007'
+            sleep 0.2
+        done
+        echo "TTS not available - used system bell instead"
+    fi
+}
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+check_runner_alive() {
+    # Check if shadow_cohort_1_runner is still running
+    if ! pgrep -f "shadow_cohort_1_runner" > /dev/null; then
+        alert "Warning! Shadow runner process has stopped."
+        return 1
+    fi
+    return 0
+}
+
+check_daemons_alive() {
+    local failed=0
+
+    for niche in maintenance_housekeeping observability_logging; do
+        if ! pgrep -f "shadow_${niche}_daemon" > /dev/null; then
+            alert "Critical! Shadow daemon for ${niche} has crashed."
+
+            # Check stderr log for error details
+            local stderr_log="$LOGS_DIR/shadow_${niche}_stderr.log"
+            if [[ -f "$stderr_log" ]]; then
+                local last_error=$(tail -5 "$stderr_log" | grep -i "error\|exception\|critical" | tail -1)
+                if [[ -n "$last_error" ]]; then
+                    log "Last error: $last_error"
+                fi
+            fi
+
+            failed=1
+        fi
+    done
+
+    return $failed
+}
+
+check_rollback_triggered() {
+    local failed=0
+
+    for niche in maintenance_housekeeping observability_logging; do
+        local metrics_file="$METRICS_DIR/shadow_${niche}.json"
+
+        if [[ -f "$metrics_file" ]]; then
+            local rollback=$(jq -r '.rollback_triggered // false' "$metrics_file" 2>/dev/null)
+
+            if [[ "$rollback" == "true" ]]; then
+                local drift=$(jq -r '.max_drift_percentage // 0' "$metrics_file" 2>/dev/null)
+                alert "Rollback triggered for ${niche}! Maximum drift: ${drift} percent."
+                failed=1
+            fi
+        fi
+    done
+
+    return $failed
+}
+
+check_high_error_rate() {
+    local failed=0
+
+    for niche in maintenance_housekeeping observability_logging; do
+        local metrics_file="$METRICS_DIR/shadow_${niche}.json"
+
+        if [[ -f "$metrics_file" ]]; then
+            local errors=$(jq -r '.wrapper_error_count // 0' "$metrics_file" 2>/dev/null)
+            local total=$(jq -r '.total_executions // 1' "$metrics_file" 2>/dev/null)
+
+            if (( errors > 0 && total > 10 )); then
+                local error_rate=$(awk "BEGIN {printf \"%.1f\", ($errors / $total) * 100}")
+
+                if (( $(echo "$error_rate > 5.0" | bc -l) )); then
+                    alert "High error rate for ${niche}: ${error_rate} percent."
+                    failed=1
+                fi
+            fi
+        fi
+    done
+
+    return $failed
+}
+
+# Main monitoring loop
+log "Shadow monitor started"
+log "Checking every ${CHECK_INTERVAL} seconds"
+log "Monitoring metrics in: $METRICS_DIR"
+log "Monitoring logs in: $LOGS_DIR"
+echo ""
+
+while true; do
+    if ! check_runner_alive; then
+        alert "Shadow validation has stopped. Check the logs for details."
+        exit 1
+    fi
+
+    if ! check_daemons_alive; then
+        alert "One or more daemons have failed. Manual intervention required."
+        exit 1
+    fi
+
+    if check_rollback_triggered; then
+        alert "Shadow validation failed rollback check. Stopping monitor."
+        exit 1
+    fi
+
+    if check_high_error_rate; then
+        log "High error rate detected - investigate when convenient"
+    fi
+
+    sleep "$CHECK_INTERVAL"
+done

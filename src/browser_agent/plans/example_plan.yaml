@@ -1,0 +1,33 @@
+meta:
+  name: "Example.com Navigation"
+  start_url: "https://example.com"
+  description: "Navigate to example.com and extract page information"
+
+actions:
+  - type: wait
+    time_ms: 1000
+
+  - type: extract
+    selector: "h1"
+    args:
+      var_name: "page_heading"
+
+  - type: extract
+    selector: "p"
+    args:
+      var_name: "page_text"
+
+  - type: evaluate
+    script: "document.title"
+    args:
+      var_name: "page_title"
+
+  - type: screenshot
+    path: "example_screenshot.png"
+
+  - type: scroll
+    direction: "down"
+    amount: 500
+
+  - type: scroll
+    direction: "top"

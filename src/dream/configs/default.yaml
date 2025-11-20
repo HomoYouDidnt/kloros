@@ -1,0 +1,96 @@
+# D-REAM Default Configuration
+# Production-safe evolution with deterministic settings
+
+# Random seed for reproducibility
+seed: 1337
+
+# Population settings
+population:
+  size: 24
+  elite_k: 6
+  max_gens: 20
+  tournament_size: 3
+
+# Multi-objective fitness configuration  
+fitness:
+  weights:
+    perf: 1.0       # Performance metric weight
+    stability: 0.5  # Cross-regime stability
+    maxdd: 3.0      # Maximum drawdown penalty
+    turnover: 0.1   # Complexity/churn penalty
+    corr: 0.2       # Correlation penalty vs champions
+    risk: 1.0       # Risk metric penalty
+  hard_caps:
+    maxdd: 0.6      # Hard constraint on drawdown
+    risk: 0.8       # Hard constraint on risk
+
+# Novelty and diversity settings
+novelty:
+  k: 10              # K-nearest neighbors for novelty
+  archive_max: 256   # Maximum archive size
+  novelty_weight: 0.3 # Weight in selection
+  pareto_keys:       # Objectives for Pareto selection
+    - perf
+    - novelty
+    - stability
+
+# Safety configuration
+safety:
+  dry_run: false      # Production mode - mutations enabled
+  require_approval: true
+  max_cpu_s: 600
+  max_mem_mb: 8192
+  max_file_size_mb: 100
+  allow_network: false
+  allowed_paths:
+    - /home/kloros/src/
+    - /home/kloros/.kloros/
+    - /tmp/dream/
+  blocked_paths:
+    - /etc
+    - /usr
+    - /bin
+    - /boot
+
+# Deployment configuration
+deployment:
+  create_patch: true
+  require_approval: true
+  sign_manifest: true
+  backup_original: true
+  test_command: "pytest -q tests/target_suite"
+
+# Telemetry settings
+telemetry:
+  events_path: artifacts/telemetry/events.jsonl
+  buffer_size: 100
+  flush_interval: 60
+
+# Evaluation regimes (can be overridden)
+evaluation:
+  min_train_days: 365
+  min_test_days: 30
+  embargo_days: 5
+
+# Mutation parameters
+mutation:
+  rate: 0.1
+  strength: 0.3
+  crossover_rate: 0.3
+
+# Behavior characterization
+behavior:
+  features:
+    - avg_fitness
+    - best_fitness  
+    - convergence_rate
+    - diversity
+    - stability
+
+# Artifacts directory
+artifacts_dir: artifacts
+
+# Logging
+logging:
+  level: INFO
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"

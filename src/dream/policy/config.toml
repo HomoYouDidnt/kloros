@@ -1,0 +1,36 @@
+[models]
+planner = "local:qwen2.5-coder-32b"
+executor = "local:qwen2.5-coder-32b"
+
+[network]
+allow_cloud = false
+egress = "deny_all"
+ingress = "local_files_only"
+
+[sandbox]
+allowlist = ["src/","tests/"]
+max_tool_actions = 40
+timeout_s = 120
+
+[target_band]
+min = 0.55
+max = 0.70
+
+[hardener]
+diff_limit_delta    = -10
+timeout_scale       = 0.85
+context_lines_delta = -20
+
+[softener]
+diff_limit_delta    = +10
+timeout_scale       = 1.15
+context_lines_delta = +20
+
+[scoring]
+max_diff_lines_default = 60
+
+[scheduler]
+policy = "ucb1"
+review_pct = 0.20
+explore_pct = 0.10
+holdout_pct = 0.05

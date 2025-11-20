@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""
+kloros-vec-rebuild - Rebuild tool embeddings index and update lock file.
+
+This command:
+1. Loads all registered introspection tools
+2. Generates embeddings using the configured embedder
+3. Saves embeddings cache
+4. Updates embeddings.lock.json with current state
+"""
+import sys
+import os
+import json
+import time
+from pathlib import Path
+
+# Add KLoROS to path
+sys.path.insert(0, "/home/kloros")
+
+from ssot.loader import SSOT
+from embeddings.factory import get_embedder, get_embedder_id
+
+
+def main():
+    print("=" * 60)
+    print("KLoROS Vector Store Rebuild")
+    print("=" * 60)
+
+    # Load SSOT config
+    ssot = SSOT()
+    print(f"[config] Loaded from: {ssot.root}")
+    print(f"[config] Embedder: {ssot.get_embedder_model()}")
+
+    # Load embedder
+    embedder = get_embedder()
+    embedder_id = get_embedder_id()
+    print(f"[embedder] Loaded: {embedder_id}")
+
+    # Load tool registry
+    from src.introspection_tools import IntrospectionToolRegistry
+    registry = IntrospectionToolRegistry()
+    tool_count = len(registry.tools)
+    print(f"[tools] Registered tools: {tool_count}")
+
+    # Initialize semantic matcher with tool registry
+    from src.tool_synthesis.semantic_tool_matcher import SemanticToolMatcher
+    matcher = SemanticToolMatcher(
+        tool_registry=registry,
+        model_name=ssot.get_embedder_model()
+    )
+
+    # Force refresh embeddings
+    print("[rebuild] Generating tool embeddings...")
+    matcher.refresh_embeddings()
+    print(f"[rebuild] Generated {len(matcher.tool_embeddings)} embeddings")
+
+    # Update embeddings.lock.json
+    lock_path = ssot.root / "embeddings.lock.json"
+    lock_data = {
+        "embedder_id": embedder_id,
+        "sha256": "",  # TODO: Compute model file hash
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "tool_count": tool_count
+    }
+
+    with open(lock_path, "w") as f:
+        json.dump(lock_data, f, indent=2)
+
+    print(f"[lock] Updated: {lock_path}")
+    print(f"[lock] Embedder ID: {embedder_id}")
+    print(f"[lock] Tool count: {tool_count}")
+    print()
+    print("✅ Vector store rebuild complete!")
+    print()
+    print("Next steps:")
+    print("  • Restart KLoROS: sudo systemctl restart kloros")
+    print("  • Verify: kloros-check")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        sys.exit(1)

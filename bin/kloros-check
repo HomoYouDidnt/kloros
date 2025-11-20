@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""
+kloros-check - Verify SSOT invariants and system health.
+
+This command:
+1. Loads SSOT configuration
+2. Verifies all invariants
+3. Checks tool registry consistency
+4. Reports any mismatches
+"""
+import sys
+import os
+
+# Add KLoROS to path
+sys.path.insert(0, "/home/kloros")
+
+from ssot.loader import SSOT
+
+
+def main():
+    print("=" * 60)
+    print("KLoROS SSOT Health Check")
+    print("=" * 60)
+
+    # Load SSOT
+    ssot = SSOT()
+    print(f"[config] Root: {ssot.root}")
+    print()
+
+    # Check invariants
+    print("[check] Verifying SSOT invariants...")
+    ssot.assert_invariants(strict=False)
+    print()
+
+    # Show attestation
+    print("[attestation] Current runtime configuration:")
+    attestation = ssot.attestation()
+    for key, value in attestation.items():
+        if isinstance(value, dict):
+            print(f"  {key}:")
+            for k, v in value.items():
+                print(f"    {k}: {v}")
+        else:
+            print(f"  {key}: {value}")
+    print()
+
+    # Check tool registry if available
+    try:
+        from src.introspection_tools import IntrospectionToolRegistry
+        registry = IntrospectionToolRegistry()
+        tool_count = len(registry.tools)
+        print(f"[tools] Registered: {tool_count} tools")
+
+        lock_count = ssot.emb_lock.get("tool_count")
+        if lock_count and lock_count != tool_count:
+            print(f"[WARNING] Tool count mismatch: lock={lock_count}, registry={tool_count}")
+            print("          → Run: kloros-vec-rebuild")
+        else:
+            print("[OK] Tool count matches lock")
+    except Exception as e:
+        print(f"[WARNING] Could not load tool registry: {e}")
+
+    print()
+    print("✅ Health check complete!")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        sys.exit(1)

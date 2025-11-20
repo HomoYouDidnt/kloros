@@ -1,0 +1,28 @@
+#!/bin/bash
+set -euo pipefail
+
+export XDG_RUNTIME_DIR=/run/user/1001
+
+if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    sudo mkdir -p "$XDG_RUNTIME_DIR"
+    sudo chown kloros:kloros "$XDG_RUNTIME_DIR"
+    sudo chmod 0700 "$XDG_RUNTIME_DIR"
+fi
+
+if ! pgrep -u kloros pipewire > /dev/null; then
+    pipewire > /dev/null 2>&1 &
+    sleep 0.5
+fi
+
+if ! pgrep -u kloros pipewire-pulse > /dev/null; then
+    pipewire-pulse > /dev/null 2>&1 &
+    sleep 0.5
+fi
+
+if ! pgrep -u kloros wireplumber > /dev/null; then
+    wireplumber > /dev/null 2>&1 &
+    sleep 1
+fi
+
+echo "Audio system ready for kloros"
+pactl list sources short

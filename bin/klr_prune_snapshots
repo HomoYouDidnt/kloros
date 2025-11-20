@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCBASE="${1:?doc base, e.g., 2025-11-07-dormant-active-gating-design}"
+KEEP="${2:-50}"
+DIR="/home/kloros/.kloros/snapshots/docs"
+ls -1t "$DIR/$DOCBASE".*.md | awk "NR>$KEEP" | xargs -r rm -f
+echo "pruned: kept $KEEP most recent snapshots for $DOCBASE"
