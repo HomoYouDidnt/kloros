@@ -139,6 +139,21 @@ def migrate_memory_database(db_path: Path = Path("~/.kloros/memory.db")):
             print("  ✓ Created reflections table")
             added_count += 1
 
+        # Failed study events table (Self-Mastery Phase 1)
+        if "failed_study_events" not in existing_tables:
+            conn.execute("""
+                CREATE TABLE failed_study_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_data TEXT NOT NULL,
+                    error_message TEXT,
+                    failed_at REAL NOT NULL,
+                    retry_count INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'pending'
+                )
+            """)
+            print("  ✓ Created failed_study_events table")
+            added_count += 1
+
         # Add new indexes
         new_indexes = [
             "CREATE INDEX IF NOT EXISTS idx_events_decay ON events(decay_score)",
@@ -150,6 +165,8 @@ def migrate_memory_database(db_path: Path = Path("~/.kloros/memory.db")):
             "CREATE INDEX IF NOT EXISTS idx_procedural_used ON procedural_memories(last_used)",
             "CREATE INDEX IF NOT EXISTS idx_reflections_type ON reflections(pattern_type)",
             "CREATE INDEX IF NOT EXISTS idx_reflections_confidence ON reflections(confidence)",
+            "CREATE INDEX IF NOT EXISTS idx_failed_study_status ON failed_study_events(status)",
+            "CREATE INDEX IF NOT EXISTS idx_failed_study_failed_at ON failed_study_events(failed_at)",
         ]
 
         for idx_sql in new_indexes:

@@ -183,6 +183,17 @@ class MemoryStore:
                 )
             """)
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS failed_study_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_data TEXT NOT NULL,
+                    error_message TEXT,
+                    failed_at REAL NOT NULL,
+                    retry_count INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'pending'
+                )
+            """)
+
             # Create indexes for performance
             indexes = [
                 "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)",
@@ -202,6 +213,8 @@ class MemoryStore:
                 "CREATE INDEX IF NOT EXISTS idx_procedural_used ON procedural_memories(last_used)",
                 "CREATE INDEX IF NOT EXISTS idx_reflections_type ON reflections(pattern_type)",
                 "CREATE INDEX IF NOT EXISTS idx_reflections_confidence ON reflections(confidence)",
+                "CREATE INDEX IF NOT EXISTS idx_failed_study_status ON failed_study_events(status)",
+                "CREATE INDEX IF NOT EXISTS idx_failed_study_failed_at ON failed_study_events(failed_at)",
             ]
 
             for idx_sql in indexes:
