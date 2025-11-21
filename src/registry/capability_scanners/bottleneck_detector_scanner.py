@@ -155,13 +155,14 @@ class BottleneckDetectorScanner(CapabilityScanner):
         failed = sum(m["facts"].get("investigations_failed", 0)
                     for m in metrics_summaries)
 
-        if completed > 0 and (failed / completed) > 0.2:
+        total = completed + failed
+        if total > 0 and (failed / total) > 0.2:
             bottlenecks.append({
                 "type": "high_failure_rate",
                 "daemon": "investigation_consumer",
                 "severity": "critical",
-                "issue": f"Failure rate {(failed/completed)*100:.1f}%",
-                "failure_rate": float(failed / completed),
+                "issue": f"Failure rate {(failed/total)*100:.1f}%",
+                "failure_rate": float(failed / total),
                 "completed": completed,
                 "failed": failed,
                 "recommendation": "Investigate investigation failures - may indicate LLM issues or bad questions"
