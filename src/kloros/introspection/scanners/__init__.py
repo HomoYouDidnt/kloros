@@ -13,6 +13,7 @@ from .code_quality_scanner import CodeQualityScanner
 from .test_coverage_scanner import TestCoverageScanner
 from .performance_profiler_scanner import PerformanceProfilerScanner
 from .cross_system_pattern_scanner import CrossSystemPatternScanner
+from .documentation_completeness_scanner import DocumentationCompletenessScanner
 
 __all__ = [
     "ErrorFrequencyScanner",
@@ -23,4 +24,5 @@ __all__ = [
     "TestCoverageScanner",
     "PerformanceProfilerScanner",
     "CrossSystemPatternScanner",
+    "DocumentationCompletenessScanner",
 ]
