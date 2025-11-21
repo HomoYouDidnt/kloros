@@ -22,11 +22,18 @@ This should surface as "1 root issue: Qdrant concurrency" not
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Set, Tuple
+from typing import List, Dict, Optional, Set, Tuple, NamedTuple
 from collections import defaultdict
 import json
 
 logger = logging.getLogger(__name__)
+
+
+class ScannerMetadata(NamedTuple):
+    name: str
+    description: str
+    interval_seconds: int
+    priority: int
 
 
 class ServiceHealthCorrelator:
@@ -44,6 +51,14 @@ class ServiceHealthCorrelator:
         except Exception as e:
             logger.warning(f"[svc_health] Memory system not available: {e}")
             self.available = False
+
+    def get_metadata(self) -> ScannerMetadata:
+        return ScannerMetadata(
+            name="service_health_correlator",
+            description="Detects cascading service failures and dependency issues",
+            interval_seconds=300,
+            priority=3
+        )
 
     def scan_service_health(
         self,
