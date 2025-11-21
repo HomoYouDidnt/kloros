@@ -20,6 +20,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from datetime import datetime
 
+from kloros.orchestration.chem_bus_v2 import ChemPub
+
 
 @dataclass
 class ComponentKnowledge:
@@ -60,6 +62,9 @@ class ComponentSelfStudy:
 
         # Ensure database exists
         self._init_database()
+
+        # Initialize ChemPub for emitting learning signals
+        self.chem_pub = ChemPub()
 
         # Study configuration
         self.enabled = int(os.getenv("KLR_ENABLE_SELF_STUDY", "1"))
@@ -440,6 +445,43 @@ class ComponentSelfStudy:
         ))
         conn.commit()
         conn.close()
+
+        self._emit_learning_completed(knowledge)
+
+    def _emit_learning_completed(self, knowledge: ComponentKnowledge) -> None:
+        """
+        Emit LEARNING_COMPLETED signal via ChemBus.
+
+        This enables the study-memory bridge to capture learning events
+        and integrate them into episodic memory.
+        """
+        intensity = 1.0 + (knowledge.study_depth * 0.5)
+
+        facts = {
+            "source": "component_study",
+            "component_id": knowledge.component_id,
+            "study_depth": knowledge.study_depth,
+            "component_type": knowledge.component_type,
+            "file_path": knowledge.file_path,
+            "studied_at": float(knowledge.last_studied_at),
+            "purpose": knowledge.purpose,
+            "capabilities": knowledge.capabilities,
+            "dependencies": knowledge.dependencies,
+            "config_params": knowledge.config_params,
+            "usage_examples": knowledge.usage_examples,
+            "usage_count": knowledge.usage_count,
+            "last_used_at": knowledge.last_used_at,
+            "interesting_findings": knowledge.interesting_findings,
+            "potential_improvements": knowledge.potential_improvements,
+            "notes": knowledge.notes
+        }
+
+        self.chem_pub.emit(
+            signal="LEARNING_COMPLETED",
+            ecosystem="introspection",
+            intensity=intensity,
+            facts=facts
+        )
 
     def _analyze_for_improvements(self, knowledge: ComponentKnowledge) -> List[Dict[str, Any]]:
         """
