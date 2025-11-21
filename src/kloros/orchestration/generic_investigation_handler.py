@@ -264,6 +264,15 @@ class GenericInvestigationHandler:
             investigation["confidence"] = investigation.get("analysis", {}).get("confidence", 0.0)
             investigation["success"] = len(evidence_list) > 0
 
+            # Create human-readable conclusion from analysis
+            analysis = investigation.get("analysis", {})
+            if analysis and analysis.get("understanding"):
+                investigation["conclusion"] = analysis["understanding"]
+            elif investigation.get("error"):
+                investigation["conclusion"] = f"Failed: {investigation['error']}"
+            else:
+                investigation["conclusion"] = "Investigation completed but no conclusion available"
+
             # Add performance metrics
             investigation["model_used"] = self.models_used[0] if self.models_used else "unknown"
             investigation["tokens_used"] = self.total_tokens_used
