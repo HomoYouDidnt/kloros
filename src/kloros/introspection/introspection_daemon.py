@@ -3,7 +3,7 @@
 IntrospectionDaemon - Real-time streaming introspection scanner orchestrator.
 
 Subscribes to OBSERVATION events on ChemBus, maintains shared rolling window cache,
-runs 5 introspection scanners in thread pool with timeout protection, emits
+runs 6 introspection scanners in thread pool with timeout protection, emits
 CapabilityGap objects immediately to CuriosityCore.
 """
 
@@ -32,6 +32,7 @@ from registry.capability_scanners import (
     BottleneckDetectorScanner,
     ComparativeAnalyzerScanner
 )
+from kloros.introspection.scanners.service_health_correlator import ServiceHealthCorrelator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,11 +82,12 @@ class IntrospectionDaemon:
             ContextUtilizationScanner(),
             ResourceProfilerScanner(),
             BottleneckDetectorScanner(),
-            ComparativeAnalyzerScanner()
+            ComparativeAnalyzerScanner(),
+            ServiceHealthCorrelator()
         ]
 
         self.executor = ThreadPoolExecutor(
-            max_workers=5,
+            max_workers=6,
             thread_name_prefix="introspection_scanner_"
         )
 
