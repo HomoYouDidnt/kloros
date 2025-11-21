@@ -113,7 +113,7 @@ class InferencePerformanceScanner(CapabilityScanner):
         )
 
     def _scan_chembus_history(self) -> List[Dict[str, Any]]:
-        """Scan ChemBus history for slow inference models."""
+        """Scan ChemBus history for slow inference models (optimized reverse read)."""
         kloros_home = os.environ.get('KLOROS_HOME', '/home/kloros')
         history_file = Path(kloros_home) / ".kloros/chembus_history.jsonl"
 
@@ -125,24 +125,79 @@ class InferencePerformanceScanner(CapabilityScanner):
         investigations = []
         performance_degraded = []
 
-        with open(history_file, "r") as f:
-            for line in f:
-                try:
-                    msg = json.loads(line)
+        try:
+            lines_read = 0
+            old_lines_skipped = 0
 
-                    if msg.get("ts", 0) < cutoff_ts:
-                        continue
+            with open(history_file, "rb") as f:
+                f.seek(0, 2)
+                file_size = f.tell()
+                buffer = bytearray()
+                pointer = file_size
 
-                    if msg.get("signal") == "Q_INVESTIGATION_COMPLETE":
-                        facts = msg.get("facts", {})
-                        if facts.get("status") == "completed":
-                            investigations.append(facts)
+                while pointer > 0:
+                    chunk_size = min(8192, pointer)
+                    pointer -= chunk_size
+                    f.seek(pointer)
+                    chunk = f.read(chunk_size)
 
-                    if msg.get("signal") == "PERFORMANCE_DEGRADED":
-                        performance_degraded.append(msg)
+                    buffer = chunk + buffer
 
-                except json.JSONDecodeError:
-                    continue
+                    while b'\n' in buffer:
+                        line_end = buffer.rfind(b'\n')
+                        if line_end == len(buffer) - 1:
+                            buffer = buffer[:line_end]
+                            continue
+
+                        line = buffer[line_end + 1:].decode('utf-8', errors='ignore')
+                        buffer = buffer[:line_end]
+
+                        if not line.strip():
+                            continue
+
+                        try:
+                            msg = json.loads(line)
+                            lines_read += 1
+
+                            ts = msg.get("ts", 0)
+                            if ts < cutoff_ts:
+                                old_lines_skipped += 1
+                                if old_lines_skipped > 1000:
+                                    logger.debug(f"[inference_perf] Stopped reading after {old_lines_skipped} old lines")
+                                    pointer = 0
+                                    break
+                                continue
+
+                            if msg.get("signal") == "Q_INVESTIGATION_COMPLETE":
+                                facts = msg.get("facts", {})
+                                if facts.get("status") == "completed":
+                                    investigations.append(facts)
+
+                            if msg.get("signal") == "PERFORMANCE_DEGRADED":
+                                performance_degraded.append(msg)
+
+                        except json.JSONDecodeError:
+                            continue
+
+                if buffer:
+                    try:
+                        line = buffer.decode('utf-8', errors='ignore').strip()
+                        if line:
+                            msg = json.loads(line)
+                            if msg.get("ts", 0) >= cutoff_ts:
+                                if msg.get("signal") == "Q_INVESTIGATION_COMPLETE":
+                                    facts = msg.get("facts", {})
+                                    if facts.get("status") == "completed":
+                                        investigations.append(facts)
+                                if msg.get("signal") == "PERFORMANCE_DEGRADED":
+                                    performance_degraded.append(msg)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        pass
+
+            logger.debug(f"[inference_perf] Scanned {lines_read} lines, found {len(investigations)} investigations")
+
+        except Exception as e:
+            logger.warning(f"[inference_perf] Error reading history file: {e}")
 
         findings = []
         model_timings = defaultdict(list)

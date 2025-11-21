@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from kloros.orchestration.chem_bus import ChemSub, ChemPub
+from kloros.orchestration.chem_bus_v2 import ChemSub, ChemPub
 from kloros_memory.logger import MemoryLogger
 from kloros_memory.models import EventType
 

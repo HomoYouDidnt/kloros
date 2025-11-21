@@ -708,13 +708,14 @@ class KLoROS:
             self.ack_broker = None
 
         # -------------------- Introspection Tools ---------------------
-        from src.introspection_tools import IntrospectionToolRegistry, register_scholar_tools, register_browser_tools
+        from src.introspection_tools import IntrospectionToolRegistry, register_scholar_tools, register_browser_tools, register_goal_tools
         self.tool_registry = IntrospectionToolRegistry()
 
-        register_scholar_tools()
-        register_browser_tools()
+        register_scholar_tools(self.tool_registry)
+        register_browser_tools(self.tool_registry)
+        register_goal_tools(self.tool_registry)
 
-        logger.info("Scholar and browser_agent tools registered")
+        logger.info("Scholar, browser_agent, and goal management tools registered")
 
         # -------------------- Capability Hot-Reload ---------------------
         # Re-enabled after fixing memory leak (was from D-REAM Evolution, not hot-reload)

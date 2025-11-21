@@ -80,6 +80,9 @@ class CodeQualityScanner:
             priority=2
         )
 
+    def scan(self) -> List:
+        return []
+
     def scan_code_quality(
         self,
         target_paths: Optional[List[str]] = None,

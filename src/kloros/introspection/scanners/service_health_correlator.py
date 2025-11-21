@@ -60,6 +60,9 @@ class ServiceHealthCorrelator:
             priority=3
         )
 
+    def scan(self) -> List:
+        return []
+
     def scan_service_health(
         self,
         lookback_hours: int = 24

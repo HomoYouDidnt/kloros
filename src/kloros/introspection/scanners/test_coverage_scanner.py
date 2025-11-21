@@ -80,6 +80,9 @@ class TestCoverageScanner:
             priority=2
         )
 
+    def scan(self) -> List:
+        return []
+
     def scan_test_coverage(
         self,
         threshold: float = 80.0,

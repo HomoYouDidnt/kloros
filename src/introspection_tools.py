@@ -4178,7 +4178,7 @@ def tool_reject_synthesis(kloros_instance, proposal_id="", **kwargs):
         return f"Error rejecting synthesis: {e}"
 
 
-def register_scholar_tools():
+def register_scholar_tools(registry: 'IntrospectionToolRegistry' = None):
     """Register scholar tool for research report generation.
 
     Idempotent: safe to call multiple times.
@@ -4190,6 +4190,9 @@ def register_scholar_tools():
 
     import logging
     logger = logging.getLogger(__name__)
+
+    if registry is None:
+        registry = IntrospectionToolRegistry()
 
     def _generate_research_report(kloros_instance, title: str = "", research_question: str = "",
                                    sources: str = "", use_tumix_review: bool = True, **kwargs) -> Dict:
@@ -4260,7 +4263,6 @@ def register_scholar_tools():
                 "tumix_used": use_tumix_review
             }
 
-    registry = IntrospectionToolRegistry()
     registry.register(IntrospectionTool(
         name='generate_research_report',
         description='Generate a research report with optional TUMIX committee review',
@@ -4272,7 +4274,7 @@ def register_scholar_tools():
     logger.info("Scholar tools registered")
 
 
-def register_browser_tools():
+def register_browser_tools(registry: 'IntrospectionToolRegistry' = None):
     """Register browser_agent tool for web navigation and extraction.
 
     Idempotent: safe to call multiple times.
@@ -4285,6 +4287,9 @@ def register_browser_tools():
     import logging
     import asyncio
     logger = logging.getLogger(__name__)
+
+    if registry is None:
+        registry = IntrospectionToolRegistry()
 
     def _browse_web(kloros_instance, url: str = "", extract_selector: str = None,
                      max_depth: int = 1, **kwargs):
@@ -4404,7 +4409,6 @@ def register_browser_tools():
                 "petri_violations": []
             }
 
-    registry = IntrospectionToolRegistry()
     registry.register(IntrospectionTool(
         name='browse_web',
         description='Navigate and extract content from web pages with PETRI safety gates',
@@ -4414,3 +4418,165 @@ def register_browser_tools():
 
     _BROWSER_REGISTERED = True
     logger.info("Browser tools registered")
+
+
+_GOAL_REGISTERED = False
+
+def register_goal_tools(registry: 'IntrospectionToolRegistry' = None):
+    import logging
+    logger = logging.getLogger(__name__)
+
+    global _GOAL_REGISTERED
+    if _GOAL_REGISTERED:
+        logger.debug("Goal tools already registered, skipping")
+        return
+    _GOAL_REGISTERED = True
+
+    if registry is None:
+        registry = IntrospectionToolRegistry()
+
+    def _create_goal(kloros_instance, goal_id: str, description: str,
+                     alignment: float = 0.5, novelty: float = 0.5,
+                     difficulty: float = 0.5, impact: float = 0.5,
+                     auto_activate: bool = True) -> dict:
+        try:
+            from src.goal_system import GoalProperties
+
+            if not hasattr(kloros_instance, 'goal_manager') or kloros_instance.goal_manager is None:
+                return {
+                    "status": "error",
+                    "error": "Goal system not initialized"
+                }
+
+            properties = GoalProperties(
+                alignment_with_purpose=alignment,
+                novelty=novelty,
+                difficulty=difficulty,
+                impact=impact
+            )
+
+            goal = kloros_instance.goal_manager.create_goal(
+                goal_id=goal_id,
+                description=description,
+                properties=properties,
+                auto_activate=auto_activate
+            )
+
+            logger.info(f"Goal created: {goal_id} - {description}")
+
+            return {
+                "status": "success",
+                "goal_id": goal.id,
+                "description": goal.description,
+                "state": goal.state.value,
+                "progress": goal.progress,
+                "homeostatic_pressure": goal.homeostatic_pressure
+            }
+
+        except ValueError as e:
+            logger.warning(f"Goal creation failed: {e}")
+            return {
+                "status": "error",
+                "error": f"Goal already exists: {goal_id}"
+            }
+        except Exception as e:
+            logger.error(f"Error creating goal: {e}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _update_goal_progress(kloros_instance, goal_id: str, progress: float) -> dict:
+        try:
+            if not hasattr(kloros_instance, 'goal_manager') or kloros_instance.goal_manager is None:
+                return {
+                    "status": "error",
+                    "error": "Goal system not initialized"
+                }
+
+            goal = kloros_instance.goal_manager.get_goal(goal_id)
+            if not goal:
+                return {
+                    "status": "error",
+                    "error": f"Goal not found: {goal_id}"
+                }
+
+            old_progress = goal.progress
+            kloros_instance.goal_manager.update_progress(goal_id, progress)
+
+            logger.info(f"Goal progress updated: {goal_id} ({old_progress:.2f} → {progress:.2f})")
+
+            return {
+                "status": "success",
+                "goal_id": goal.id,
+                "old_progress": old_progress,
+                "new_progress": goal.progress,
+                "state": goal.state.value
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating goal progress: {e}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _list_goals(kloros_instance, state_filter: str = None) -> dict:
+        try:
+            if not hasattr(kloros_instance, 'goal_manager') or kloros_instance.goal_manager is None:
+                return {
+                    "status": "error",
+                    "error": "Goal system not initialized"
+                }
+
+            goals = []
+            for goal_id, goal in kloros_instance.goal_manager.goals.items():
+                if state_filter and goal.state.value != state_filter:
+                    continue
+
+                goals.append({
+                    "goal_id": goal.id,
+                    "description": goal.description,
+                    "state": goal.state.value,
+                    "progress": goal.progress,
+                    "homeostatic_pressure": goal.homeostatic_pressure,
+                    "alignment": goal.properties.alignment_with_purpose,
+                    "impact": goal.properties.impact
+                })
+
+            return {
+                "status": "success",
+                "total_goals": len(goals),
+                "goals": goals
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing goals: {e}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    registry.register(IntrospectionTool(
+        name='create_goal',
+        description='Create a new goal for autonomous pursuit (e.g., explore X, understand Y, improve Z)',
+        func=_create_goal,
+        parameters=['goal_id', 'description', 'alignment', 'novelty', 'difficulty', 'impact', 'auto_activate']
+    ))
+
+    registry.register(IntrospectionTool(
+        name='update_goal_progress',
+        description='Update progress on an existing goal (0.0 to 1.0)',
+        func=_update_goal_progress,
+        parameters=['goal_id', 'progress']
+    ))
+
+    registry.register(IntrospectionTool(
+        name='list_goals',
+        description='List all current goals, optionally filtered by state (active/completed/blocked)',
+        func=_list_goals,
+        parameters=['state_filter']
+    ))
+
+    _GOAL_REGISTERED = True
+    logger.info("Goal management tools registered")
