@@ -87,6 +87,30 @@ class TestDeadLetterQueue(unittest.TestCase):
         self.assertEqual(pending[1][0], id2)
         self.assertEqual(pending[1][1], signal_data_2)
 
+    def test_get_pending_respects_max_retries(self):
+        """Test that get_pending filters by max_retries."""
+        signal_data_1 = {"component_id": "comp1"}
+        signal_data_2 = {"component_id": "comp2"}
+        signal_data_3 = {"component_id": "comp3"}
+
+        id1 = self.dlq.store(signal_data_1, error="Error 1")
+        id2 = self.dlq.store(signal_data_2, error="Error 2")
+        id3 = self.dlq.store(signal_data_3, error="Error 3")
+
+        for _ in range(3):
+            self.dlq.increment_retry(id1)
+
+        for _ in range(5):
+            self.dlq.increment_retry(id2)
+
+        pending = self.dlq.get_pending(limit=10, max_retries=5)
+
+        self.assertEqual(len(pending), 2)
+        event_ids = [event[0] for event in pending]
+        self.assertIn(id1, event_ids)
+        self.assertIn(id3, event_ids)
+        self.assertNotIn(id2, event_ids)
+
     def test_mark_resolved(self):
         """Test marking a failed event as resolved."""
         signal_data = {"component_id": "test"}
@@ -388,7 +412,37 @@ class TestStudyMemoryBridge(unittest.TestCase):
         conn.close()
 
         self.assertEqual(retry_count, 1)
-        self.assertEqual(pending_count, 2)
+        self.assertEqual(pending_count, 1)
+
+    def test_replay_does_not_trigger_investigation(self):
+        """Test that replay failures don't trigger investigation or duplicate dead letter entries."""
+        signal_data = {
+            "signal": "LEARNING_COMPLETED",
+            "facts": {
+                "component_id": "module:replay_failure.py",
+                "study_depth": 2
+            }
+        }
+
+        event_id = self.bridge.dead_letter.store(signal_data, error="Initial failure")
+
+        self.mock_logger.log_event.side_effect = Exception("Replay failure")
+
+        initial_emit_count = self.mock_publisher.emit.call_count
+
+        replayed = self.bridge.replay_failed_events()
+
+        self.assertEqual(replayed, 0)
+
+        self.assertEqual(self.mock_publisher.emit.call_count, initial_emit_count)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM failed_study_events")
+        total_events = cursor.fetchone()[0]
+        conn.close()
+
+        self.assertEqual(total_events, 1)
 
     def test_shutdown(self):
         """Test clean shutdown of bridge."""

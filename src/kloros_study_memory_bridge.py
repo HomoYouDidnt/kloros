@@ -90,12 +90,13 @@ class DeadLetterQueue:
         logging.warning(f"[study_bridge] Stored failed event {event_id} in dead letter queue: {error}")
         return event_id
 
-    def get_pending(self, limit: int = 10) -> list[tuple[int, Dict[str, Any]]]:
+    def get_pending(self, limit: int = 10, max_retries: int = 5) -> list[tuple[int, Dict[str, Any]]]:
         """
         Get pending failed events for retry.
 
         Args:
             limit: Maximum number of events to return
+            max_retries: Maximum number of retry attempts before giving up
 
         Returns:
             List of (event_id, signal_data) tuples
@@ -105,10 +106,10 @@ class DeadLetterQueue:
 
         cursor.execute("""
             SELECT id, signal_data FROM failed_study_events
-            WHERE status = 'pending'
+            WHERE status = 'pending' AND retry_count < ?
             ORDER BY failed_at ASC
             LIMIT ?
-        """, (limit,))
+        """, (max_retries, limit))
 
         results = []
         for row in cursor.fetchall():
@@ -265,7 +266,7 @@ class StudyMemoryBridge:
 
             return ". ".join(parts)
 
-    def _on_learning_completed(self, signal_data: Dict[str, Any]) -> None:
+    def _on_learning_completed(self, signal_data: Dict[str, Any], is_replay: bool = False) -> None:
         """
         Handle LEARNING_COMPLETED signal from ChemBus.
 
@@ -274,6 +275,7 @@ class StudyMemoryBridge:
 
         Args:
             signal_data: Signal data from ChemBus
+            is_replay: Whether this is a replay from dead letter queue
         """
         try:
             facts = signal_data.get("facts", {})
@@ -294,9 +296,10 @@ class StudyMemoryBridge:
         except Exception as e:
             logging.error(f"[study_bridge] Failed to process learning event: {e}", exc_info=True)
 
-            self.dead_letter.store(signal_data, error=str(e))
+            if not is_replay:
+                self.dead_letter.store(signal_data, error=str(e))
 
-            self._trigger_investigation(error=e, context=signal_data)
+                self._trigger_investigation(error=e, context=signal_data)
 
             raise
 
@@ -342,7 +345,7 @@ class StudyMemoryBridge:
 
         for event_id, signal_data in pending:
             try:
-                self._on_learning_completed(signal_data)
+                self._on_learning_completed(signal_data, is_replay=True)
                 self.dead_letter.mark_resolved(event_id)
                 replayed += 1
                 logging.info(f"[study_bridge] Successfully replayed event {event_id}")
