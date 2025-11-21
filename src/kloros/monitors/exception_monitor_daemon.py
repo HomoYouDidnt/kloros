@@ -46,7 +46,6 @@ class LRUCache:
 
     def __contains__(self, key):
         if key in self.cache:
-            # Move to end (most recently used)
             self.cache.move_to_end(key)
             return True
         return False
@@ -56,7 +55,7 @@ class LRUCache:
             self.cache.move_to_end(key)
         self.cache[key] = value
         if len(self.cache) > self.maxsize:
-            self.cache.popitem(last=False)  # Remove oldest
+            self.cache.popitem(last=False)
 
 
 class ExceptionMonitorDaemon:
@@ -89,19 +88,18 @@ class ExceptionMonitorDaemon:
         logger.info("[exception_monitor] Watching journalctl -f --unit=kloros-*")
 
         try:
-            # Stream journalctl with --follow (like tail -f)
             process = subprocess.Popen(
                 [
                     'journalctl',
-                    '-f',  # Follow (stream)
-                    '--output=json',  # JSON format for parsing
-                    '--unit=kloros-*',  # All kloros units
+                    '-f',
+                    '--output=json',
+                    '--unit=kloros-*',
                     '--no-pager'
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=1  # Line buffered
+                bufsize=1
             )
 
             logger.info("[exception_monitor] journalctl stream started")
@@ -133,24 +131,19 @@ class ExceptionMonitorDaemon:
         Args:
             entry: Parsed JSON log entry from journalctl
         """
-        # Check if this is an exception
         if not self._is_exception(entry):
             return
 
         self.exception_count += 1
 
-        # Generate exception ID for deduplication
         exception_id = self._hash_exception(entry)
 
-        # Deduplicate - skip if seen recently
         if exception_id in self.seen_exceptions:
             logger.debug(f"[exception_monitor] Skipping duplicate exception: {exception_id[:8]}")
             return
 
-        # Mark as seen
         self.seen_exceptions[exception_id] = True
 
-        # Emit CAPABILITY_GAP signal
         self._emit_exception_gap(entry, exception_id)
         self.signal_count += 1
 
@@ -171,44 +164,33 @@ class ExceptionMonitorDaemon:
             True if entry contains exception/error
         """
         message = entry.get('MESSAGE', '').lower()
-        priority = entry.get('PRIORITY', '6')  # 6 = info, 3 = error (string from journald)
+        priority = entry.get('PRIORITY', '6')
 
-        # Convert priority to int (journald returns as string)
         try:
             priority = int(priority)
         except (ValueError, TypeError):
-            priority = 6  # Default to info
+            priority = 6
 
-        # Option 1: Skip monitoring/logging metadata
-        # If message starts with [tag], it's monitoring commentary, not an actual exception
-        if message.startswith('[') and ']' in message[:30]:
+        if 'investigation request' in message or 'received investigation' in message:
             return False
 
-        # Priority 3 or lower = error/critical
+        if '[info]' in message or '[debug]' in message:
+            return False
+
+        if re.search(r'\[[\w_]+\]', message):
+            tag_match = re.search(r'\[(\w+)\]', message)
+            if tag_match:
+                tag = tag_match.group(1)
+                if tag not in ['error', 'critical', 'exception', 'traceback']:
+                    return False
+
+        if priority > 3:
+            return False
+
         if priority <= 3:
             return True
 
-        # Option 2: Require actual exception signatures, not generic words
-        # Look for real Python exception indicators
-        exception_signatures = [
-            'traceback (most recent call last)',
-            'error: ',           # Actual error prefix (with colon+space)
-            'failed with',
-            'errno',
-            'valueerror',        # Actual exception class names
-            'keyerror',
-            'typeerror',
-            'attributeerror',
-            'importerror',
-            'modulenotfounderror',
-            'filenotfounderror',
-            'permissionerror',
-            'runtimeerror',
-            'indexerror',
-            'zerodivisionerror'
-        ]
-
-        return any(signature in message for signature in exception_signatures)
+        return False
 
     def _hash_exception(self, entry: Dict[str, Any]) -> str:
         """
@@ -224,10 +206,9 @@ class ExceptionMonitorDaemon:
             Exception hash (hex string)
         """
         unit = entry.get('_SYSTEMD_UNIT', 'unknown')
-        message = entry.get('MESSAGE', '')[:200]  # First 200 chars
+        message = entry.get('MESSAGE', '')[:200]
         priority = entry.get('PRIORITY', '6')
 
-        # Convert priority to int
         try:
             priority = int(priority)
         except (ValueError, TypeError):
@@ -242,29 +223,25 @@ class ExceptionMonitorDaemon:
 
         Args:
             entry: Journald log entry
-            exception_id: Exception hash
+            exception_id: Exception hash for deduplication
         """
         unit = entry.get('_SYSTEMD_UNIT', 'unknown')
-        message = entry.get('MESSAGE', 'No message')
+        message = entry.get('MESSAGE', '')
         priority = entry.get('PRIORITY', '6')
 
-        # Convert priority to int
         try:
             priority = int(priority)
         except (ValueError, TypeError):
             priority = 6
 
-        # Extract traceback if present
         traceback = None
-        if 'TRACEBACK' in entry:
-            traceback = entry['TRACEBACK']
-        elif 'traceback' in message.lower():
-            # Try to extract from message
+        if 'traceback' in message.lower():
             traceback = message
 
         self.pub.emit(
             signal="CAPABILITY_GAP",
             ecosystem="diagnostics",
+            intensity=1.0,
             facts={
                 "gap_type": "exception",
                 "gap_name": f"exception_{unit}_{exception_id[:8]}",
@@ -278,11 +255,12 @@ class ExceptionMonitorDaemon:
         )
 
     def shutdown(self):
-        """Shutdown daemon gracefully."""
-        logger.info("[exception_monitor] Shutting down exception monitor daemon")
-        logger.info(f"[exception_monitor] Total exceptions detected: {self.exception_count}")
-        logger.info(f"[exception_monitor] Total signals emitted: {self.signal_count}")
+        """Graceful shutdown."""
+        logger.info("[exception_monitor] Shutting down...")
         self.running = False
+        self.pub.close()
+        logger.info(f"[exception_monitor] Total exceptions: {self.exception_count}")
+        logger.info(f"[exception_monitor] Signals emitted: {self.signal_count}")
 
 
 def main():
