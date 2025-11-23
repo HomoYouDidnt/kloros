@@ -73,9 +73,9 @@ class TestOrchestratorTTSIntegration:
             audio_ready_data.update(msg.get("facts", {}))
             received_audio_ready.set()
 
-        with patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
-            zooid = TTSZooid()
-            zooid.start()
+        zooid = TTSZooid()
+        zooid.tts_backend = mock_tts_backend
+        zooid.start()
 
         try:
             audio_ready_sub = ChemSub(
@@ -126,9 +126,9 @@ class TestOrchestratorTTSIntegration:
             play_audio_data.update(msg.get("facts", {}))
             received_play_audio.set()
 
-        with patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
-            zooid = TTSZooid()
-            zooid.start()
+        zooid = TTSZooid()
+        zooid.tts_backend = mock_tts_backend
+        zooid.start()
 
         try:
             play_audio_sub = ChemSub(
@@ -187,9 +187,9 @@ class TestOrchestratorTTSIntegration:
         time.sleep(0.3)
 
         try:
-            with patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
-                zooid = TTSZooid()
-                zooid.start()
+            zooid = TTSZooid()
+            zooid.tts_backend = mock_tts_backend
+            zooid.start()
 
             success = received_ready.wait(timeout=3.0)
             assert success, "Did not receive VOICE.TTS.READY signal"
@@ -215,9 +215,9 @@ class TestOrchestratorTTSIntegration:
             received_incident_id[0] = msg.get("incident_id")
             received_audio_ready.set()
 
-        with patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
-            zooid = TTSZooid()
-            zooid.start()
+        zooid = TTSZooid()
+        zooid.tts_backend = mock_tts_backend
+        zooid.start()
 
         try:
             audio_ready_sub = ChemSub(
@@ -266,9 +266,9 @@ class TestOrchestratorTTSIntegration:
             received_intensity[0] = msg.get("intensity")
             received_play_audio.set()
 
-        with patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
-            zooid = TTSZooid()
-            zooid.start()
+        zooid = TTSZooid()
+        zooid.tts_backend = mock_tts_backend
+        zooid.start()
 
         try:
             play_audio_sub = ChemSub(
@@ -318,9 +318,9 @@ class TestOrchestratorTTSIntegration:
             with audio_ready_lock:
                 audio_ready_count[0] += 1
 
-        with patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
-            zooid = TTSZooid()
-            zooid.start()
+        zooid = TTSZooid()
+        zooid.tts_backend = mock_tts_backend
+        zooid.start()
 
         try:
             audio_ready_sub = ChemSub(
