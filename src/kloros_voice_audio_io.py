@@ -261,7 +261,7 @@ class AudioIOZooid:
                         ecosystem="voice",
                         intensity=1.0,
                         facts={
-                            "wav_path": str(wav_path),
+                            "audio_file": str(wav_path),
                             "duration_s": duration,
                             "sample_rate": self.sample_rate,
                             "samples": len(audio_data),
@@ -285,7 +285,7 @@ class AudioIOZooid:
                         ecosystem="voice",
                         intensity=1.0,
                         facts={
-                            "wav_path": str(wav_path),
+                            "audio_file": str(wav_path),
                             "duration_s": duration,
                             "sample_rate": self.sample_rate,
                             "samples": len(audio_data),
