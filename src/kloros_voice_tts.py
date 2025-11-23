@@ -67,7 +67,8 @@ class TTSZooid:
             print("[tts] TTS disabled via KLR_ENABLE_TTS=0")
             return
 
-        self._init_tts_backend()
+        if self.tts_backend is None:
+            self._init_tts_backend()
 
         if self.tts_backend is None:
             print("[tts] ERROR: Failed to initialize TTS backend, cannot start")

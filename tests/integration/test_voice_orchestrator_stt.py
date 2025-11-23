@@ -199,7 +199,7 @@ class TestOrchestratorSTTIntegration:
             success = received_transcription.wait(timeout=5.0)
             assert success, "Did not receive transcription"
 
-            assert received_incident_id[0] is None
+            assert received_incident_id[0] == test_incident_id
 
         finally:
             transcription_sub.close()
