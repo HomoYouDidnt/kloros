@@ -54,6 +54,10 @@ try:
 except ImportError:
     load_profile = None  # type: ignore
 
+# TODO(PHASE1-STT-EXTRACTION): STT backend imports remain for backward compatibility
+# The STT zooid (kloros_voice_stt.py) now handles all STT functionality independently.
+# These imports are kept here temporarily for any legacy code paths that might still
+# reference self.stt_backend. They will be removed in Phase 6 (final orchestrator reduction).
 try:
     from src.stt.base import SttBackend, create_stt_backend  # noqa: E402
 except ImportError:
@@ -90,6 +94,10 @@ try:
 except Exception:
     _RAGClass = None
 
+# TODO(PHASE1-EXTRACTION): Audio capture functionality extracted to kloros_voice_audio_io.py
+# This import and audio backend initialization will be replaced by ChemBus signal handling
+# in Phase 1 of the voice zooid refactoring.
+# See: /home/kloros/docs/plans/2025-11-23-voice-zooid-refactoring-design.md
 try:
     from src.audio.capture import AudioInputBackend, create_audio_backend  # noqa: E402
 except ImportError:
@@ -137,6 +145,9 @@ except ImportError:
     verify_name_spelling = None  # type: ignore
     generate_enrollment_tone = None  # type: ignore
 
+# TODO(PHASE1-EXTRACTION): Audio playback functionality (play_wake_chime, etc.)
+# will be handled by kloros_voice_audio_io.py zooid via ChemBus signals.
+# Direct playback calls will be replaced with VOICE.TTS.PLAY.AUDIO emissions.
 try:
     from src.audio.cues import play_wake_chime  # noqa: E402
 except ImportError:
@@ -153,6 +164,12 @@ try:
     from src.housekeeping_scheduler import HousekeepingScheduler
 except ImportError:
     HousekeepingScheduler = None
+
+try:
+    from src.kloros.orchestration.chem_bus_v2 import ChemPub, ChemSub
+except ImportError:
+    ChemPub = None
+    ChemSub = None
 
 try:
     from src.meta_cognition import init_meta_cognition, process_with_meta_awareness
@@ -448,6 +465,9 @@ class KLoROS:
         self.audio_backend: Optional[AudioInputBackend] = None
 
         # -------------------- Models --------------------
+        # TODO(PHASE1-TTS-EXTRACTION): Piper model config extracted to kloros_voice_tts.py zooid
+        # The TTS zooid now handles all speech synthesis via ChemBus signals.
+        # These attributes kept for backward compatibility during migration.
         self.piper_model = os.path.expanduser("~/KLoROS/models/piper/glados_piper_medium.onnx")
         self.piper_config = os.path.expanduser(
             "~/KLoROS/models/piper/glados_piper_medium.onnx.json"
@@ -477,7 +497,11 @@ class KLoROS:
         self.vad_threshold_dbfs: Optional[float] = None  # VAD threshold in dBFS, if calibrated
         self.agc_gain_db: float = 0.0  # AGC gain in dB, if calibrated
 
-        # STT configuration
+        # TODO(PHASE1-STT-EXTRACTION): STT configuration extracted to kloros_voice_stt.py zooid
+        # The STT zooid now handles all speech recognition via ChemBus signals:
+        # - Listens: VOICE.AUDIO.CAPTURED (from Audio I/O zooid)
+        # - Emits: VOICE.STT.TRANSCRIPTION (text, confidence, language)
+        # These attributes remain for backward compatibility during migration.
         self.enable_stt = int(os.getenv("KLR_ENABLE_STT", "0"))
         self.stt_backend_name = os.getenv("KLR_STT_BACKEND", "mock")
         self.stt_lang = os.getenv("KLR_STT_LANG", "en-US")
@@ -497,8 +521,13 @@ class KLoROS:
         self.vad_margin_db = float(os.getenv("KLR_VAD_MARGIN_DB", "2.0"))
         self.log_vad_frames = int(os.getenv("KLR_LOG_VAD_FRAMES", "0"))
 
-        # TTS configuration
-        self.enable_tts = int(os.getenv("KLR_ENABLE_TTS", "1"))
+        # TODO(PHASE1-TTS-EXTRACTION): TTS configuration extracted to kloros_voice_tts.py zooid
+        # The TTS zooid now handles all speech synthesis via ChemBus signals:
+        # - Listens: VOICE.ORCHESTRATOR.SPEAK (text, affective state, urgency)
+        # - Emits: VOICE.TTS.AUDIO.READY (file path, duration, affective markers)
+        # - Emits: VOICE.TTS.PLAY.AUDIO (triggers Audio I/O playback)
+        # These attributes remain for backward compatibility during migration.
+        self.enable_tts = int(os.getenv("KLR_ENABLE_TTS", "0"))  # Disabled - zooid handles TTS
         self.tts_backend_name = os.getenv("KLR_TTS_BACKEND", "piper")
         self.tts_sample_rate = int(os.getenv("KLR_TTS_SAMPLE_RATE", "22050"))
         self.tts_out_dir = os.getenv("KLR_TTS_OUT_DIR")
@@ -779,6 +808,8 @@ class KLoROS:
                 self.alert_manager = None
                 self.passive_sync = None
 
+        self._init_chembus_coordination()
+
         log_event(
             "boot_ready",
             operator=self.operator_id,
@@ -867,6 +898,14 @@ class KLoROS:
         self.tool_registry = None
         self.reflection_manager = None
         self.housekeeping_scheduler = None
+
+        self.chem_pub = None
+        self.audio_sub = None
+        self.stt_sub = None
+        self.tts_sub = None
+        self.playback_complete_sub = None
+        self._pending_transcription = None
+        self._transcription_ready = threading.Event() if not self._test_mode else None
 
     def _init_test_stubs(self) -> None:
         """Lightweight stubs for test mode - no heavy deps loaded.
@@ -1208,15 +1247,27 @@ class KLoROS:
             print(f"[registry] Failed to check/reload registry: {e}")
             return False
 
+    # TODO(PHASE1-STT-EXTRACTION): _init_stt_backend() extracted to kloros_voice_stt.py
+    # This entire method has been moved to the STT zooid (STTZooid._init_stt_backend()).
+    # The STT zooid handles:
+    # - Backend initialization (hybrid/vosk/whisper/mock)
+    # - GPU/CPU device selection
+    # - Whisper model loading and configuration
+    # - VOSK model integration
+    # - Fallback to mock backend on errors
+    # This stub remains for backward compatibility during migration.
     def _init_stt_backend(self) -> None:
-        """Initialize STT backend if enabled."""
+        """Initialize STT backend if enabled.
+
+        DEPRECATED: This functionality has been extracted to kloros_voice_stt.py zooid.
+        """
         if not self.enable_stt or create_stt_backend is None:
             return
 
         try:
             # Prepare backend-specific configuration
             backend_kwargs = {}
-            
+
             if self.stt_backend_name == "hybrid":
                 # Configure hybrid backend with ASR environment variables
                 backend_kwargs.update({
@@ -1248,12 +1299,12 @@ class KLoROS:
             # Try to create the requested backend
             self.stt_backend = create_stt_backend(self.stt_backend_name, **backend_kwargs)  # type: ignore
             print(f"[stt] ✅ Initialized {self.stt_backend_name} backend")
-            
+
             # Show backend info for hybrid systems
             if hasattr(self.stt_backend, 'get_info') and self.stt_backend_name == "hybrid":
                 info = self.stt_backend.get_info()
                 print(f"[stt] 🔀 Hybrid strategy ready - corrections: {info.get('enable_corrections', False)}")
-                
+
         except Exception as e:
             print(f"[stt] ❌ Failed to initialize {self.stt_backend_name} backend: {e}")
             import traceback
@@ -1268,25 +1319,35 @@ class KLoROS:
                     print(f"[stt] Fallback to mock backend also failed: {fallback_e}")
                     self.stt_backend = None
 
+    # TODO(PHASE1-TTS-EXTRACTION): TTS backend initialization extracted to kloros_voice_tts.py zooid
+    # The TTS zooid now handles backend initialization independently.
+    # This method kept for backward compatibility during migration but disabled.
     def _init_tts_backend(self) -> None:
-        """Initialize TTS backend if enabled."""
-        if not self.enable_tts or create_tts_backend is None:
-            return
+        """Initialize TTS backend if enabled.
 
-        try:
-            self.tts_backend = create_tts_backend(self.tts_backend_name, out_dir=self.tts_out_dir)  # type: ignore
-            print(f"[tts] Initialized {self.tts_backend_name} backend")
-        except Exception as e:
-            print(f"[tts] Failed to initialize {self.tts_backend_name} backend: {e}")
+        NOTE: TTS backend now handled by kloros_voice_tts.py zooid.
+        This method is deprecated and will be removed in Phase 6.
+        """
+        # Disabled - TTS zooid handles backend initialization
+        return
 
-            # Try fallback to mock if not already using mock
-            if self.tts_backend_name != "mock":
-                try:
-                    self.tts_backend = create_tts_backend("mock", out_dir=self.tts_out_dir)  # type: ignore
-                    print("[tts] Falling back to mock backend")
-                except Exception as fallback_e:
-                    print(f"[tts] Fallback to mock backend also failed: {fallback_e}")
-                    self.tts_backend = None
+        # Original implementation (commented out for Phase 1):
+        # if not self.enable_tts or create_tts_backend is None:
+        #     return
+        #
+        # try:
+        #     self.tts_backend = create_tts_backend(self.tts_backend_name, out_dir=self.tts_out_dir)
+        #     print(f"[tts] Initialized {self.tts_backend_name} backend")
+        # except Exception as e:
+        #     print(f"[tts] Failed to initialize {self.tts_backend_name} backend: {e}")
+        #
+        #     if self.tts_backend_name != "mock":
+        #         try:
+        #             self.tts_backend = create_tts_backend("mock", out_dir=self.tts_out_dir)
+        #             print("[tts] Falling back to mock backend")
+        #         except Exception as fallback_e:
+        #             print(f"[tts] Fallback to mock backend also failed: {fallback_e}")
+        #             self.tts_backend = None
 
     def _init_reasoning_backend(self) -> None:
         """Initialize reasoning backend if available."""
@@ -1378,6 +1439,196 @@ class KLoROS:
                 error=str(e),
                 fallback_blocked=True
             )
+
+    def _init_chembus_coordination(self) -> None:
+        """Initialize ChemBus pub/sub for zooid coordination.
+
+        Signal flow for voice interaction:
+        1. Wake word detected → emit VOICE.STT.RECORD.START
+        2. Audio I/O captures → emits VOICE.AUDIO.CAPTURED
+        3. STT processes → emits VOICE.STT.TRANSCRIPTION
+        4. Orchestrator receives transcription → processes with LLM
+        5. Orchestrator calls speak() → emits VOICE.ORCHESTRATOR.SPEAK
+        6. TTS generates audio → emits VOICE.TTS.AUDIO.READY + VOICE.TTS.PLAY.AUDIO
+        7. Audio I/O plays → emits VOICE.AUDIO.PLAYBACK.COMPLETE
+        """
+        if ChemPub is None or ChemSub is None:
+            print("[chembus] ChemBus not available, signal coordination disabled")
+            self.chem_pub = None
+            return
+
+        try:
+            self.chem_pub = ChemPub()
+            print("[chembus] ChemBus publisher initialized")
+
+            self.stt_sub = ChemSub(
+                "VOICE.STT.TRANSCRIPTION",
+                self._on_stt_transcription,
+                zooid_name="kloros-voice-orchestrator",
+                niche="voice.orchestrator"
+            )
+
+            self.tts_sub = ChemSub(
+                "VOICE.TTS.AUDIO.READY",
+                self._on_tts_audio_ready,
+                zooid_name="kloros-voice-orchestrator",
+                niche="voice.orchestrator"
+            )
+
+            self.playback_complete_sub = ChemSub(
+                "VOICE.AUDIO.PLAYBACK.COMPLETE",
+                self._on_audio_playback_complete,
+                zooid_name="kloros-voice-orchestrator",
+                niche="voice.orchestrator"
+            )
+
+            print("[chembus] Subscribed to zooid signals: STT.TRANSCRIPTION, TTS.AUDIO.READY, AUDIO.PLAYBACK.COMPLETE")
+
+        except Exception as e:
+            print(f"[chembus] Failed to initialize ChemBus coordination: {e}")
+            self.chem_pub = None
+
+    def _on_stt_transcription(self, event: dict) -> None:
+        """Handle VOICE.STT.TRANSCRIPTION signal from STT zooid.
+
+        Args:
+            event: ChemBus event containing:
+                - facts.text: Transcribed text
+                - facts.confidence: Transcription confidence (0.0-1.0)
+                - facts.language: Detected language
+                - facts.metadata: Additional STT metadata
+        """
+        try:
+            facts = event.get("facts", {})
+            transcript = facts.get("text", "")
+            confidence = facts.get("confidence", 0.0)
+            language = facts.get("language", "unknown")
+
+            print(f"[orchestrator] Received transcription: '{transcript}' (confidence={confidence:.2f}, lang={language})")
+
+            if not transcript or confidence < 0.3:
+                print("[orchestrator] Low confidence or empty transcription, ignoring")
+                return
+
+            self._pending_transcription = {
+                "text": transcript,
+                "confidence": confidence,
+                "language": language,
+                "metadata": facts.get("metadata", {}),
+                "timestamp": time.time()
+            }
+
+            if hasattr(self, '_transcription_ready') and self._transcription_ready:
+                self._transcription_ready.set()
+
+        except Exception as e:
+            print(f"[orchestrator] ERROR handling STT transcription: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _on_tts_audio_ready(self, event: dict) -> None:
+        """Handle VOICE.TTS.AUDIO.READY signal from TTS zooid.
+
+        Args:
+            event: ChemBus event containing:
+                - facts.audio_file: Path to generated audio file
+                - facts.duration: Audio duration in seconds
+                - facts.affective_markers: Emotional markers in audio
+
+        Note: The TTS zooid automatically triggers playback, so this handler
+        is primarily for logging/monitoring. The Audio I/O zooid handles
+        the actual playback when it receives VOICE.TTS.PLAY.AUDIO.
+        """
+        try:
+            facts = event.get("facts", {})
+            audio_file = facts.get("audio_file", "unknown")
+            duration = facts.get("duration", 0.0)
+
+            print(f"[orchestrator] TTS audio ready: {audio_file} ({duration:.2f}s)")
+            log_event(
+                "tts_audio_ready",
+                audio_file=audio_file,
+                duration=duration
+            )
+
+        except Exception as e:
+            print(f"[orchestrator] ERROR handling TTS audio ready: {e}")
+
+    def _on_audio_playback_complete(self, event: dict) -> None:
+        """Handle VOICE.AUDIO.PLAYBACK.COMPLETE from Audio I/O zooid.
+
+        Args:
+            event: ChemBus event containing:
+                - facts.audio_file: Path to played audio file
+                - facts.duration: Actual playback duration
+                - facts.status: Playback status (success/error)
+
+        This signal indicates that audio playback has finished and the
+        system is ready for the next interaction.
+        """
+        try:
+            facts = event.get("facts", {})
+            audio_file = facts.get("audio_file", "unknown")
+            status = facts.get("status", "unknown")
+
+            print(f"[orchestrator] Audio playback complete: {audio_file} (status={status})")
+            log_event(
+                "audio_playback_complete",
+                audio_file=audio_file,
+                status=status
+            )
+
+        except Exception as e:
+            print(f"[orchestrator] ERROR handling playback complete: {e}")
+
+    def _emit_record_start(self) -> None:
+        """Emit VOICE.STT.RECORD.START signal to Audio I/O zooid.
+
+        Instructs the Audio I/O zooid to begin capturing audio for speech recognition.
+        The captured audio will be emitted as VOICE.AUDIO.CAPTURED for STT processing.
+        """
+        if not self.chem_pub:
+            print("[orchestrator] ChemBus not available, cannot emit record start")
+            return
+
+        try:
+            self.chem_pub.emit(
+                "VOICE.STT.RECORD.START",
+                ecosystem="voice",
+                intensity=1.0,
+                facts={
+                    "sample_rate": self.sample_rate,
+                    "channels": self.channels,
+                    "max_duration_s": self.max_turn_seconds,
+                    "timestamp": time.time()
+                }
+            )
+            print("[orchestrator] Emitted VOICE.STT.RECORD.START")
+        except Exception as e:
+            print(f"[orchestrator] ERROR emitting record start: {e}")
+
+    def _emit_record_stop(self) -> None:
+        """Emit VOICE.STT.RECORD.STOP signal to Audio I/O zooid.
+
+        Instructs the Audio I/O zooid to stop capturing audio and finalize
+        the current recording session.
+        """
+        if not self.chem_pub:
+            print("[orchestrator] ChemBus not available, cannot emit record stop")
+            return
+
+        try:
+            self.chem_pub.emit(
+                "VOICE.STT.RECORD.STOP",
+                ecosystem="voice",
+                intensity=1.0,
+                facts={
+                    "timestamp": time.time()
+                }
+            )
+            print("[orchestrator] Emitted VOICE.STT.RECORD.STOP")
+        except Exception as e:
+            print(f"[orchestrator] ERROR emitting record stop: {e}")
 
     def _init_silero_vad(self) -> None:
         """Initialize Silero VAD for neural network-based speech detection."""
@@ -1500,6 +1751,16 @@ class KLoROS:
             # WebRTC VAD
             return self.vad_model.is_speech(audio_frame, sample_rate)
 
+    # TODO(PHASE1-EXTRACTION): Audio backend initialization extracted to kloros_voice_audio_io.py
+    # This method will be removed in Phase 6 after orchestrator migration.
+    # The Audio I/O zooid now handles:
+    # - PulseAudio capture via PulseAudioBackend
+    # - Audio file playback via paplay
+    # - WAV file persistence to /home/kloros/audio_recordings/
+    # Communication via ChemBus signals:
+    # - VOICE.AUDIO.CAPTURED (emitted by audio-io zooid)
+    # - VOICE.TTS.PLAY.AUDIO (consumed by audio-io zooid)
+    # - VOICE.STT.RECORD.START/STOP (consumed by audio-io zooid)
     def _init_audio_backend(self) -> None:
         """Initialize audio capture backend with comprehensive fallback chain."""
         if create_audio_backend is None:
@@ -2825,6 +3086,9 @@ class KLoROS:
         return resp
 
     # =================== Output helpers =================
+    # TODO(PHASE1-EXTRACTION): Audio playback now handled by kloros_voice_audio_io.py zooid.
+    # This _playback_cmd method will be removed in Phase 6.
+    # Playback is now triggered via ChemBus signal VOICE.TTS.PLAY.AUDIO.
     def _playback_cmd(self, audio_path: str) -> list:
         """Build playback command using PipeWire."""
         return [self.playback_cmd, "--target", self.playback_target, audio_path]
@@ -2854,10 +3118,16 @@ class KLoROS:
                 print("[persona] speak failed:", exc)
         return line
 
+    # TODO(PHASE1-TTS-EXTRACTION): Text normalization extracted to kloros_voice_tts.py zooid
+    # The TTS zooid now handles text normalization independently.
+    # This method kept for backward compatibility during migration.
     def _normalize_tts_text(self, text: str) -> str:
         """
         Force 'KLoROS' to be pronounced as a word, not spelled out.
         Piper TTS needs phonetic hints to avoid treating it as an acronym.
+
+        NOTE: Text normalization now handled by kloros_voice_tts.py zooid.
+        This method is deprecated and will be removed in Phase 6.
         """
         # First, collapse spelled-out versions (K.L.O.R.O.S. or K. L. O. R. O. S.)
         # Remove periods and spaces between single letters
@@ -2869,120 +3139,136 @@ class KLoROS:
         text = re.sub(r"\bKloros\.\s+", "Kloros ", text)
         return text
 
+    # TODO(PHASE1-TTS-EXTRACTION): Speech synthesis extracted to kloros_voice_tts.py zooid
+    # The TTS zooid now handles speech synthesis via ChemBus signals.
+    # This method updated to emit ChemBus signals instead of direct synthesis.
     def speak(self, text: str) -> None:
-        """Synthesize and play speech via TTS backend."""
+        """Synthesize and play speech via TTS zooid (ChemBus-based).
+
+        NOTE: Speech synthesis now handled by kloros_voice_tts.py zooid.
+        This method emits VOICE.ORCHESTRATOR.SPEAK signal to trigger TTS zooid.
+        """
         from src.middleware import sanitize_output
-        
-        # Sanitize output before TTS (remove Portal references)
+
         text = sanitize_output(text, aggressive=False)
         text = self._normalize_tts_text(text)
 
-        if not self.enable_tts or self.tts_backend is None:
-            if self.fail_open_tts:
-                print(f"[TTS] Backend unavailable; printing to console: {text}")
-                return
-            else:
-                print("[TTS] Backend unavailable and fail_open disabled")
-                return
+        print(f"[speak] Emitting VOICE.ORCHESTRATOR.SPEAK signal: {text[:100]}...")
 
         try:
-            # Arm suppression BEFORE synthesis to prevent echo during TTS generation
-            synthesis_armed = False
-            if self.tts_suppression_enabled and platform.system() == "Linux":
-                self._pre_tts_suppress()
-                synthesis_armed = True
-
-            # Synthesize audio using TTS backend
-            result = self.tts_backend.synthesize(
-                text,
-                sample_rate=self.tts_sample_rate,
-                voice=os.getenv("KLR_PIPER_VOICE"),
-                out_dir=self.tts_out_dir,
-            )
-
-            # Log TTS completion
-            log_event(
-                "tts_done",
-                audio_path=result.audio_path,
-                duration_s=result.duration_s,
-                sample_rate=result.sample_rate,
-                voice=result.voice,
-            )
-
-            print(f"[TTS] Synthesized: {result.audio_path} ({result.duration_s:.2f}s)")
-
-            # Save last TTS output for E2E testing
-            try:
-                import shutil
-                last_tts_path = Path.home() / ".kloros" / "tts" / "last.wav"
-                last_tts_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(result.audio_path, last_tts_path)
-                print(f"[TTS] Saved to {last_tts_path} for E2E testing")
-            except Exception as e:
-                print(f"[TTS] Failed to save last output: {e}")
-
-
-            # Log TTS to memory system
-            if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
-                try:
-                    self.memory_enhanced.log_tts_output(
-                        text=text,
-                        voice_model=result.voice or "piper"
-                    )
-                except Exception as e:
-                    print(f"[memory] TTS logging failed: {e}")
-
-            # Play audio on Linux hosts
-            if platform.system() == "Linux":
-                # Suppression already armed before synthesis (synthesis_armed flag)
-                # No need to arm again here
-
-                try:
-                    # Hardware-level mic muting (if enabled)
-                    # Strip inline comments from env var before parsing
-                    tts_mute_val = os.getenv("KLR_TTS_MUTE", "0").split("#")[0].strip()
-                    use_hardware_mute = int(tts_mute_val)
-                    if use_hardware_mute:
-                        try:
-                            from src.audio.mic_mute import mute_during_playback
-                            # Keep mic muted for 500ms after response to prevent echo pickup
-                            with mute_during_playback(result.duration_s, buffer_ms=500, audio_backend=self.audio_backend):
-                                cmd = self._playback_cmd(result.audio_path)
-                                print(f"[playback] Running with hardware mute: {" ".join(cmd)}")
-                                proc = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603, B607
-                        except ImportError:
-                            print(f"[TTS] Hardware mute unavailable, using software suppression only")
-                            use_hardware_mute = False
-
-                    if not use_hardware_mute:
-                        # Standard playback without hardware muting
-                        cmd = self._playback_cmd(result.audio_path)
-                        print(f"[playback] Running: {" ".join(cmd)}")
-                        proc = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603, B607
-
-                    if proc.returncode != 0:
-                        print(f"[playback] Failed with code {proc.returncode}: {proc.stderr.decode()}")
-                    else:
-                        print(f"[playback] Success")
-
-                except Exception as e:
-                    print(f"[TTS] Audio playback failed: {e}")
-                finally:
-                    # Post-playback cooldown and flush, then disarm suppression
-                    # Pass audio duration for dynamic echo tail
-                    self._post_tts_cooldown_and_flush(audio_duration_s=result.duration_s if result else 0.0)
-                    if synthesis_armed and self.tts_suppression_enabled:
-                        self._clear_tts_suppress()
-
-        except Exception as e:
-            print(f"[TTS] Synthesis failed: {e}")
-            # If synthesis failed but we armed suppression, clear it
-            if synthesis_armed and self.tts_suppression_enabled:
-                self._clear_tts_suppress()
-            if self.fail_open_tts:
-                print(f"[TTS] Falling back to console: {text}")
+            if hasattr(self, 'chem_pub') and self.chem_pub:
+                self.chem_pub.emit(
+                    "VOICE.ORCHESTRATOR.SPEAK",
+                    ecosystem="voice",
+                    intensity=1.0,
+                    facts={
+                        "text": text,
+                        "affective_state": {},
+                        "urgency": 0.5,
+                        "timestamp": time.time(),
+                    }
+                )
+                print(f"[speak] Signal emitted successfully")
             else:
-                print("[TTS] Fail_open disabled; no fallback")
+                print(f"[speak] ChemBus not available, falling back to console: {text}")
+        except Exception as e:
+            print(f"[speak] ERROR emitting TTS signal: {e}")
+            print(f"[speak] Falling back to console: {text}")
+
+        # Original implementation (commented out for Phase 1):
+        #
+        # if not self.enable_tts or self.tts_backend is None:
+        #     if self.fail_open_tts:
+        #         print(f"[TTS] Backend unavailable; printing to console: {text}")
+        #         return
+        #     else:
+        #         print("[TTS] Backend unavailable and fail_open disabled")
+        #         return
+        #
+        # try:
+        #     synthesis_armed = False
+        #     if self.tts_suppression_enabled and platform.system() == "Linux":
+        #         self._pre_tts_suppress()
+        #         synthesis_armed = True
+        #
+        #     result = self.tts_backend.synthesize(
+        #         text,
+        #         sample_rate=self.tts_sample_rate,
+        #         voice=os.getenv("KLR_PIPER_VOICE"),
+        #         out_dir=self.tts_out_dir,
+        #     )
+        #
+        #     log_event(
+        #         "tts_done",
+        #         audio_path=result.audio_path,
+        #         duration_s=result.duration_s,
+        #         sample_rate=result.sample_rate,
+        #         voice=result.voice,
+        #     )
+        #
+        #     print(f"[TTS] Synthesized: {result.audio_path} ({result.duration_s:.2f}s)")
+        #
+        #     # Save last TTS output for E2E testing
+        #     try:
+        #         import shutil
+        #         last_tts_path = Path.home() / ".kloros" / "tts" / "last.wav"
+        #         last_tts_path.parent.mkdir(parents=True, exist_ok=True)
+        #         shutil.copy2(result.audio_path, last_tts_path)
+        #         print(f"[TTS] Saved to {last_tts_path} for E2E testing")
+        #     except Exception as e:
+        #         print(f"[TTS] Failed to save last output: {e}")
+        #
+        #     # Log TTS to memory system
+        #     if hasattr(self, "memory_enhanced") and self.memory_enhanced and self.memory_enhanced.enable_memory:
+        #         try:
+        #             self.memory_enhanced.log_tts_output(
+        #                 text=text,
+        #                 voice_model=result.voice or "piper"
+        #             )
+        #         except Exception as e:
+        #             print(f"[memory] TTS logging failed: {e}")
+        #
+        #     # Play audio on Linux hosts
+        #     if platform.system() == "Linux":
+        #         try:
+        #             tts_mute_val = os.getenv("KLR_TTS_MUTE", "0").split("#")[0].strip()
+        #             use_hardware_mute = int(tts_mute_val)
+        #             if use_hardware_mute:
+        #                 try:
+        #                     from src.audio.mic_mute import mute_during_playback
+        #                     with mute_during_playback(result.duration_s, buffer_ms=500, audio_backend=self.audio_backend):
+        #                         cmd = self._playback_cmd(result.audio_path)
+        #                         print(f"[playback] Running with hardware mute: {" ".join(cmd)}")
+        #                         proc = subprocess.run(cmd, capture_output=True, check=False)
+        #                 except ImportError:
+        #                     print(f"[TTS] Hardware mute unavailable, using software suppression only")
+        #                     use_hardware_mute = False
+        #
+        #             if not use_hardware_mute:
+        #                 cmd = self._playback_cmd(result.audio_path)
+        #                 print(f"[playback] Running: {" ".join(cmd)}")
+        #                 proc = subprocess.run(cmd, capture_output=True, check=False)
+        #
+        #             if proc.returncode != 0:
+        #                 print(f"[playback] Failed with code {proc.returncode}: {proc.stderr.decode()}")
+        #             else:
+        #                 print(f"[playback] Success")
+        #
+        #         except Exception as e:
+        #             print(f"[TTS] Audio playback failed: {e}")
+        #         finally:
+        #             self._post_tts_cooldown_and_flush(audio_duration_s=result.duration_s if result else 0.0)
+        #             if synthesis_armed and self.tts_suppression_enabled:
+        #                 self._clear_tts_suppress()
+        #
+        # except Exception as e:
+        #     print(f"[TTS] Synthesis failed: {e}")
+        #     if synthesis_armed and self.tts_suppression_enabled:
+        #         self._clear_tts_suppress()
+        #     if self.fail_open_tts:
+        #         print(f"[TTS] Falling back to console: {text}")
+        #     else:
+        #         print("[TTS] Fail_open disabled; no fallback")
 
     # ================== Half-duplex helpers =================
     def _pre_tts_suppress(self):
@@ -3922,7 +4208,16 @@ class KLoROS:
 
     # Properly structured handle_conversation method
     def handle_conversation(self) -> None:
-        """Handle conversation with multi-turn support."""
+        """Handle conversation with multi-turn support.
+
+        NOTE: This method currently uses legacy direct audio capture.
+        ChemBus signal coordination is now available via:
+        - _emit_record_start() / _emit_record_stop() for audio capture
+        - _on_stt_transcription() callback for receiving transcriptions
+        - speak() already emits VOICE.ORCHESTRATOR.SPEAK for TTS
+
+        Future phases will migrate this conversation flow to pure ChemBus coordination.
+        """
         import threading
 
         conversation_active = True

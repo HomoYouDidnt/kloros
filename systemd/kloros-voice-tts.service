@@ -1,0 +1,37 @@
+[Unit]
+Description=KLoROS Voice TTS Zooid - Text-to-speech synthesis
+After=network.target kloros-chem-proxy.service
+Requires=kloros-chem-proxy.service
+Documentation=file:///home/kloros/docs/plans/2025-11-23-voice-zooid-refactoring-design.md
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros
+
+Environment=PYTHONPATH=/home/kloros/src:/home/kloros
+Environment=KLR_ENABLE_TTS=1
+Environment=KLR_TTS_BACKEND=piper
+Environment=KLR_TTS_SAMPLE_RATE=22050
+Environment=KLR_TTS_OUT_DIR=/home/kloros/.kloros/tts/out
+Environment=KLR_FAIL_OPEN_TTS=1
+Environment=KLR_PIPER_VOICE=/home/kloros/models/piper/glados_piper_medium.onnx
+
+ExecStart=/home/kloros/.venv/bin/python3 -u /home/kloros/src/kloros_voice_tts.py
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-voice-tts
+
+MemoryMax=1G
+CPUQuota=50%
+
+PrivateTmp=false
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

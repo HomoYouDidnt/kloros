@@ -1,0 +1,34 @@
+[Unit]
+Description=KLoROS Voice Audio I/O Zooid - Raw audio capture and playback
+After=network.target kloros-chem-proxy.service
+Requires=kloros-chem-proxy.service
+Documentation=file:///home/kloros/docs/plans/2025-11-23-voice-zooid-refactoring-design.md
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros
+
+Environment=PYTHONPATH=/home/kloros/src:/home/kloros
+Environment=KLR_AUDIO_SAMPLE_RATE=16000
+Environment=KLR_AUDIO_RECORDINGS_DIR=/home/kloros/audio_recordings
+Environment=KLR_PLAYBACK_USER_RUNTIME=/run/user/1001
+
+ExecStart=/home/kloros/.venv/bin/python3 -u /home/kloros/src/kloros_voice_audio_io.py
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-voice-audio-io
+
+MemoryMax=256M
+CPUQuota=25%
+
+PrivateTmp=false
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

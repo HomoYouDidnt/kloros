@@ -1,0 +1,40 @@
+[Unit]
+Description=KLoROS Voice STT Zooid - Speech recognition and transcription
+After=network.target kloros-chem-proxy.service
+Requires=kloros-chem-proxy.service
+Documentation=file:///home/kloros/docs/plans/2025-11-23-voice-zooid-refactoring-design.md
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros
+
+Environment=PYTHONPATH=/home/kloros/src:/home/kloros
+Environment=KLR_ENABLE_STT=1
+Environment=KLR_STT_BACKEND=hybrid
+Environment=KLR_STT_LANG=en-US
+Environment=ASR_VOSK_MODEL=/home/kloros/models/vosk/model
+Environment=ASR_WHISPER_SIZE=medium
+Environment=ASR_PRIMARY_GPU=0
+Environment=ASR_CORRECTION_THRESHOLD=0.75
+Environment=ASR_CONFIDENCE_BOOST_THRESHOLD=0.9
+Environment=ASR_ENABLE_CORRECTIONS=1
+
+ExecStart=/home/kloros/.venv/bin/python3 -u /home/kloros/src/kloros_voice_stt.py
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-voice-stt
+
+MemoryMax=2G
+CPUQuota=100%
+
+PrivateTmp=false
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
