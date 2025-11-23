@@ -161,6 +161,7 @@ class STTZooid:
 
         try:
             facts = event.get("facts", {})
+            incident_id = event.get("incident_id")
             audio_file = facts.get("audio_file")
 
             if not audio_file:
@@ -170,6 +171,7 @@ class STTZooid:
             audio_file_path = Path(audio_file)
             if not audio_file_path.exists():
                 print(f"[stt] ERROR: Audio file not found: {audio_file}")
+                self.stats["failed_transcriptions"] += 1
                 return
 
             start_time = time.time()
@@ -213,7 +215,8 @@ class STTZooid:
                     "processing_time": processing_time,
                     "backend": self.stt_backend_name,
                     "timestamp": datetime.now().isoformat(),
-                }
+                },
+                incident_id=incident_id
             )
 
             print(f"[stt] Transcribed ({processing_time:.2f}s, conf={result.confidence:.2f}): {result.transcript[:100]}")

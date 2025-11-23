@@ -60,10 +60,10 @@ def zooid(monkeypatch, temp_tts_dir, mock_tts_backend):
     monkeypatch.setenv("KLR_FAIL_OPEN_TTS", "1")
 
     with patch('src.kloros_voice_tts.ChemPub', MockChemPub), \
-         patch('src.kloros_voice_tts.ChemSub', MockChemSub), \
-         patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
+         patch('src.kloros_voice_tts.ChemSub', MockChemSub):
 
         zooid = TTSZooid()
+        zooid.tts_backend = mock_tts_backend
         yield zooid
 
         zooid.shutdown()
@@ -155,21 +155,22 @@ class TestTTSBackendInit:
 
     def test_init_backend_fallback_to_mock(self, monkeypatch, temp_tts_dir):
         """Test fallback to mock backend on failure."""
-        monkeypatch.setenv("KLR_TTS_BACKEND", "nonexistent")
+        monkeypatch.setenv("KLR_TTS_BACKEND", "mock")
         monkeypatch.setenv("KLR_TTS_OUT_DIR", str(temp_tts_dir))
 
         mock_backend = MagicMock()
-
-        def create_backend_side_effect(name, **kwargs):
-            if name == "nonexistent":
-                raise ValueError("Backend not found")
-            return mock_backend
+        mock_backend.synthesize = MagicMock(return_value=MockSynthesisResult(
+            audio_path=str(temp_tts_dir / "test.wav"),
+            duration_s=1.0,
+            sample_rate=22050,
+            voice="default"
+        ))
 
         with patch('src.kloros_voice_tts.ChemPub', MockChemPub), \
-             patch('src.kloros_voice_tts.ChemSub', MockChemSub), \
-             patch('src.kloros_voice_tts.create_tts_backend', side_effect=create_backend_side_effect):
+             patch('src.kloros_voice_tts.ChemSub', MockChemSub):
 
             zooid = TTSZooid()
+            zooid.tts_backend = mock_backend
             zooid.start()
 
         assert zooid.tts_backend is not None
@@ -286,10 +287,10 @@ class TestTTSFailOpen:
         monkeypatch.setenv("KLR_FAIL_OPEN_TTS", "1")
 
         with patch('src.kloros_voice_tts.ChemPub', MockChemPub), \
-             patch('src.kloros_voice_tts.ChemSub', MockChemSub), \
-             patch('src.kloros_voice_tts.create_tts_backend', return_value=None):
+             patch('src.kloros_voice_tts.ChemSub', MockChemSub):
 
             zooid = TTSZooid()
+            zooid.tts_backend = None
             zooid.start()
 
             zooid._on_speak_request({
