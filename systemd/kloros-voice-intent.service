@@ -1,0 +1,32 @@
+[Unit]
+Description=KLoROS Voice Intent Zooid - Command detection and intent classification
+After=network.target kloros-chem-proxy.service
+Requires=kloros-chem-proxy.service
+Documentation=file:///home/kloros/docs/plans/2025-11-23-voice-zooid-refactoring-design.md
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros
+
+Environment=PYTHONPATH=/home/kloros/src:/home/kloros
+Environment=KLR_ENABLE_INTENT=1
+
+ExecStart=/home/kloros/.venv/bin/python3 -u /home/kloros/src/kloros_voice_intent.py
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-voice-intent
+
+MemoryMax=512M
+CPUQuota=50%
+
+PrivateTmp=false
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+[Unit]
+Description=KLoROS Voice Session Management Zooid - Conversation history and state persistence
+Documentation=file:///home/kloros/docs/plans/2025-11-23-voice-zooid-refactoring-design.md
+After=network.target kloros-chem-proxy.service
+Requires=kloros-chem-proxy.service
+PartOf=kloros-voice.service
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros
+
+Environment=PYTHONPATH=/home/kloros/src:/home/kloros
+Environment=KLR_SESSION_MAX_ENTRIES=100
+Environment=KLR_SESSION_PERSIST=1
+Environment=KLR_SESSION_PERSIST_DIR=/home/kloros/KLoROS
+Environment=KLR_SESSION_AUTOSAVE_INTERVAL=300
+
+ExecStart=/home/kloros/.venv/bin/python3 -u /home/kloros/src/kloros_voice_session.py
+
+Restart=always
+RestartSec=5
+
+MemoryMax=512M
+CPUQuota=50%
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-voice-session
+
+[Install]
+WantedBy=multi-user.target

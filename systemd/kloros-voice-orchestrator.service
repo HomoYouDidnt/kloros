@@ -1,0 +1,41 @@
+[Unit]
+Description=KLoROS Voice Orchestrator (ChemBus Coordinator)
+Documentation=https://github.com/kloros/voice-refactoring
+After=network.target kloros-chem-proxy.service
+Requires=kloros-chem-proxy.service
+Wants=kloros-voice-audio-io.service kloros-voice-stt.service kloros-voice-tts.service
+Wants=kloros-voice-intent.service kloros-voice-emotion.service kloros-voice-knowledge.service
+Wants=kloros-voice-llm.service kloros-voice-session.service
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+Restart=always
+RestartSec=5
+
+# Environment
+Environment=PYTHONPATH=/home/kloros/src:/home/kloros
+Environment=KLR_VOICE_MODE=orchestrator
+
+# Working directory
+WorkingDirectory=/home/kloros
+
+# Command - runs the voice orchestrator as ChemBus coordinator
+ExecStart=/usr/bin/python3 -m src.kloros_voice
+
+# Output
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=voice-orchestrator
+
+# Resource limits (orchestrator is lightweight - just coordinates signals)
+MemoryMax=512M
+CPUQuota=50%
+
+# Security
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
