@@ -6,6 +6,7 @@ from .types import (
     Outcome,
     Context,
 )
+from .substantia_nigra import SubstantiaNigra
 
 __all__ = [
     "ActionCandidate",
@@ -13,4 +14,5 @@ __all__ = [
     "SelectionResult",
     "Outcome",
     "Context",
+    "SubstantiaNigra",
 ]
