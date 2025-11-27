@@ -1,0 +1,33 @@
+[Unit]
+Description=KLoROS LLaMA Live Instance (General Chat)
+After=network.target
+Documentation=https://github.com/ggml-org/llama.cpp
+
+[Service]
+Type=simple
+User=kloros
+Group=kloros
+WorkingDirectory=/home/kloros
+
+ExecStart=/usr/local/bin/llama-server \
+    -m {{MODEL_PATH}} \
+    --host 127.0.0.1 \
+    --port 8080 \
+    -ngl 10 \
+    -c 4096 \
+    -np 1 \
+    --metrics
+
+Environment=CUDA_VISIBLE_DEVICES=0
+
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitInterval=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kloros-llama-live
+
+[Install]
+WantedBy=multi-user.target

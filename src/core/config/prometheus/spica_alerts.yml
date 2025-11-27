@@ -1,0 +1,83 @@
+groups:
+- name: spica-resources
+  rules:
+  - alert: SPICA_HighInstanceCount
+    expr: kloros_spica_instances_current >= 4
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "SPICA instance count near limit"
+      description: "Current instances: {{ $value }}/5. Nearing maximum capacity."
+
+  - alert: SPICA_InstanceLimitReached
+    expr: kloros_spica_instances_current >= 5
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "SPICA instance limit reached"
+      description: "Maximum instances (5/5) reached. No new spawns possible."
+
+  - alert: SPICA_LowDiskSpace
+    expr: kloros_spica_disk_free_gb < 30
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low disk space for SPICA"
+      description: "Free disk space: {{ $value }}GB. Approaching 20GB minimum threshold."
+
+  - alert: SPICA_CriticalDiskSpace
+    expr: kloros_spica_disk_free_gb < 22
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical disk space for SPICA"
+      description: "Free disk space: {{ $value }}GB. Near 20GB hard limit - spawns will be blocked."
+
+  - alert: SPICA_CircuitBreakerOpen
+    expr: kloros_spica_circuit_breaker_state == 1
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "SPICA circuit breaker OPEN"
+      description: "Circuit breaker is OPEN due to repeated spawn failures. All spawns blocked."
+
+  - alert: SPICA_CircuitBreakerHalfOpen
+    expr: kloros_spica_circuit_breaker_state == 2
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "SPICA circuit breaker HALF_OPEN"
+      description: "Circuit breaker in recovery mode. Testing if spawns can resume."
+
+  - alert: SPICA_HighSpawnBlockRate
+    expr: rate(kloros_spica_spawn_blocks_total[5m]) > 0.5
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High SPICA spawn block rate"
+      description: "More than 50% of spawn attempts are being blocked. Check resource constraints."
+
+  - alert: SPICA_HighFailureRate
+    expr: rate(kloros_spica_spawn_attempts_total{result="failure"}[10m]) / rate(kloros_spica_spawn_attempts_total[10m]) > 0.3
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High SPICA spawn failure rate"
+      description: "More than 30% of spawn attempts are failing. Circuit breaker may open soon."
+
+  - alert: SPICA_NoSpawnBudget
+    expr: kloros_spica_instances_current == 0 and rate(kloros_spica_spawn_blocks_total{reason="spawn_rate"}[5m]) > 0
+    for: 15m
+    labels:
+      severity: info
+    annotations:
+      summary: "SPICA spawn rate limit hit"
+      description: "Spawn rate limit (3/hour) reached. Spawns will resume after cooldown."

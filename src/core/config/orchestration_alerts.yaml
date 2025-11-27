@@ -1,0 +1,92 @@
+# KLoROS Orchestration - Prometheus Alert Rules
+# Place in your Prometheus rules directory and reload
+
+groups:
+- name: kloros-orchestration
+  interval: 30s
+  rules:
+
+  # PHASE Window Miss
+  - alert: KLoROSPhaseWindowMiss
+    expr: (time() - max_over_time(kloros_phase_runs_total[24h])) > 86400
+    for: 15m
+    labels:
+      severity: warning
+      component: orchestration
+    annotations:
+      summary: "PHASE did not run in last 24 hours"
+      description: "No PHASE execution detected in 24h window. Check PHASE window logic (3-7 AM ET) and orchestrator logs."
+      runbook: "journalctl -u kloros-orchestrator.service -n 100 | grep PHASE"
+
+  # Lock Contention Spike
+  - alert: KLoROSLockContentionSpike
+    expr: increase(kloros_orchestrator_lock_contention_total[10m]) > 5
+    for: 5m
+    labels:
+      severity: warning
+      component: orchestration
+    annotations:
+      summary: "High lock contention on orchestrator"
+      description: "{{ $value }} lock contentions in last 10 minutes. Multiple orchestrator instances or timer issues."
+      runbook: "systemctl status kloros-orchestrator.timer && ps aux | grep orchestration"
+
+  # D-REAM Failure Rate
+  - alert: KLoROSDreamFailureRate
+    expr: rate(kloros_dream_runs_total{result="failure"}[10m]) > 0.5
+    for: 5m
+    labels:
+      severity: critical
+      component: dream
+    annotations:
+      summary: "D-REAM failure rate exceeded 50%"
+      description: "D-REAM one-shot execution failing repeatedly. Check logs and config."
+      runbook: "journalctl -u kloros-orchestrator.service | grep 'D-REAM failed'"
+
+  # PHASE Duration Anomaly
+  - alert: KLoROSPhaseDurationAnomaly
+    expr: kloros_phase_duration_seconds > 7200
+    for: 1m
+    labels:
+      severity: warning
+      component: phase
+    annotations:
+      summary: "PHASE execution exceeded 2 hours"
+      description: "PHASE taking unusually long ({{ $value }}s). Check for hangs or resource issues."
+      runbook: "ps aux | grep phase && journalctl -u kloros-orchestrator.service | grep PHASE"
+
+  # Orchestrator Tick Failures
+  - alert: KLoROSOrchestratorTickFailures
+    expr: rate(kloros_orchestrator_tick_total{outcome="error"}[10m]) > 0.1
+    for: 5m
+    labels:
+      severity: critical
+      component: orchestration
+    annotations:
+      summary: "Orchestrator tick error rate elevated"
+      description: "Orchestrator state machine errors detected. Check coordinator logs."
+      runbook: "journalctl -u kloros-orchestrator.service | grep ERROR"
+
+  # Baseline Version Stuck
+  - alert: KLoROSBaselineVersionStuck
+    expr: changes(kloros_baseline_version[7d]) == 0
+    for: 30m
+    labels:
+      severity: info
+      component: baseline
+    annotations:
+      summary: "Baseline version unchanged for 7 days"
+      description: "No baseline updates in 7 days. Verify promotion pipeline and Phase 4-6 integration."
+      runbook: "ls -lh /home/kloros/system/baseline/versions/ | tail -5"
+
+  # Promotions Pending Buildup
+  - alert: KLoROSPromotionsPendingBuildup
+    expr: kloros_promotions_pending > 20
+    for: 1h
+    labels:
+      severity: warning
+      component: promotions
+    annotations:
+      summary: "Unacked promotions accumulating"
+      description: "{{ $value }} promotions pending acknowledgment. Check Heuristics and PHASE integration."
+      runbook: "ls /home/kloros/artifacts/dream/promotions/*.json | wc -l"
+

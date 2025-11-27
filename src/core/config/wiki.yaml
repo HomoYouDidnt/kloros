@@ -1,0 +1,61 @@
+## Wiki Configuration for KLoROS Conversation Integration
+
+wiki:
+  enable_conversation_wiki: true
+  wiki_dir: "/home/kloros/wiki"
+
+  intent_detection:
+    enabled: true
+    confidence_threshold: 0.3
+    cache_enabled: true
+    cache_ttl_seconds: 3600
+
+  context_injection:
+    enabled: true
+    max_context_chars: 2000
+    include_drift_notices: true
+    include_status_notices: true
+
+  keywords:
+    self_explanation:
+      - "how do you"
+      - "what are you"
+      - "describe yourself"
+      - "who are you"
+
+    capability_question:
+      - "can you"
+      - "do you support"
+      - "what can you do"
+      - "can you monitor"
+
+    architecture_question:
+      - "what's your architecture"
+      - "what modules"
+      - "explain your"
+      - "how are you structured"
+
+    module_question:
+      - "module"
+      - "component"
+      - "subsystem"
+      - "latency monitor"
+      - "gpu monitor"
+      - "consciousness"
+      - "dream"
+
+  fallback:
+    use_fallback_on_error: true
+    log_wiki_failures: true
+
+  observability:
+    log_intent_detection: true
+    log_context_injection: true
+    log_wiki_path_taken: true
+    metrics_enabled: true
+
+  feature_flags:
+    enable_wiki_in_voice: false
+    enable_wiki_in_text: true
+    enable_wiki_citations: true
+    strict_wiki_mode: false
