@@ -19,7 +19,7 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 try:
-    from src.kloros_memory import (
+    from src.memory import (
         Event,
         EventType,
         MemoryStore,
@@ -30,8 +30,8 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from src.cognition.mind.consciousness.failure_analyzer import FailureAnalyzer
-    print("✅ FailureAnalyzer imported successfully")
+    from src.consciousness.cognitive_actions_subscriber import CognitiveActionHandler
+    print("✅ CognitiveActionHandler imported successfully")
 except ImportError as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)
@@ -47,7 +47,7 @@ class FailurePatternAnalysisTester:
         self.log_path = os.path.join(self.temp_dir, "actions.log")
 
         self.store = MemoryStore(self.db_path)
-        self.handler = FailureAnalyzer()
+        self.handler = CognitiveActionHandler()
         self.handler.memory_store = self.store
         self.handler.action_log_path = Path(self.log_path)
 

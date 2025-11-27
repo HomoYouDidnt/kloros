@@ -24,10 +24,10 @@ import psutil
 
 sys.path.insert(0, '/home/kloros/src')
 
-from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
-from kloros.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
-from kloros.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
-from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+from src.orchestration.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
+from src.orchestration.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
+from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
 
 class TestStreamingDaemonsIntegration(unittest.TestCase):

@@ -53,7 +53,7 @@ def persist_reflection_insight(memory_logger, insight: ReflectionInsight) -> Non
         insight_data["supporting_data"] = truncated_data
 
     # Log as cognitive event
-    from src.kloros_memory.models import EventType
+    from src.memory.models import EventType
     memory_logger.log_event(
         event_type=EventType.REFLECTION_INSIGHT,
         content=insight.title,
@@ -84,7 +84,7 @@ def persist_real_time_introspection(memory_logger, trigger_type: str, details: d
     if not memory_logger:
         return
 
-    from src.kloros_memory.models import EventType
+    from src.memory.models import EventType
     memory_logger.log_event(
         event_type=EventType.REAL_TIME_INTROSPECTION,
         content=f"Introspection trigger: {trigger_type}",
@@ -112,7 +112,7 @@ def retrieve_relevant_insights(memory_retriever, query: str, limit: int = 5) -> 
 
     # Retrieve events of type REFLECTION_INSIGHT
     try:
-        from src.kloros_memory.models import Event, EventType
+        from src.memory.models import Event, EventType
 
         # Get recent insights (last 7 days)
         store = memory_retriever.store

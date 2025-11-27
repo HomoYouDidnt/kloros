@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tests.fixtures.umn_mock import MockUMNPub, MockUMNSub
-from src.kloros_voice_stt import STTZooid
+from src.voice.kloros_voice_stt import STTZooid
 
 
 @dataclass
@@ -65,9 +65,9 @@ def zooid(monkeypatch, mock_stt_backend):
     monkeypatch.setenv("KLR_STT_BACKEND", "mock")
     monkeypatch.setenv("KLR_STT_LANG", "en-US")
 
-    with patch('src.kloros_voice_stt.UMNPub', MockUMNPub), \
-         patch('src.kloros_voice_stt.UMNSub', MockUMNSub), \
-         patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
+    with patch('src.voice.kloros_voice_stt.UMNPub', MockUMNPub), \
+         patch('src.voice.kloros_voice_stt.UMNSub', MockUMNSub), \
+         patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
 
         zooid = STTZooid()
         yield zooid
@@ -82,8 +82,8 @@ class TestSTTZooidInit:
         """Test that backend is configured from environment."""
         monkeypatch.setenv("KLR_STT_BACKEND", "whisper")
 
-        with patch('src.kloros_voice_stt.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_stt.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_stt.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_stt.UMNSub', MockUMNSub):
             zooid = STTZooid()
 
         assert zooid.stt_backend_name == "whisper"
@@ -93,8 +93,8 @@ class TestSTTZooidInit:
         """Test that language is configured from environment."""
         monkeypatch.setenv("KLR_STT_LANG", "es-ES")
 
-        with patch('src.kloros_voice_stt.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_stt.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_stt.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_stt.UMNSub', MockUMNSub):
             zooid = STTZooid()
 
         assert zooid.stt_lang == "es-ES"
@@ -132,8 +132,8 @@ class TestSTTZooidStart:
         """Test that STT can be disabled via environment."""
         monkeypatch.setenv("KLR_ENABLE_STT", "0")
 
-        with patch('src.kloros_voice_stt.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_stt.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_stt.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_stt.UMNSub', MockUMNSub):
             zooid = STTZooid()
             zooid.start()
 
@@ -149,9 +149,9 @@ class TestSTTBackendInit:
         monkeypatch.setenv("ASR_VOSK_MODEL", "/tmp/vosk-model")
         monkeypatch.setenv("ASR_WHISPER_SIZE", "small")
 
-        with patch('src.kloros_voice_stt.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_stt.UMNSub', MockUMNSub), \
-             patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend) as mock_create:
+        with patch('src.voice.kloros_voice_stt.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_stt.UMNSub', MockUMNSub), \
+             patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend) as mock_create:
 
             zooid = STTZooid()
             zooid.start()
@@ -170,9 +170,9 @@ class TestSTTBackendInit:
                 raise ValueError("Backend not found")
             return mock_backend
 
-        with patch('src.kloros_voice_stt.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_stt.UMNSub', MockUMNSub), \
-             patch('src.kloros_voice_stt.create_stt_backend', side_effect=create_backend_side_effect):
+        with patch('src.voice.kloros_voice_stt.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_stt.UMNSub', MockUMNSub), \
+             patch('src.voice.kloros_voice_stt.create_stt_backend', side_effect=create_backend_side_effect):
 
             zooid = STTZooid()
             zooid.start()

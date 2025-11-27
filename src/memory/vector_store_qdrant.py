@@ -35,7 +35,7 @@ import numpy as np
 from .embeddings import get_embedding_engine
 
 try:
-    from kloros.orchestration.chem_bus_v2 import ChemPub
+    from src.orchestration.core.umn_bus import UMNPub as ChemPub
     HAS_CHEMBUS = True
 except ImportError:
     ChemPub = None

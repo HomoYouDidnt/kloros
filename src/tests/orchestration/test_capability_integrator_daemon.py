@@ -20,7 +20,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-import kloros.orchestration.capability_integrator_daemon
+import src.orchestration.capability_integrator_daemon
 from src.orchestration.core.capability_integrator_daemon import CapabilityIntegratorDaemon
 
 

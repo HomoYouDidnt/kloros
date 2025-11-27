@@ -13,13 +13,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
-from kloros.orchestration.chem_bus_v2 import ChemSub
-from kloros.orchestration.maintenance_mode import wait_for_normal_mode
-from kloros.observability.ledger_writer import (
+from src.orchestration.core.umn_bus import UMNSub as ChemSub
+from src.orchestration.maintenance_mode import wait_for_normal_mode
+from src.observability.ledger_writer import (
     append_observation_atomic,
     update_registry_rolling_metrics
 )
-from kloros.registry.lifecycle_registry import LifecycleRegistry
+from src.registry.lifecycle_registry import LifecycleRegistry
 
 logging.basicConfig(
     level=logging.INFO,

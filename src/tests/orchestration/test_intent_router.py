@@ -46,7 +46,7 @@ def test_intent_router_reads_discover_module_intent(temp_intent_dir, temp_dlq_fi
     with open(intent_file, 'w') as f:
         json.dump(intent_data, f)
 
-    with patch('src.kloros.orchestration.intent_router.UMNPub') as mock_pub_class:
+    with patch('src.orchestration.intent_router.UMNPub') as mock_pub_class:
         mock_pub = Mock()
         mock_pub_class.return_value = mock_pub
 
@@ -86,7 +86,7 @@ def test_intent_router_deletes_processed_file(temp_intent_dir, temp_dlq_file):
 
     assert intent_file.exists()
 
-    with patch('src.kloros.orchestration.intent_router.UMNPub'):
+    with patch('src.orchestration.intent_router.UMNPub'):
         router = IntentRouter(
             intent_dir=str(temp_intent_dir),
             dlq_path=str(temp_dlq_file)
@@ -112,7 +112,7 @@ def test_intent_router_handles_reinvestigate_intent(temp_intent_dir, temp_dlq_fi
     with open(intent_file, 'w') as f:
         json.dump(intent_data, f)
 
-    with patch('src.kloros.orchestration.intent_router.UMNPub') as mock_pub_class:
+    with patch('src.orchestration.intent_router.UMNPub') as mock_pub_class:
         mock_pub = Mock()
         mock_pub_class.return_value = mock_pub
 
@@ -136,7 +136,7 @@ def test_intent_router_writes_to_dlq_on_failure(temp_intent_dir, temp_dlq_file):
     with open(intent_file, 'w') as f:
         f.write("invalid json{")
 
-    with patch('src.kloros.orchestration.intent_router.UMNPub'):
+    with patch('src.orchestration.intent_router.UMNPub'):
         router = IntentRouter(
             intent_dir=str(temp_intent_dir),
             dlq_path=str(temp_dlq_file)
@@ -165,7 +165,7 @@ def test_intent_router_handles_unknown_intent_type(temp_intent_dir, temp_dlq_fil
     with open(intent_file, 'w') as f:
         json.dump(intent_data, f)
 
-    with patch('src.kloros.orchestration.intent_router.UMNPub') as mock_pub_class:
+    with patch('src.orchestration.intent_router.UMNPub') as mock_pub_class:
         mock_pub = Mock()
         mock_pub_class.return_value = mock_pub
 

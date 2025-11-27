@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Metrics integration (optional - graceful degradation if not available)
 try:
-    from src.kloros.orchestration import metrics as prom_metrics
+    from src.orchestration import metrics as prom_metrics
     METRICS_AVAILABLE = True
 except ImportError:
     METRICS_AVAILABLE = False

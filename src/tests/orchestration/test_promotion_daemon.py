@@ -120,7 +120,7 @@ def test_create_ack_accepted():
         promo_path.write_text('{"id": "test_promo_005"}')
 
         # Override ACK_DIR for test
-        import src.kloros.orchestration.promotion_daemon as pd
+        import src.orchestration.promotion_daemon as pd
         orig_ack_dir = pd.ACK_DIR
         pd.ACK_DIR = tmpdir_path
 
@@ -157,7 +157,7 @@ def test_create_ack_rejected():
         promo_path.write_text('{"id": "test_promo_006"}')
 
         # Override ACK_DIR for test
-        import src.kloros.orchestration.promotion_daemon as pd
+        import src.orchestration.promotion_daemon as pd
         orig_ack_dir = pd.ACK_DIR
         pd.ACK_DIR = tmpdir_path
 

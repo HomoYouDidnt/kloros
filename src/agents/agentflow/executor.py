@@ -6,15 +6,17 @@ import time
 class Executor:
     """Executes decisions with budget tracking and PETRI safety checks."""
 
-    def __init__(self, budgets: Dict[str, float] = None,
+    def __init__(self, tool_registry=None, budgets: Dict[str, float] = None,
                  petri_config: Optional[Dict[str, Any]] = None, consciousness=None):
         """Initialize executor.
 
         Args:
+            tool_registry: Registry of available tools
             budgets: Budget constraints {latency_ms, tool_calls, tokens}
             petri_config: PETRI safety configuration
             consciousness: Optional IntegratedConsciousness instance for task outcome events
         """
+        self.tool_registry = tool_registry
         self.budgets = budgets or {
             "latency_ms": 5000,
             "tool_calls": 4,
@@ -28,7 +30,7 @@ class Executor:
         self.petri_config = petri_config or {}
         if self.petri_config.get("enabled", False):
             try:
-                from src.governance.petri.runner import check_tool_safety, enforce_safety
+                from src.petri.runner import check_tool_safety, enforce_safety
                 self.check_tool_safety = check_tool_safety
                 self.enforce_safety = enforce_safety
                 self.petri_enabled = True
@@ -92,7 +94,7 @@ class Executor:
                 "success": False
             }
 
-        # Execute action
+        # Execute tool
         try:
             if tool_name == "rag_query":
                 # Special case: Execute RAG query
@@ -101,6 +103,18 @@ class Executor:
                 artifacts = {"answer": result}
                 errors = []
                 success = True
+            elif self.tool_registry:
+                # Use tool registry if available
+                tool = self.tool_registry.get_tool(tool_name)
+                if tool:
+                    result = tool.execute(kloros_instance)
+                    artifacts = {"answer": result}
+                    errors = []
+                    success = True
+                else:
+                    artifacts = {}
+                    errors = [f"Tool not found: {tool_name}"]
+                    success = False
             else:
                 artifacts = {"answer": f"Executed {tool_name}"}
                 errors = []
@@ -174,8 +188,8 @@ class Executor:
             Execution result
         """
         try:
-            from src.knowledge.ra3.expander import expand_macro
-            from src.knowledge.ra3.telemetry import track_macro_execution
+            from src.ra3.expander import expand_macro
+            from src.ra3.telemetry import track_macro_execution
 
             macro = decision["args"]["macro"]
             params = decision["args"]["params"]

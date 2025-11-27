@@ -25,9 +25,9 @@ def test_data_dir(tmp_path):
 def test_high_autonomy_emits_both_intents(test_data_dir, monkeypatch):
     feed_file = test_data_dir["feed"] / "curiosity_feed.json"
 
-    monkeypatch.setattr("src.kloros.orchestration.curiosity_processor.CURIOSITY_FEED", feed_file)
-    monkeypatch.setattr("src.kloros.orchestration.curiosity_processor.INTENT_DIR", test_data_dir["intents"])
-    monkeypatch.setattr("src.kloros.orchestration.curiosity_processor.PROCESSED_QUESTIONS", test_data_dir["feed"] / "processed.jsonl")
+    monkeypatch.setattr("src.orchestration.curiosity_processor.CURIOSITY_FEED", feed_file)
+    monkeypatch.setattr("src.orchestration.curiosity_processor.INTENT_DIR", test_data_dir["intents"])
+    monkeypatch.setattr("src.orchestration.curiosity_processor.PROCESSED_QUESTIONS", test_data_dir["feed"] / "processed.jsonl")
 
     question = {
         "id": "orphaned_queue_test",
@@ -61,9 +61,9 @@ def test_high_autonomy_emits_both_intents(test_data_dir, monkeypatch):
 def test_low_autonomy_emits_only_integration_fix(test_data_dir, monkeypatch):
     feed_file = test_data_dir["feed"] / "curiosity_feed.json"
 
-    monkeypatch.setattr("src.kloros.orchestration.curiosity_processor.CURIOSITY_FEED", feed_file)
-    monkeypatch.setattr("src.kloros.orchestration.curiosity_processor.INTENT_DIR", test_data_dir["intents"])
-    monkeypatch.setattr("src.kloros.orchestration.curiosity_processor.PROCESSED_QUESTIONS", test_data_dir["feed"] / "processed.jsonl")
+    monkeypatch.setattr("src.orchestration.curiosity_processor.CURIOSITY_FEED", feed_file)
+    monkeypatch.setattr("src.orchestration.curiosity_processor.INTENT_DIR", test_data_dir["intents"])
+    monkeypatch.setattr("src.orchestration.curiosity_processor.PROCESSED_QUESTIONS", test_data_dir["feed"] / "processed.jsonl")
 
     question = {
         "id": "orphaned_queue_low",

@@ -28,8 +28,8 @@ try:
 except ImportError:
     ZMQ_AVAILABLE = False
 
-from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
-from kloros.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
+from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+from src.orchestration.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
 
 
 import pytest
@@ -135,7 +135,7 @@ finally:
     def test_integration_daemon_emits_to_real_chembus(self):
         """Test that IntegrationMonitorDaemon emits questions to real ChemBus."""
         # Subscribe to curiosity.integration_question topic
-        from kloros.orchestration.chem_bus_v2 import ChemSub
+        from src.orchestration.core.umn_bus import UMNSub as ChemSub
 
         def on_message(msg_dict):
             self.received_messages.append(msg_dict)
@@ -192,7 +192,7 @@ class DataProducer:
 
     def test_exploration_daemon_emits_to_real_chembus(self):
         """Test that ExplorationScannerDaemon emits questions to real ChemBus."""
-        from kloros.orchestration.chem_bus_v2 import ChemSub
+        from src.orchestration.core.umn_bus import UMNSub as ChemSub
 
         def on_message(msg_dict):
             self.received_messages.append(msg_dict)
@@ -233,7 +233,7 @@ class DataProducer:
 
     def test_message_delivery_latency(self):
         """Test that ChemBus message delivery latency is acceptable (<100ms)."""
-        from kloros.orchestration.chem_bus_v2 import ChemPub, ChemSub
+        from src.orchestration.core.umn_bus import UMNPub as ChemPub, UMNSub as ChemSub
 
         latencies = []
 

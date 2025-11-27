@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tests.fixtures.umn_mock import MockUMNPub, MockUMNSub
-from src.kloros_voice_emotion import EmotionZooid
+from src.voice.kloros_voice_emotion import EmotionZooid
 
 
 @pytest.fixture
@@ -18,8 +18,8 @@ def zooid(monkeypatch):
     """Create EmotionZooid with mocked dependencies."""
     monkeypatch.setenv("KLR_ENABLE_EMOTION", "1")
 
-    with patch('src.kloros_voice_emotion.UMNPub', MockUMNPub), \
-         patch('src.kloros_voice_emotion.UMNSub', MockUMNSub):
+    with patch('src.voice.kloros_voice_emotion.UMNPub', MockUMNPub), \
+         patch('src.voice.kloros_voice_emotion.UMNSub', MockUMNSub):
 
         zooid = EmotionZooid()
         yield zooid
@@ -86,8 +86,8 @@ class TestEmotionZooidStart:
         """Test that Emotion can be disabled via environment."""
         monkeypatch.setenv("KLR_ENABLE_EMOTION", "0")
 
-        with patch('src.kloros_voice_emotion.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_emotion.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_emotion.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_emotion.UMNSub', MockUMNSub):
             zooid = EmotionZooid()
             zooid.start()
 

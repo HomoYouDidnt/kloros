@@ -20,7 +20,7 @@ def test_hybrid_introspection_import():
     print("Testing hybrid introspection imports...")
 
     try:
-        from src.cognition.mind.reflection.hybrid_introspection import HybridIntrospectionManager, IntrospectionTrigger, ConversationQuality
+        from idle_reflection.hybrid_introspection import HybridIntrospectionManager, IntrospectionTrigger, ConversationQuality
         print(" Hybrid introspection system imports successful")
         return True
     except ImportError as e:
@@ -32,7 +32,7 @@ def test_real_time_conversation_analysis():
     print("\nTesting real-time conversation analysis...")
 
     try:
-        from src.cognition.mind.reflection.hybrid_introspection import HybridIntrospectionManager
+        from idle_reflection.hybrid_introspection import HybridIntrospectionManager
 
         # Create hybrid introspection manager
         manager = HybridIntrospectionManager(None)
@@ -89,7 +89,7 @@ def test_enhanced_reflection_with_hybrid():
     print("\nTesting enhanced reflection with hybrid integration...")
 
     try:
-        from src.cognition.mind.reflection import EnhancedIdleReflectionManager
+        from idle_reflection import EnhancedIdleReflectionManager
 
         # Create enhanced manager (includes hybrid)
         manager = EnhancedIdleReflectionManager(None)
@@ -184,7 +184,7 @@ def test_adaptive_parameter_scenarios():
     print("\nTesting adaptive parameter scenarios...")
 
     try:
-        from src.cognition.mind.reflection.hybrid_introspection import HybridIntrospectionManager
+        from idle_reflection.hybrid_introspection import HybridIntrospectionManager
 
         manager = HybridIntrospectionManager(None)
         conversation_id = str(uuid.uuid4())

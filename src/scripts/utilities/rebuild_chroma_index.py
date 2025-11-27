@@ -7,8 +7,8 @@ import os
 # Add source directory to path
 sys.path.insert(0, '/home/kloros')
 
-from src.kloros_memory.storage import MemoryStore
-from src.kloros_memory.chroma_export import ChromaMemoryExporter
+from src.memory.storage import MemoryStore
+from src.memory.chroma_export import ChromaMemoryExporter
 
 def main():
     print("[rebuild] Starting ChromaDB index rebuild from SQLite...")

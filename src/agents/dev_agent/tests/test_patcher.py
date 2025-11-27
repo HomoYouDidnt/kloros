@@ -6,7 +6,7 @@ sys.path.insert(0, '/home/kloros')
 
 import tempfile
 from pathlib import Path
-from src.agents.dev_agent.tools.patcher import (
+from src.dev_agent.tools.patcher import (
     validate_diff_syntax,
     compute_diff_stats,
     apply_patch_with_validation

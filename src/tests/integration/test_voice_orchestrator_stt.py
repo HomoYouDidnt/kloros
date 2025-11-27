@@ -19,7 +19,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.orchestration.core.umn_bus_v2 import UMNPub, UMNSub
-from src.kloros_voice_stt import STTZooid
+from src.voice.kloros_voice_stt import STTZooid
 
 
 @dataclass
@@ -77,7 +77,7 @@ class TestOrchestratorSTTIntegration:
             transcription_data.update(msg.get("facts", {}))
             received_transcription.set()
 
-        with patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
+        with patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
             zooid = STTZooid()
             zooid.start()
 
@@ -140,7 +140,7 @@ class TestOrchestratorSTTIntegration:
         time.sleep(0.3)
 
         try:
-            with patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
+            with patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
                 zooid = STTZooid()
                 zooid.start()
 
@@ -167,7 +167,7 @@ class TestOrchestratorSTTIntegration:
             received_incident_id[0] = msg.get("incident_id")
             received_transcription.set()
 
-        with patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
+        with patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
             zooid = STTZooid()
             zooid.start()
 
@@ -219,7 +219,7 @@ class TestOrchestratorSTTIntegration:
             with transcription_lock:
                 transcription_count[0] += 1
 
-        with patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
+        with patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend):
             zooid = STTZooid()
             zooid.start()
 

@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from src.kloros_voice_session import SessionZooid
+from src.voice.kloros_voice_session import SessionZooid
 
 
 class MockUMNPub:
@@ -58,8 +58,8 @@ def mock_umn(monkeypatch):
     mock_sub_class = MockUMNSub
 
     # Patch UMNPub/UMNSub where they're imported in kloros_voice_session
-    monkeypatch.setattr("src.kloros_voice_session.UMNPub", lambda *args, **kwargs: mock_pub)
-    monkeypatch.setattr("src.kloros_voice_session.UMNSub", mock_sub_class)
+    monkeypatch.setattr("src.voice.kloros_voice_session.UMNPub", lambda *args, **kwargs: mock_pub)
+    monkeypatch.setattr("src.voice.kloros_voice_session.UMNSub", mock_sub_class)
 
     return {"pub": mock_pub, "sub": mock_sub_class}
 

@@ -20,7 +20,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_daemon_initialization(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         class TestDaemon(BaseStreamingDaemon):
             def process_file_event(self, event_type, file_path):
@@ -45,7 +45,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertIsInstance(daemon.cache, dict)
 
     def test_event_queue_bounds(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         class TestDaemon(BaseStreamingDaemon):
             def process_file_event(self, event_type, file_path):
@@ -70,7 +70,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
             daemon.event_queue.put(('test', Path('/test.py')), timeout=0.1)
 
     def test_cache_eviction_lru(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         class TestDaemon(BaseStreamingDaemon):
             def process_file_event(self, event_type, file_path):
@@ -95,7 +95,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertEqual(len(daemon.cache), 5)
 
     def test_signal_handling_sigterm(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         save_called = []
 
@@ -117,7 +117,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertTrue(save_called)
 
     def test_signal_handling_sigint(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         save_called = []
 
@@ -139,7 +139,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertTrue(save_called)
 
     def test_worker_thread_pool_creation(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         class TestDaemon(BaseStreamingDaemon):
             def process_file_event(self, event_type, file_path):
@@ -169,7 +169,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         thread.join(timeout=1.0)
 
     def test_file_event_processing(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         processed_events = []
 
@@ -203,13 +203,13 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertGreater(len(processed_events), 0)
 
     def test_abstract_methods_required(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         with self.assertRaises(TypeError):
             daemon = BaseStreamingDaemon(watch_path=self.temp_path)
 
     def test_graceful_shutdown_waits_for_queue(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         processed = []
 
@@ -243,7 +243,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertEqual(len(processed), 5)
 
     def test_integration_with_temp_directory(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
         import inotify
 
         detected_events = []
@@ -284,7 +284,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertTrue(any('example_module.py' in str(event) for event in detected_events))
 
     def test_health_monitoring_support(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         class TestDaemon(BaseStreamingDaemon):
             def process_file_event(self, event_type, file_path):
@@ -304,7 +304,7 @@ class TestBaseStreamingDaemon(unittest.TestCase):
         self.assertIn('uptime', health)
 
     def test_default_parameters(self):
-        from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+        from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
         class TestDaemon(BaseStreamingDaemon):
             def process_file_event(self, event_type, file_path):

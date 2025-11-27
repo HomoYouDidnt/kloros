@@ -42,14 +42,14 @@ class TtsBackend(Protocol):
         ...
 
 
-BackendName = Literal["mock", "piper", "supertonic", "smart"]
+BackendName = Literal["mock", "piper"]
 
 
 def create_tts_backend(name: BackendName, **kwargs) -> TtsBackend:
     """Create a TTS backend by name.
 
     Args:
-        name: Backend name ("mock", "piper", "supertonic", or "smart")
+        name: Backend name ("mock" or "piper")
         **kwargs: Backend-specific arguments
 
     Returns:
@@ -67,13 +67,5 @@ def create_tts_backend(name: BackendName, **kwargs) -> TtsBackend:
         from .piper_backend import PiperTtsBackend
 
         return PiperTtsBackend(**kwargs)
-    elif name == "supertonic":
-        from .supertonic_backend import SupertonicTtsBackend
-
-        return SupertonicTtsBackend(**kwargs)
-    elif name == "smart":
-        from .smart_router import SmartTTSRouter
-
-        return SmartTTSRouter(**kwargs)
     else:
         raise ValueError(f"Unknown TTS backend: {name}")

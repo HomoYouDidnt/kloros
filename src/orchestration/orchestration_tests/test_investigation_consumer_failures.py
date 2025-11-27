@@ -18,7 +18,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parents[4]))
 sys.path.insert(0, str(Path(__file__).parents[4] / "src"))
 
-from kloros.orchestration.investigation_consumer_daemon import InvestigationConsumer
+from src.orchestration.investigation_consumer_daemon import InvestigationConsumer
 from registry.semantic_evidence import SemanticEvidenceStore
 
 

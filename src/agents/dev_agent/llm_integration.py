@@ -34,7 +34,7 @@ class OllamaLLM:
             timeout: Request timeout in seconds
         """
         # Get defaults from SSOT config for code mode
-        from src.core.config.models_config import get_ollama_url_for_mode, get_ollama_model_for_mode
+        from src.config.models_config import get_ollama_url_for_mode, get_ollama_model_for_mode
         default_url = get_ollama_url_for_mode("code")
         default_model = get_ollama_model_for_mode("code")
 

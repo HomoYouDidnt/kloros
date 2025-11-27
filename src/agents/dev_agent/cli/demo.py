@@ -3,7 +3,7 @@
 import os, sys, json
 sys.path.insert(0, '/home/kloros')
 
-from src.agents.dev_agent.controller.dev_loop import run_task
+from src.dev_agent.controller.dev_loop import run_task
 
 PATCH = """--- a/src/app/__init__.py
 +++ b/src/app/__init__.py

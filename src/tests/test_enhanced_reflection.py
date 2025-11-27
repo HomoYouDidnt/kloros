@@ -20,7 +20,7 @@ def test_enhanced_reflection_import():
     print("Testing enhanced reflection imports...")
 
     try:
-        from src.cognition.mind.reflection import EnhancedIdleReflectionManager, get_config
+        from idle_reflection import EnhancedIdleReflectionManager, get_config
         print(" Enhanced reflection system imports successful")
         return True
     except ImportError as e:
@@ -32,7 +32,7 @@ def test_configuration_system():
     print("\nTesting configuration system...")
 
     try:
-        from src.cognition.mind.reflection.config import get_config, ReflectionConfig
+        from idle_reflection.config import get_config, ReflectionConfig
 
         config = get_config()
         print(f" Configuration loaded successfully")
@@ -51,7 +51,7 @@ def test_reflection_models():
     print("\nTesting reflection data models...")
 
     try:
-        from src.cognition.mind.reflection.models import ReflectionInsight, InsightType, ConfidenceLevel
+        from idle_reflection.models import ReflectionInsight, InsightType, ConfidenceLevel
 
         # Create a test insight
         insight = ReflectionInsight.create_from_analysis(
@@ -76,8 +76,8 @@ def test_analyzers():
     print("\nTesting analyzer initialization...")
 
     try:
-        from src.cognition.mind.reflection.config import get_config
-        from src.cognition.mind.reflection.analyzers import (
+        from idle_reflection.config import get_config
+        from idle_reflection.analyzers import (
             SemanticAnalyzer, MetaCognitiveAnalyzer,
             InsightSynthesizer, AdaptiveOptimizer
         )
@@ -105,7 +105,7 @@ def test_enhanced_manager():
     print("\nTesting enhanced reflection manager...")
 
     try:
-        from src.cognition.mind.reflection import EnhancedIdleReflectionManager
+        from idle_reflection import EnhancedIdleReflectionManager
 
         # Create manager without KLoROS instance
         manager = EnhancedIdleReflectionManager(None)

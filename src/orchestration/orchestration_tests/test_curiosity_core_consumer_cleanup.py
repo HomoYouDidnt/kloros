@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch, MagicMock
 sys.path.insert(0, str(Path(__file__).parents[4]))
 sys.path.insert(0, str(Path(__file__).parents[4] / "src"))
 
-from kloros.orchestration.curiosity_core_consumer_daemon import CuriosityCoreConsumerDaemon
+from src.orchestration.curiosity_core_consumer_daemon import CuriosityCoreConsumerDaemon
 
 
 class TestMemoryCleanup(unittest.TestCase):

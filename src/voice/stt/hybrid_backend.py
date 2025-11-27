@@ -15,7 +15,7 @@ from .memory_integration import ASRMemoryLogger, AdaptiveThresholdManager
 
 from .base import SttResult
 from .vosk_backend import VoskSttBackend
-from .faster_whisper_backend import FasterWhisperSttBackend
+from .whisper_backend import WhisperSttBackend
 
 
 class HybridSttBackend:
@@ -49,7 +49,7 @@ class HybridSttBackend:
         # Initialize both backends (share VOSK model if provided)
         self.vosk_backend = VoskSttBackend(model_dir=vosk_model_dir, vosk_model=vosk_model)
         
-        self.whisper_backend = FasterWhisperSttBackend(
+        self.whisper_backend = WhisperSttBackend(
             model_size=whisper_model_size,
             device=whisper_device,
             device_index=whisper_device_index,

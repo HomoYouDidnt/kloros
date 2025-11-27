@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.agents.c2c.claude_bridge import ClaudeC2CManager
+from src.c2c.claude_bridge import ClaudeC2CManager
 
 
 def restore_latest_session():
@@ -41,7 +41,7 @@ def restore_latest_session():
 
 def create_session_snapshot():
     """Create snapshot of current session (call at session end)."""
-    from src.agents.c2c.claude_bridge import capture_current_session
+    from src.c2c.claude_bridge import capture_current_session
     result = capture_current_session()
     print(f"✅ Session snapshot saved: {result['session_id']}")
     return result

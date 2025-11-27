@@ -218,7 +218,7 @@ def kloros_init_lock(tmp_path_factory, worker_id):
     Usage:
         def test_piper_run(kloros_init_lock):
             # Lock is automatically acquired here
-            from src.kloros_voice import KLoROS
+            from src.voice.kloros_voice import KLoROS
             k = KLoROS()
             # Only ONE worker can be inside KLoROS.__init__() at a time
 

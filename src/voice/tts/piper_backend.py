@@ -198,7 +198,7 @@ class PiperTtsBackend:
 
 # Add muting utility import at module level if not already present
 try:
-    from src.voice.audio.mic_mute import _mute_source as _mic_mute_util
+    from src.audio.mic_mute import _mute_source as _mic_mute_util
 except ImportError:
     def _mic_mute_util(mute: bool, source=None) -> bool:
         return False

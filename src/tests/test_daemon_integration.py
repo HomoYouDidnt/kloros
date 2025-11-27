@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, '/home/kloros/src')
 sys.path.insert(0, '/home/kloros')
 
-from src.orchestration.core.chem_bus_v2 import ChemPub, ChemMessage
+from src.orchestration.core.umn_bus import UMNPub as ChemPub, UMNMessage as ChemMessage
 from registry.curiosity_core import CuriosityCore
 from registry.capability_evaluator import CapabilityMatrix
 

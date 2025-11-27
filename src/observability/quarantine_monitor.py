@@ -8,8 +8,8 @@ backoff cooldown and demotion ceiling.
 import logging
 from typing import Callable, Iterable, List, Optional
 
-from kloros.lifecycle.state_machine import demote_to_dormant, retire
-from kloros.registry.lifecycle_registry import load_lifecycle_policy
+from src.lifecycle.state_machine import demote_to_dormant, retire
+from src.registry.lifecycle_registry import load_lifecycle_policy
 
 logger = logging.getLogger(__name__)
 

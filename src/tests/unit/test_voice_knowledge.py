@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tests.fixtures.umn_mock import MockUMNPub, MockUMNSub
-from src.kloros_voice_knowledge import KnowledgeZooid
+from src.voice.kloros_voice_knowledge import KnowledgeZooid
 
 
 @pytest.fixture
@@ -18,9 +18,9 @@ def zooid(monkeypatch):
     """Create KnowledgeZooid with mocked dependencies."""
     monkeypatch.setenv("KLR_ENABLE_KNOWLEDGE", "1")
 
-    with patch('src.kloros_voice_knowledge.UMNPub', MockUMNPub), \
-         patch('src.kloros_voice_knowledge.UMNSub', MockUMNSub), \
-         patch('src.kloros_voice_knowledge._RAGClass', None):
+    with patch('src.voice.kloros_voice_knowledge.UMNPub', MockUMNPub), \
+         patch('src.voice.kloros_voice_knowledge.UMNSub', MockUMNSub), \
+         patch('src.voice.kloros_voice_knowledge._RAGClass', None):
 
         zooid = KnowledgeZooid()
         yield zooid
@@ -81,9 +81,9 @@ class TestKnowledgeZooidStart:
         """Test that Knowledge can be disabled via environment."""
         monkeypatch.setenv("KLR_ENABLE_KNOWLEDGE", "0")
 
-        with patch('src.kloros_voice_knowledge.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_knowledge.UMNSub', MockUMNSub), \
-             patch('src.kloros_voice_knowledge._RAGClass', None):
+        with patch('src.voice.kloros_voice_knowledge.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_knowledge.UMNSub', MockUMNSub), \
+             patch('src.voice.kloros_voice_knowledge._RAGClass', None):
             zooid = KnowledgeZooid()
             zooid.start()
 
@@ -97,9 +97,9 @@ class TestRAGBackendInitialization:
         """Test RAG unavailable when module not imported."""
         monkeypatch.setenv("KLR_ENABLE_KNOWLEDGE", "1")
 
-        with patch('src.kloros_voice_knowledge.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_knowledge.UMNSub', MockUMNSub), \
-             patch('src.kloros_voice_knowledge._RAGClass', None):
+        with patch('src.voice.kloros_voice_knowledge.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_knowledge.UMNSub', MockUMNSub), \
+             patch('src.voice.kloros_voice_knowledge._RAGClass', None):
             zooid = KnowledgeZooid()
             zooid.start()
 
@@ -113,9 +113,9 @@ class TestRAGBackendInitialization:
 
         mock_rag_class = Mock()
 
-        with patch('src.kloros_voice_knowledge.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_knowledge.UMNSub', MockUMNSub), \
-             patch('src.kloros_voice_knowledge._RAGClass', mock_rag_class):
+        with patch('src.voice.kloros_voice_knowledge.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_knowledge.UMNSub', MockUMNSub), \
+             patch('src.voice.kloros_voice_knowledge._RAGClass', mock_rag_class):
             zooid = KnowledgeZooid()
             zooid.start()
 
@@ -135,9 +135,9 @@ class TestRAGBackendInitialization:
         mock_rag_instance = Mock()
         mock_rag_class.return_value = mock_rag_instance
 
-        with patch('src.kloros_voice_knowledge.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_knowledge.UMNSub', MockUMNSub), \
-             patch('src.kloros_voice_knowledge._RAGClass', mock_rag_class):
+        with patch('src.voice.kloros_voice_knowledge.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_knowledge.UMNSub', MockUMNSub), \
+             patch('src.voice.kloros_voice_knowledge._RAGClass', mock_rag_class):
             zooid = KnowledgeZooid()
             zooid.start()
 
@@ -160,9 +160,9 @@ class TestRAGBackendInitialization:
         mock_rag_instance = Mock()
         mock_rag_class.return_value = mock_rag_instance
 
-        with patch('src.kloros_voice_knowledge.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_knowledge.UMNSub', MockUMNSub), \
-             patch('src.kloros_voice_knowledge._RAGClass', mock_rag_class):
+        with patch('src.voice.kloros_voice_knowledge.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_knowledge.UMNSub', MockUMNSub), \
+             patch('src.voice.kloros_voice_knowledge._RAGClass', mock_rag_class):
             zooid = KnowledgeZooid()
             zooid.start()
 

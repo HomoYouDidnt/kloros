@@ -25,8 +25,8 @@ class SimplePlanner:
 
         if ra3_config.get("enabled", False):
             try:
-                from src.knowledge.ra3.library import get_default_library
-                from src.knowledge.ra3.policy import MacroPolicy
+                from src.ra3.library import get_default_library
+                from src.ra3.policy import MacroPolicy
 
                 library = get_default_library()
                 self.macro_policy = MacroPolicy(library, config=ra3_config)

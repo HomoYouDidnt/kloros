@@ -110,7 +110,7 @@ def test_kloros_integration():
         os.environ['KLR_ENABLE_SPEAKER_ID'] = '1'
         os.environ['KLR_SPEAKER_BACKEND'] = 'mock'
 
-        from src.kloros_voice import KLoROS
+        from src.voice.kloros_voice import KLoROS
 
         print("Creating KLoROS instance...")
         kloros = KLoROS()
@@ -200,7 +200,7 @@ def test_speaker_identification():
         os.environ['KLR_ENABLE_SPEAKER_ID'] = '1'
         os.environ['KLR_SPEAKER_BACKEND'] = 'mock'
 
-        from src.kloros_voice import KLoROS
+        from src.voice.kloros_voice import KLoROS
         kloros = KLoROS()
 
         # Simulate audio identification

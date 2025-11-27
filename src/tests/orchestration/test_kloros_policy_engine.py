@@ -54,7 +54,7 @@ def test_is_maintenance_mode_when_file_exists(temp_failed_signals_log, temp_main
     mock_pub = Mock()
     mock_sub = Mock()
 
-    with patch('src.kloros.orchestration.kloros_policy_engine.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
+    with patch('src.orchestration.kloros_policy_engine.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
         engine = KLoROSPolicyEngine(
             failed_signals_log=temp_failed_signals_log,
             chem_pub=mock_pub,
@@ -73,7 +73,7 @@ def test_is_maintenance_mode_when_file_missing(temp_failed_signals_log):
     if non_existent_path.exists():
         non_existent_path.unlink()
 
-    with patch('src.kloros.orchestration.kloros_policy_engine.MAINTENANCE_MODE_FILE', non_existent_path):
+    with patch('src.orchestration.kloros_policy_engine.MAINTENANCE_MODE_FILE', non_existent_path):
         engine = KLoROSPolicyEngine(
             failed_signals_log=temp_failed_signals_log,
             chem_pub=mock_pub,
@@ -223,7 +223,7 @@ async def test_process_advisory_skips_in_maintenance_mode(temp_failed_signals_lo
     mock_pub = Mock()
     mock_sub = Mock()
 
-    with patch('src.kloros.orchestration.kloros_policy_engine.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
+    with patch('src.orchestration.kloros_policy_engine.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
         engine = KLoROSPolicyEngine(
             failed_signals_log=temp_failed_signals_log,
             chem_pub=mock_pub,

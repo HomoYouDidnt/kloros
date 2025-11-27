@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
-from kloros.orchestration.chem_bus_v2 import ChemSub
-from kloros.orchestration.maintenance_mode import wait_for_normal_mode
+from src.orchestration.core.umn_bus import UMNSub as ChemSub
+from src.orchestration.maintenance_mode import wait_for_normal_mode
 
 logging.basicConfig(
     level=logging.INFO,

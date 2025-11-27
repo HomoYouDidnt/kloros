@@ -61,10 +61,10 @@ def test_in_phase_window():
     assert isinstance(result, bool)
 
 
-@patch('src.kloros.orchestration.coordinator._in_phase_window')
-@patch('src.kloros.orchestration.coordinator._phase_done_today')
-@patch('src.kloros.orchestration.coordinator._has_new_promotions')
-@patch('src.kloros.orchestration.coordinator._has_idle_intents')
+@patch('src.orchestration.coordinator._in_phase_window')
+@patch('src.orchestration.coordinator._phase_done_today')
+@patch('src.orchestration.coordinator._has_new_promotions')
+@patch('src.orchestration.coordinator._has_idle_intents')
 def test_tick_noop(mock_intents, mock_promos, mock_phase_done, mock_window):
     """Test tick with no actions needed."""
     orig = os.environ.get("KLR_ORCHESTRATION_MODE")

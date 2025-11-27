@@ -17,7 +17,7 @@ Governance:
 import logging
 from pathlib import Path
 from typing import List, Optional
-from kloros.introspection.documentation_catalog import DocumentCatalog, rtfm_before_investigation
+from src.introspection.documentation_catalog import DocumentCatalog, rtfm_before_investigation
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class DocReader:
 
                 # Commit learnings to memory (new or updated docs only)
                 try:
-                    from kloros.introspection.doc_learning import learn_from_document
+                    from src.introspection.doc_learning import learn_from_document
                     facts_count = learn_from_document(doc_path, content, record.title)
                     if facts_count > 0:
                         logger.info(f"[doc_reader]   💾 Committed {facts_count} learnings to memory")

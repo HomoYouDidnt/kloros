@@ -68,7 +68,7 @@ def test_is_maintenance_mode_when_file_exists(temp_failed_signals_log, temp_main
     mock_pub = Mock()
     mock_sub = Mock()
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
+    with patch('src.orchestration.dream_consumer_daemon.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
         daemon = DreamConsumerDaemon(
             failed_signals_log=temp_failed_signals_log,
             chem_pub=mock_pub,
@@ -87,7 +87,7 @@ def test_is_maintenance_mode_when_file_missing(temp_failed_signals_log):
     if non_existent_path.exists():
         non_existent_path.unlink()
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.MAINTENANCE_MODE_FILE', non_existent_path):
+    with patch('src.orchestration.dream_consumer_daemon.MAINTENANCE_MODE_FILE', non_existent_path):
         daemon = DreamConsumerDaemon(
             failed_signals_log=temp_failed_signals_log,
             chem_pub=mock_pub,
@@ -173,7 +173,7 @@ async def test_process_trigger_executes_dream(temp_failed_signals_log, mock_drea
         }
     }
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
+    with patch('src.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
         mock_trigger.run_once.return_value = mock_dream_result
         with patch.object(daemon, '_is_maintenance_mode', return_value=False):
             await daemon._process_trigger(msg)
@@ -199,7 +199,7 @@ async def test_process_trigger_skips_in_maintenance_mode(temp_failed_signals_log
     mock_pub = Mock()
     mock_sub = Mock()
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
+    with patch('src.orchestration.dream_consumer_daemon.MAINTENANCE_MODE_FILE', temp_maintenance_mode_file):
         daemon = DreamConsumerDaemon(
             failed_signals_log=temp_failed_signals_log,
             chem_pub=mock_pub,
@@ -211,7 +211,7 @@ async def test_process_trigger_skips_in_maintenance_mode(temp_failed_signals_log
             "facts": {"reason": "test", "promotion_count": 3}
         }
 
-        with patch('src.kloros.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
+        with patch('src.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
             await daemon._process_trigger(msg)
 
         mock_trigger.run_once.assert_not_called()
@@ -235,7 +235,7 @@ async def test_process_trigger_writes_dead_letter_on_error(temp_failed_signals_l
         "facts": {"reason": "test"}
     }
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
+    with patch('src.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
         mock_trigger.run_once.side_effect = RuntimeError("D-REAM execution failed")
         with patch.object(daemon, '_is_maintenance_mode', return_value=False):
             await daemon._process_trigger(msg)
@@ -269,7 +269,7 @@ async def test_process_trigger_extracts_topic_from_facts(temp_failed_signals_log
         }
     }
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
+    with patch('src.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
         mock_trigger.run_once.return_value = mock_dream_result
         with patch.object(daemon, '_is_maintenance_mode', return_value=False):
             await daemon._process_trigger(msg)
@@ -304,7 +304,7 @@ async def test_process_trigger_handles_failed_dream_execution(temp_failed_signal
         duration_s=45.67
     )
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
+    with patch('src.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
         mock_trigger.run_once.return_value = failed_result
         with patch.object(daemon, '_is_maintenance_mode', return_value=False):
             await daemon._process_trigger(msg)
@@ -381,7 +381,7 @@ async def test_process_trigger_handles_unknown_signal(temp_failed_signals_log):
         "facts": {}
     }
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
+    with patch('src.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
         with patch.object(daemon, '_is_maintenance_mode', return_value=False):
             await daemon._process_trigger(msg)
 
@@ -437,7 +437,7 @@ async def test_multiple_dream_triggers_processed_sequentially(temp_failed_signal
         "facts": {"reason": "test2", "promotion_count": 5}
     }
 
-    with patch('src.kloros.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
+    with patch('src.orchestration.dream_consumer_daemon.dream_trigger') as mock_trigger:
         mock_trigger.run_once.return_value = mock_dream_result
         with patch.object(daemon, '_is_maintenance_mode', return_value=False):
             await daemon._process_trigger(msg1)

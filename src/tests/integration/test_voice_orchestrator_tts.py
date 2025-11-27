@@ -17,7 +17,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.orchestration.core.umn_bus_v2 import UMNPub, UMNSub
-from src.kloros_voice_tts import TTSZooid
+from src.voice.kloros_voice_tts import TTSZooid
 
 
 @dataclass

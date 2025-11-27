@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from kloros.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
+from src.orchestration.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
 
 
 class TestCapabilityPatternDetection(unittest.TestCase):

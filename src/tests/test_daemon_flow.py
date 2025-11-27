@@ -9,7 +9,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.orchestration.core.umn_bus import UMNPub, UMNSub
+from src.orchestration.core.umn_bus import UMNPub as ChemPub, UMNSub as ChemSub
 import time
 import threading
 
@@ -25,7 +25,7 @@ def main():
 
     # Create subscriber (like CuriosityCore does)
     print("[1] Creating subscriber for curiosity.integration_question...")
-    sub = UMNSub(
+    sub = ChemSub(
         topic="curiosity.integration_question",
         on_json=on_question,
         zooid_name="test_curiosity",
@@ -39,7 +39,7 @@ def main():
 
     # Create publisher (like integration_monitor_daemon does)
     print("\n[3] Creating publisher...")
-    pub = UMNPub()
+    pub = ChemPub()
     print("   ✓ Publisher created")
     time.sleep(1)
 
@@ -66,7 +66,7 @@ def main():
     print(f"\n{'='*60}")
     if len(received_questions) > 0:
         print(f"✅ SUCCESS: Received {len(received_questions)} question(s)!")
-        print("\nDaemon → UMN → CuriosityCore flow is WORKING!")
+        print("\nDaemon → ChemBus → CuriosityCore flow is WORKING!")
         print("\nReceived question details:")
         for q in received_questions:
             print(f"  - Signal: {q.get('signal')}")

@@ -69,7 +69,7 @@ class StandaloneKLoROS:
         """Initialize memory system."""
         try:
             if os.getenv('KLR_ENABLE_MEMORY', '0') == '1':
-                from src.kloros_memory.integration import create_memory_enhanced_kloros
+                from src.memory.integration import create_memory_enhanced_kloros
                 self.memory_enhanced = create_memory_enhanced_kloros(self)
                 print("[chat] Memory system initialized")
 

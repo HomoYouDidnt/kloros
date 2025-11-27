@@ -356,7 +356,7 @@ def get_memory_insights(kloros_instance) -> Dict[str, Any]:
         
         # Get memory statistics from MemoryStore database
         try:
-            from src.kloros_memory.storage import MemoryStore
+            from src.memory.storage import MemoryStore
             store = MemoryStore()
             stats = store.get_stats()
             

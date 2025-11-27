@@ -50,7 +50,7 @@ class SemanticToolMatcher:
     def _initialize_model(self):
         """Initialize the sentence-transformers model using shared embedding engine."""
         try:
-            from src.kloros_memory.embeddings import get_embedding_engine
+            from src.memory.embeddings import get_embedding_engine
             print(f"[semantic] Using shared embedding engine (singleton)")
             self.embedding_engine = get_embedding_engine()
             # Keep self.model for backwards compatibility with existing code

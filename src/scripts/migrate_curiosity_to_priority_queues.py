@@ -15,7 +15,7 @@ sys.path.insert(0, '/home/kloros/src')
 
 from registry.question_prioritizer import QuestionPrioritizer
 from registry.curiosity_core import CuriosityQuestion, ActionClass, QuestionStatus
-from kloros.orchestration.chem_bus_v2 import ChemPub
+from src.orchestration.core.umn_bus import UMNPub as ChemPub
 
 CURIOSITY_FEED = Path.home() / '.kloros' / 'curiosity_feed.json'
 

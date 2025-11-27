@@ -107,3 +107,4 @@ MILESTONES/
 *.ogg
 voice_samples/
 audio_samples/
+.ssh/

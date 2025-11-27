@@ -27,8 +27,8 @@ from typing import Dict, Any, Optional
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from kloros.orchestration.chem_bus_v2 import ChemPub
-from kloros.orchestration.maintenance_mode import wait_for_normal_mode
+from src.orchestration.core.umn_bus import UMNPub as ChemPub
+from src.orchestration.maintenance_mode import wait_for_normal_mode
 
 logging.basicConfig(
     level=logging.INFO,

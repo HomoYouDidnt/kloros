@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tests.fixtures.umn_mock import MockUMNPub, MockUMNSub
-from src.kloros_voice_llm import LLMZooid
+from src.voice.kloros_voice_llm import LLMZooid
 
 
 @pytest.fixture
@@ -22,8 +22,8 @@ def zooid(monkeypatch):
     monkeypatch.setenv("KLR_REMOTE_LLM_MODEL", "test_remote_model")
     monkeypatch.setenv("KLR_DASHBOARD_URL", "http://localhost:5002")
 
-    with patch('src.kloros_voice_llm.UMNPub', MockUMNPub), \
-         patch('src.kloros_voice_llm.UMNSub', MockUMNSub):
+    with patch('src.voice.kloros_voice_llm.UMNPub', MockUMNPub), \
+         patch('src.voice.kloros_voice_llm.UMNSub', MockUMNSub):
 
         zooid = LLMZooid()
         yield zooid
@@ -93,8 +93,8 @@ class TestLLMZooidStart:
         """Test that LLM can be disabled via environment."""
         monkeypatch.setenv("KLR_ENABLE_LLM", "0")
 
-        with patch('src.kloros_voice_llm.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_llm.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_llm.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_llm.UMNSub', MockUMNSub):
             zooid = LLMZooid()
             zooid.start()
 

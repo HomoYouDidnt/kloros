@@ -19,9 +19,9 @@ from typing import Optional
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.kloros_memory.decay import DecayEngine, DecayConfig
-from src.kloros_memory.storage import MemoryStore
-from kloros.orchestration.maintenance_mode import wait_for_normal_mode
+from src.memory.decay import DecayEngine, DecayConfig
+from src.memory.storage import MemoryStore
+from src.orchestration.maintenance_mode import wait_for_normal_mode
 
 logger = logging.getLogger(__name__)
 

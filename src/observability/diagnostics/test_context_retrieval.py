@@ -19,10 +19,10 @@ test_queries = [
 ]
 
 try:
-    from src.kloros_memory.integration import MemoryEnhancedKLoROS
-    from src.kloros_memory.storage import MemoryStore
-    from src.kloros_memory.retriever import ContextRetriever
-    from src.kloros_memory.models import ContextRetrievalRequest
+    from src.memory.integration import MemoryEnhancedKLoROS
+    from src.memory.storage import MemoryStore
+    from src.memory.retriever import ContextRetriever
+    from src.memory.models import ContextRetrievalRequest
 
     print("✅ Memory modules loaded successfully")
     print()

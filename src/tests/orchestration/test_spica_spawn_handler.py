@@ -37,19 +37,19 @@ def mock_spica_intent(tmp_path):
     return {"intents_dir": intents_dir, "intent_file": intent_file}
 
 
-@patch("src.kloros.orchestration.coordinator._archive_intent")
-@patch("src.kloros.orchestration.state_manager.acquire")
-@patch("src.kloros.orchestration.state_manager.release")
-@patch("src.kloros.orchestration.intent_queue.process_queue")
-@patch("src.kloros.orchestration.coordinator._has_idle_intents")
-@patch("src.kloros.orchestration.winner_deployer.run_deployment_cycle")
-@patch("src.kloros.orchestration.curiosity_processor.process_curiosity_feed")
-@patch("src.kloros.orchestration.coordinator._is_orchestration_enabled")
+@patch("src.orchestration.coordinator._archive_intent")
+@patch("src.orchestration.state_manager.acquire")
+@patch("src.orchestration.state_manager.release")
+@patch("src.orchestration.intent_queue.process_queue")
+@patch("src.orchestration.coordinator._has_idle_intents")
+@patch("src.orchestration.winner_deployer.run_deployment_cycle")
+@patch("src.orchestration.curiosity_processor.process_curiosity_feed")
+@patch("src.orchestration.coordinator._is_orchestration_enabled")
 @patch("src.dream.config_tuning.llm_code_generator.LLMCodeGenerator")
 @patch("src.dream.config_tuning.spica_spawner.spawn_instance")
 @patch("src.dream.config_tuning.spica_spawner.apply_code_patch")
 @patch("src.dream.config_tuning.spica_spawner.run_tests_in_instance")
-@patch("src.kloros.orchestration.escrow_manager.EscrowManager")
+@patch("src.orchestration.escrow_manager.EscrowManager")
 def test_spica_spawn_handler_success(
     mock_escrow,
     mock_run_tests,
@@ -116,14 +116,14 @@ def test_spica_spawn_handler_success(
     mock_escrow_instance.add_to_escrow.assert_called_once()
 
 
-@patch("src.kloros.orchestration.coordinator._archive_intent")
-@patch("src.kloros.orchestration.state_manager.acquire")
-@patch("src.kloros.orchestration.state_manager.release")
-@patch("src.kloros.orchestration.intent_queue.process_queue")
-@patch("src.kloros.orchestration.coordinator._has_idle_intents")
-@patch("src.kloros.orchestration.winner_deployer.run_deployment_cycle")
-@patch("src.kloros.orchestration.curiosity_processor.process_curiosity_feed")
-@patch("src.kloros.orchestration.coordinator._is_orchestration_enabled")
+@patch("src.orchestration.coordinator._archive_intent")
+@patch("src.orchestration.state_manager.acquire")
+@patch("src.orchestration.state_manager.release")
+@patch("src.orchestration.intent_queue.process_queue")
+@patch("src.orchestration.coordinator._has_idle_intents")
+@patch("src.orchestration.winner_deployer.run_deployment_cycle")
+@patch("src.orchestration.curiosity_processor.process_curiosity_feed")
+@patch("src.orchestration.coordinator._is_orchestration_enabled")
 @patch("src.dream.config_tuning.llm_code_generator.LLMCodeGenerator")
 def test_spica_spawn_handler_llm_failure(
     mock_llm,
@@ -171,14 +171,14 @@ def test_spica_spawn_handler_llm_failure(
     mock_archive.assert_called()
 
 
-@patch("src.kloros.orchestration.coordinator._archive_intent")
-@patch("src.kloros.orchestration.state_manager.acquire")
-@patch("src.kloros.orchestration.state_manager.release")
-@patch("src.kloros.orchestration.intent_queue.process_queue")
-@patch("src.kloros.orchestration.coordinator._has_idle_intents")
-@patch("src.kloros.orchestration.winner_deployer.run_deployment_cycle")
-@patch("src.kloros.orchestration.curiosity_processor.process_curiosity_feed")
-@patch("src.kloros.orchestration.coordinator._is_orchestration_enabled")
+@patch("src.orchestration.coordinator._archive_intent")
+@patch("src.orchestration.state_manager.acquire")
+@patch("src.orchestration.state_manager.release")
+@patch("src.orchestration.intent_queue.process_queue")
+@patch("src.orchestration.coordinator._has_idle_intents")
+@patch("src.orchestration.winner_deployer.run_deployment_cycle")
+@patch("src.orchestration.curiosity_processor.process_curiosity_feed")
+@patch("src.orchestration.coordinator._is_orchestration_enabled")
 @patch("src.dream.config_tuning.spica_spawner.spawn_instance")
 @patch("src.dream.config_tuning.llm_code_generator.LLMCodeGenerator")
 def test_spica_spawn_handler_no_target_files(

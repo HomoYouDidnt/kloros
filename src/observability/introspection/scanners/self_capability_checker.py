@@ -255,7 +255,7 @@ class SelfCapabilityChecker:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from kloros.introspection.documentation_catalog import DocumentCatalog
+            from src.introspection.documentation_catalog import DocumentCatalog
 
             catalog = DocumentCatalog()
 

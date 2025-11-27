@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-End-to-end test: Daemon → UMN → CuriosityCore
+End-to-end test: Daemon → ChemBus → CuriosityCore
 
 Verifies that:
-1. Daemons can emit questions to UMN
+1. Daemons can emit questions to ChemBus
 2. CuriosityCore subscriptions receive the messages
 3. Questions appear in CuriosityCore's daemon_questions list
 """
@@ -16,15 +16,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from src.orchestration.core.umn_bus import UMNPub
-from src.cognition.mind.cognition.curiosity_core import CuriosityCore
+from src.orchestration.core.umn_bus import UMNPub as ChemPub
+from registry.curiosity_core import CuriosityCore
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 
 def test_daemon_to_curiosity_flow():
-    """Test that daemon questions flow to CuriosityCore via UMN."""
+    """Test that daemon questions flow to CuriosityCore via ChemBus."""
 
     logger.info("=== Starting End-to-End Test ===")
 
@@ -33,9 +33,9 @@ def test_daemon_to_curiosity_flow():
     curiosity = CuriosityCore(enable_daemon_subscriptions=True)
     time.sleep(2)  # Give subscriptions time to initialize
 
-    # Step 2: Emit a test question via UMN (simulating a daemon)
-    logger.info("Step 2: Emitting test question via UMN (simulating daemon)...")
-    pub = UMNPub()
+    # Step 2: Emit a test question via ChemBus (simulating a daemon)
+    logger.info("Step 2: Emitting test question via ChemBus (simulating daemon)...")
+    pub = ChemPub()
 
     test_timestamp = int(time.time())
     question_id = f'test_integration_{test_timestamp}'
@@ -75,7 +75,7 @@ def test_daemon_to_curiosity_flow():
     else:
         logger.warning("✗ FAILURE: CuriosityCore received 0 daemon questions")
         logger.warning("  This might indicate:")
-        logger.warning("  1. UMN subscription not active")
+        logger.warning("  1. ChemBus subscription not active")
         logger.warning("  2. Message routing issue")
         logger.warning("  3. Callback not being invoked")
         return False
@@ -86,7 +86,7 @@ def main():
 
     if success:
         logger.info("\n=== Test PASSED ===")
-        logger.info("Daemon → UMN → CuriosityCore flow is working!")
+        logger.info("Daemon → ChemBus → CuriosityCore flow is working!")
         sys.exit(0)
     else:
         logger.error("\n=== Test FAILED ===")

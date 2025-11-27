@@ -20,7 +20,7 @@ class TestIntegrationMonitorDaemon(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_daemon_initialization(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -33,7 +33,7 @@ class TestIntegrationMonitorDaemon(unittest.TestCase):
         self.assertIsInstance(daemon.data_flows, dict)
 
     def test_file_hash_computation(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -52,7 +52,7 @@ class TestIntegrationMonitorDaemon(unittest.TestCase):
         self.assertEqual(file_hash, expected_hash)
 
     def test_change_detection_skips_unchanged_files(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -69,7 +69,7 @@ class TestIntegrationMonitorDaemon(unittest.TestCase):
         self.assertFalse(result2)
 
     def test_ast_parsing_extracts_queue_producers(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -97,7 +97,7 @@ class DataProducer:
         self.assertEqual(queue_flow['channel_type'], 'queue')
 
     def test_ast_parsing_extracts_consumers(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -125,7 +125,7 @@ class EventProcessor:
         self.assertIsNotNone(queue_flow['consumer'])
 
     def test_orphaned_queue_detection(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -150,7 +150,7 @@ class EventProcessor:
         self.assertIn('ProducerClass', orphaned[0]['producers'])
 
     def test_missing_wiring_detection(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -176,7 +176,7 @@ class BrokenComponent:
 
     @patch('kloros.daemons.integration_monitor_daemon.ChemPub')
     def test_chembus_question_emission(self, mock_chem_pub):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         mock_pub_instance = MagicMock()
         mock_chem_pub.return_value = mock_pub_instance
@@ -207,7 +207,7 @@ class BrokenComponent:
         self.assertIn('facts', call_args.kwargs)
 
     def test_state_save_and_load(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -234,7 +234,7 @@ class BrokenComponent:
         self.assertIn('test_queue', daemon2.data_flows)
 
     def test_process_file_event_skips_unchanged(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -262,7 +262,7 @@ class TestClass:
                            "Should not emit on second call with unchanged file")
 
     def test_memory_usage_stays_bounded(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
         import psutil
         import os
 
@@ -292,7 +292,7 @@ class TestClass{i}:
             f"Memory usage {memory_mb:.2f}MB exceeds 150MB limit")
 
     def test_integration_with_base_daemon(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -309,7 +309,7 @@ class TestClass{i}:
         self.assertIn('cache_size', health)
 
     def test_delete_event_handling(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,
@@ -330,7 +330,7 @@ class TestClass{i}:
         self.assertNotIn(file_path_str, daemon.file_hashes)
 
     def test_concurrent_file_processing(self):
-        from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+        from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
 
         daemon = IntegrationMonitorDaemon(
             watch_path=self.temp_path,

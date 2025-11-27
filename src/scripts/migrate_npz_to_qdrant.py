@@ -50,7 +50,7 @@ def main():
 
     # Initialize Qdrant vector store
     print("[migrate] Initializing Qdrant vector store...")
-    from src.kloros_memory.vector_store_qdrant import QdrantVectorStore
+    from src.memory.vector_store_qdrant import QdrantVectorStore
 
     vector_store = QdrantVectorStore(
         persist_directory=Path("~/.kloros/vectordb_qdrant").expanduser(),

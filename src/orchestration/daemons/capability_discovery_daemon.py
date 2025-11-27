@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from collections import OrderedDict
 
-from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 from registry.semantic_analysis import ArchitecturalReasoner
 
 try:
-    from kloros.orchestration.chem_bus_v2 import ChemPub
+    from src.orchestration.core.umn_bus import UMNPub as ChemPub
 except ImportError:
     ChemPub = None
 

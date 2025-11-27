@@ -9,10 +9,10 @@ import logging
 from uuid import UUID
 
 try:
-    from src.orchestration.core.umn_bus import UMNPub
+    from src.orchestration.core.umn_bus import UMNPub as ChemPub
     HAS_CHEMBUS = True
 except ImportError:
-    UMNPub = None
+    ChemPub = None
     HAS_CHEMBUS = False
 
 try:
@@ -30,7 +30,7 @@ except ImportError:
     HAS_QDRANT = False
     QdrantClient = None
 
-from src.cognition.mind.memory.embeddings import get_embedding_engine
+from kloros_memory.embeddings import get_embedding_engine
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +66,10 @@ class QdrantBulletStore:
         else:
             logger.debug(f"[ace] Using existing collection '{collection_name}'")
 
-        # Initialize UMN publisher for operation signals
-        self.chem_pub = UMNPub() if HAS_CHEMBUS else None
+        # Initialize ChemBus publisher for operation signals
+        self.chem_pub = ChemPub() if HAS_CHEMBUS else None
         if self.chem_pub:
-            logger.debug("[ace] UMN signal emission enabled")
+            logger.debug("[ace] ChemBus signal emission enabled")
 
         print("[ace] Bullet store initialized (Qdrant)")
 
@@ -116,7 +116,7 @@ class QdrantBulletStore:
             points=[point]
         )
 
-        # Emit UMN signal
+        # Emit ChemBus signal
         latency_ms = (time.time() - start_time) * 1000
         if self.chem_pub:
             self.chem_pub.emit(
@@ -194,7 +194,7 @@ class QdrantBulletStore:
 
         final_bullets = bullets[:k]
 
-        # Emit UMN signal
+        # Emit ChemBus signal
         latency_ms = (time.time() - start_time) * 1000
         if self.chem_pub:
             avg_win_rate = sum(b['metadata'].get('win_rate', 0.0) for b in final_bullets) / len(final_bullets) if final_bullets else 0.0
@@ -254,7 +254,7 @@ class QdrantBulletStore:
                 points=[point_id]
             )
 
-            # Emit UMN signal
+            # Emit ChemBus signal
             latency_ms = (time.time() - start_time) * 1000
             if self.chem_pub:
                 self.chem_pub.emit(

@@ -19,7 +19,7 @@ def test_ollama_call(monkeypatch, kloros_init_lock):
 
     # Import and call KLoROS.chat minimal flow
     # Lock ensures only ONE worker initializes KLoROS at a time
-    from src.kloros_voice import KLoROS
+    from src.voice.kloros_voice import KLoROS
 
     k = KLoROS()
     # Bypass model dependency for this test
@@ -44,7 +44,7 @@ def test_piper_run(monkeypatch, tmp_path, kloros_init_lock):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     # Lock prevents 24-48 workers from simultaneously loading 12GB+ ML models
-    from src.kloros_voice import KLoROS
+    from src.voice.kloros_voice import KLoROS
 
     k = KLoROS()
     # point to a non-existent but harmless piper path via env override

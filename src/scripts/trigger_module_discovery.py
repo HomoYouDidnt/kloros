@@ -9,7 +9,7 @@ signals for all undiscovered modules.
 import sys
 sys.path.insert(0, '/home/kloros/src')
 
-from src.orchestration.core.chem_bus_v2 import ChemPub
+from src.orchestration.core.umn_bus import UMNPub as ChemPub
 from registry.curiosity_core import ModuleDiscoveryMonitor
 import time
 

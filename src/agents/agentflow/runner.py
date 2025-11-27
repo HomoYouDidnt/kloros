@@ -124,7 +124,7 @@ class AgentFlowRunner:
         # Generate ACE bullets from successful episodes
         if self.ace_store and outcome["success"]:
             try:
-                from src.agents.ace.generator import BulletGenerator
+                from src.ace.generator import BulletGenerator
                 generator = BulletGenerator(self.config.get("ace", {}))
                 delta, evidence = generator.propose(episode)
 

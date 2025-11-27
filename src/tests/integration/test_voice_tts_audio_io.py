@@ -18,7 +18,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.orchestration.core.umn_bus_v2 import UMNPub, UMNSub
-from src.kloros_voice_audio_io import AudioIOZooid
+from src.voice.kloros_voice_audio_io import AudioIOZooid
 
 
 @pytest.fixture

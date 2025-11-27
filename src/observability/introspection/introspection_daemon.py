@@ -19,9 +19,9 @@ from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from kloros.orchestration.chem_bus_v2 import ChemSub, ChemPub
-from kloros.orchestration.maintenance_mode import wait_for_normal_mode
-from kloros.introspection.observation_cache import ObservationCache
+from src.orchestration.core.umn_bus import UMNSub as ChemSub, UMNPub as ChemPub
+from src.orchestration.maintenance_mode import wait_for_normal_mode
+from src.introspection.observation_cache import ObservationCache
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "src"))
 
@@ -32,12 +32,12 @@ from registry.capability_scanners import (
     BottleneckDetectorScanner,
     ComparativeAnalyzerScanner
 )
-from kloros.introspection.scanners.service_health_correlator import ServiceHealthCorrelator
-from kloros.introspection.scanners.code_quality_scanner import CodeQualityScanner
-from kloros.introspection.scanners.test_coverage_scanner import TestCoverageScanner
-from kloros.introspection.scanners.performance_profiler_scanner import PerformanceProfilerScanner
-from kloros.introspection.scanners.cross_system_pattern_scanner import CrossSystemPatternScanner
-from kloros.introspection.scanners.documentation_completeness_scanner import DocumentationCompletenessScanner
+from src.introspection.scanners.service_health_correlator import ServiceHealthCorrelator
+from src.introspection.scanners.code_quality_scanner import CodeQualityScanner
+from src.introspection.scanners.test_coverage_scanner import TestCoverageScanner
+from src.introspection.scanners.performance_profiler_scanner import PerformanceProfilerScanner
+from src.introspection.scanners.cross_system_pattern_scanner import CrossSystemPatternScanner
+from src.introspection.scanners.documentation_completeness_scanner import DocumentationCompletenessScanner
 
 logging.basicConfig(
     level=logging.INFO,

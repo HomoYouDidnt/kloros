@@ -145,24 +145,16 @@ def stream_piper_to_pwcat(
     """
     model_path = os.path.expanduser(model_path)
 
-    piper_cmd = ["piper", "--model", model_path, "--output_raw"]
-    pwcat_cmd = ["pw-cat", "--playback", "--rate", "22050", "--channels", "1", "--format", "s16"]
-    if sink:
-        pwcat_cmd.extend(["--target", sink])
+    # Build Piper command
+    piper_cmd = f"echo {text!r} | piper --model {model_path} --output_raw"
 
-    piper_proc = subprocess.Popen(
-        piper_cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    pwcat_proc = subprocess.Popen(
-        pwcat_cmd,
-        stdin=piper_proc.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    piper_proc.stdout.close()
-    piper_proc.communicate(input=text.encode())
-    pwcat_proc.communicate()
-    return pwcat_proc.returncode
+    # Build pw-cat command
+    pwcat_cmd = "pw-cat --playback --rate 22050 --channels 1 --format s16"
+    if sink:
+        pwcat_cmd += f" --target {sink}"
+
+    # Pipe Piper output to pw-cat
+    full_cmd = f"{piper_cmd} | {pwcat_cmd}"
+
+    proc = subprocess.run(full_cmd, shell=True, capture_output=True)
+    return proc.returncode

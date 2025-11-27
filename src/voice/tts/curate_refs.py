@@ -14,7 +14,7 @@ def speech_ms(pcm, sr, vad_aggr=2, frame_ms=20, max_gap_ms=500):
     Returns:
         Milliseconds of speech
     """
-    from src.compat import webrtcvad
+    import webrtcvad
     vad = webrtcvad.Vad(int(vad_aggr))
     frame = int(sr * frame_ms / 1000)
     speech = np.zeros(len(pcm), dtype=bool)

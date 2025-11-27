@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, call
 
 from kloros_study_memory_bridge import DeadLetterQueue, StudyMemoryBridge
-from src.cognition.mind.memory.models import EventType
+from kloros_memory.models import EventType
 
 
 class TestDeadLetterQueue(unittest.TestCase):
@@ -166,8 +166,8 @@ class TestTieredFormatting(unittest.TestCase):
         self.db_path = os.path.join(self.temp_dir, "test_memory.db")
 
         with patch('kloros_study_memory_bridge.MemoryLogger'):
-            with patch('kloros_study_memory_bridge.UMNPub'):
-                with patch('kloros_study_memory_bridge.UMNSub'):
+            with patch('kloros_study_memory_bridge.ChemPub'):
+                with patch('kloros_study_memory_bridge.ChemSub'):
                     self.bridge = StudyMemoryBridge()
                     self.bridge.dead_letter = DeadLetterQueue(db_path=self.db_path)
 
@@ -263,8 +263,8 @@ class TestStudyMemoryBridge(unittest.TestCase):
         self.mock_subscriber = Mock()
 
         with patch('kloros_study_memory_bridge.MemoryLogger', return_value=self.mock_logger):
-            with patch('kloros_study_memory_bridge.UMNPub', return_value=self.mock_publisher):
-                with patch('kloros_study_memory_bridge.UMNSub', return_value=self.mock_subscriber):
+            with patch('kloros_study_memory_bridge.ChemPub', return_value=self.mock_publisher):
+                with patch('kloros_study_memory_bridge.ChemSub', return_value=self.mock_subscriber):
                     self.bridge = StudyMemoryBridge()
                     self.bridge.dead_letter = DeadLetterQueue(db_path=self.db_path)
 

@@ -18,12 +18,6 @@ def _engine():
 
 @track_tool()
 def run_cmd(path: str, cmd: str, timeout_sec: int | None = None, lang: str = "python"):
-    """Execute a command in a sandboxed environment.
-
-    Security: shell=True is intentional - this function executes arbitrary commands
-    but security is enforced through: (1) path validation against work_root,
-    (2) docker isolation with restricted network/memory/CPU, (3) read-only rootfs.
-    """
     pol = load_policy()
     engine = pol.get("sandbox",{}).get("engine") or _engine()
     work_root = pathlib.Path(pol["sandbox"]["work_dir"]).resolve()

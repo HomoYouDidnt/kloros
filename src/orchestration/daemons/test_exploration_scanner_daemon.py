@@ -5,7 +5,7 @@ import time
 import pickle
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-from kloros.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
+from src.orchestration.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
 
 
 @pytest.fixture

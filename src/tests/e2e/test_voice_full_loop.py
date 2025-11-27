@@ -19,9 +19,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.orchestration.core.umn_bus_v2 import UMNPub, UMNSub
-from src.kloros_voice_audio_io import AudioIOZooid
-from src.kloros_voice_stt import STTZooid
-from src.kloros_voice_tts import TTSZooid
+from src.voice.kloros_voice_audio_io import AudioIOZooid
+from src.voice.kloros_voice_stt import STTZooid
+from src.voice.kloros_voice_tts import TTSZooid
 
 
 @dataclass
@@ -148,8 +148,8 @@ class TestVoiceFullLoop:
             """Handle playback complete signal."""
             playback_complete_received.set()
 
-        with patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend), \
-             patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
+        with patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend), \
+             patch('src.voice.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
 
             audio_io = AudioIOZooid()
             stt = STTZooid()
@@ -293,8 +293,8 @@ class TestVoiceFullLoop:
         time.sleep(0.3)
 
         try:
-            with patch('src.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend), \
-                 patch('src.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
+            with patch('src.voice.kloros_voice_stt.create_stt_backend', return_value=mock_stt_backend), \
+                 patch('src.voice.kloros_voice_tts.create_tts_backend', return_value=mock_tts_backend):
 
                 audio_io = AudioIOZooid()
                 stt = STTZooid()

@@ -467,7 +467,7 @@ def _generate_evidence_bundle(
 ) -> None:
     """Generate and save evidence bundle for promotion decision."""
     try:
-        from src.kloros.synthesis.evidence import generate_bundle, save_bundle
+        from src.synthesis.evidence import generate_bundle, save_bundle
         
         # Convert shadow outcomes to structured format
         shadow_data = []

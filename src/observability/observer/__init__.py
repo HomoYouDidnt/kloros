@@ -16,7 +16,7 @@ from .sources import Event, JournaldSource, InotifySource, MetricsSource
 from .rules import RuleEngine, Intent
 from .emit import IntentEmitter
 # NOTE: Don't import Observer from run.py to avoid RuntimeWarning when
-# running as `python -m src.kloros.observer.run`
+# running as `python -m src.observability.observer.run`
 
 __all__ = [
     "Event",

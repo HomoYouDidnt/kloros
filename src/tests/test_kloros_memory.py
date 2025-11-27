@@ -20,7 +20,7 @@ if str(repo_root) not in sys.path:
 
 # Test imports
 try:
-    from src.kloros_memory import (
+    from src.memory import (
         Event,
         Episode,
         EpisodeSummary,
@@ -31,6 +31,7 @@ try:
         ContextRetriever,
         ContextRetrievalRequest
     )
+    from src.memory.housekeeping import MemoryHousekeeper
     print("✅ All memory modules imported successfully")
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -51,6 +52,7 @@ class MemorySystemTester:
         self.logger = MemoryLogger(self.store)
         self.condenser = EpisodeCondenser(self.store)
         self.retriever = ContextRetriever(self.store)
+        self.housekeeper = MemoryHousekeeper(self.store, self.logger)
 
         # Test data
         self.test_conversation_id = str(uuid.uuid4())
@@ -275,6 +277,33 @@ class MemorySystemTester:
             print(f"  ❌ Context retrieval test failed: {e}")
             return False
 
+    def test_housekeeping(self) -> bool:
+        """Test housekeeping and maintenance functionality."""
+        print("\n🧪 Testing housekeeping...")
+
+        try:
+            # Get initial stats
+            stats = self.housekeeper.get_comprehensive_stats()
+            print(f"  ✅ Initial stats: {stats['total_events']} events, {stats['total_episodes']} episodes")
+
+            # Test integrity validation
+            integrity_issues = self.housekeeper.validate_data_integrity()
+            print(f"  ✅ Found {len(integrity_issues)} integrity issues")
+
+            # Test health report
+            health_report = self.housekeeper.get_health_report()
+            print(f"  ✅ Health score: {health_report['health_score']:.1f} ({health_report['status']})")
+
+            # Test export summary
+            summary = self.housekeeper.export_memory_summary(days=1)
+            print(f"  ✅ Memory summary: {len(summary['conversations'])} conversations")
+
+            return True
+
+        except Exception as e:
+            print(f"  ❌ Housekeeping test failed: {e}")
+            return False
+
     def test_integration_scenario(self) -> bool:
         """Test complete integration scenario."""
         print("\n🧪 Testing integration scenario...")
@@ -357,6 +386,7 @@ class MemorySystemTester:
             ("Logging System", self.test_logging_system),
             ("Episode Condensation", self.test_episode_condensation),
             ("Context Retrieval", self.test_context_retrieval),
+            ("Housekeeping", self.test_housekeeping),
             ("Integration Scenario", self.test_integration_scenario)
         ]
 

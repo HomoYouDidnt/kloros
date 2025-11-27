@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from src.orchestration.core.umn_bus import UMNPub
+from src.orchestration.core.umn_bus import UMNPub as ChemPub
 
 def main():
     print("=== Testing Message to Subscribed Topic ===")
@@ -21,7 +21,7 @@ def main():
     print("Subscribers exist: YES (registered at 15:27:52)")
     print()
 
-    pub = UMNPub()
+    pub = ChemPub()
 
     test_timestamp = int(time.time())
     question_id = f'routing_test_{test_timestamp}'
@@ -34,8 +34,8 @@ def main():
         intensity=0.95,
         facts={
             'question_id': question_id,
-            'hypothesis': 'UMN routing test',
-            'question': 'Is UMN routing working?',
+            'hypothesis': 'ChemBus routing test',
+            'question': 'Is ChemBus routing working?',
             'evidence': ['Testing message delivery to existing subscribers'],
             'severity': 'high',
             'category': 'routing_test',
@@ -50,7 +50,7 @@ def main():
     print("  sudo journalctl -u kloros-curiosity-core-consumer.service -n 50 --no-pager | grep routing_test")
     print()
     print("Check proxy logs:")
-    print("  sudo journalctl -u kloros-umn-proxy.service -n 20 --no-pager | grep integration_question")
+    print("  sudo journalctl -u kloros-chem-proxy.service -n 20 --no-pager | grep integration_question")
 
 
 if __name__ == "__main__":

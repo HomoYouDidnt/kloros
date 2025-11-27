@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tests.fixtures.umn_mock import MockUMNPub, MockUMNSub
-from src.kloros_voice_tts import TTSZooid
+from src.voice.kloros_voice_tts import TTSZooid
 
 
 @dataclass
@@ -59,8 +59,8 @@ def zooid(monkeypatch, temp_tts_dir, mock_tts_backend):
     monkeypatch.setenv("KLR_TTS_OUT_DIR", str(temp_tts_dir))
     monkeypatch.setenv("KLR_FAIL_OPEN_TTS", "1")
 
-    with patch('src.kloros_voice_tts.UMNPub', MockUMNPub), \
-         patch('src.kloros_voice_tts.UMNSub', MockUMNSub):
+    with patch('src.voice.kloros_voice_tts.UMNPub', MockUMNPub), \
+         patch('src.voice.kloros_voice_tts.UMNSub', MockUMNSub):
 
         zooid = TTSZooid()
         zooid.tts_backend = mock_tts_backend
@@ -77,8 +77,8 @@ class TestTTSZooidInit:
         monkeypatch.setenv("KLR_TTS_BACKEND", "piper")
         monkeypatch.setenv("KLR_TTS_OUT_DIR", str(temp_tts_dir))
 
-        with patch('src.kloros_voice_tts.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_tts.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_tts.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_tts.UMNSub', MockUMNSub):
             zooid = TTSZooid()
 
         assert zooid.tts_backend_name == "piper"
@@ -89,8 +89,8 @@ class TestTTSZooidInit:
         monkeypatch.setenv("KLR_TTS_SAMPLE_RATE", "44100")
         monkeypatch.setenv("KLR_TTS_OUT_DIR", str(temp_tts_dir))
 
-        with patch('src.kloros_voice_tts.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_tts.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_tts.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_tts.UMNSub', MockUMNSub):
             zooid = TTSZooid()
 
         assert zooid.tts_sample_rate == 44100
@@ -102,8 +102,8 @@ class TestTTSZooidInit:
             tts_dir = Path(tmpdir) / "tts_out"
             monkeypatch.setenv("KLR_TTS_OUT_DIR", str(tts_dir))
 
-            with patch('src.kloros_voice_tts.UMNPub', MockUMNPub), \
-                 patch('src.kloros_voice_tts.UMNSub', MockUMNSub):
+            with patch('src.voice.kloros_voice_tts.UMNPub', MockUMNPub), \
+                 patch('src.voice.kloros_voice_tts.UMNSub', MockUMNSub):
                 zooid = TTSZooid()
 
             assert tts_dir.exists()
@@ -142,8 +142,8 @@ class TestTTSZooidStart:
         monkeypatch.setenv("KLR_ENABLE_TTS", "0")
         monkeypatch.setenv("KLR_TTS_OUT_DIR", str(temp_tts_dir))
 
-        with patch('src.kloros_voice_tts.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_tts.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_tts.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_tts.UMNSub', MockUMNSub):
             zooid = TTSZooid()
             zooid.start()
 
@@ -166,8 +166,8 @@ class TestTTSBackendInit:
             voice="default"
         ))
 
-        with patch('src.kloros_voice_tts.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_tts.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_tts.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_tts.UMNSub', MockUMNSub):
 
             zooid = TTSZooid()
             zooid.tts_backend = mock_backend
@@ -286,8 +286,8 @@ class TestTTSFailOpen:
         monkeypatch.setenv("KLR_TTS_OUT_DIR", str(temp_tts_dir))
         monkeypatch.setenv("KLR_FAIL_OPEN_TTS", "1")
 
-        with patch('src.kloros_voice_tts.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_tts.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_tts.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_tts.UMNSub', MockUMNSub):
 
             zooid = TTSZooid()
             zooid.tts_backend = None

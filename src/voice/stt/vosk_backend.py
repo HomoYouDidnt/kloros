@@ -42,7 +42,7 @@ class VoskSttBackend:
         # Otherwise, load model from directory
         # Determine model path
         if model_dir is None:
-            model_dir = os.getenv("KLR_VOSK_MODEL_DIR") or os.path.expanduser("/home/kloros/models/vosk/model")
+            model_dir = os.getenv("KLR_VOSK_MODEL_DIR") or os.path.expanduser("~/KLoROS/models/vosk/model")
 
         if not model_dir:
             raise RuntimeError(

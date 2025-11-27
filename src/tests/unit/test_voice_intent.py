@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tests.fixtures.umn_mock import MockUMNPub, MockUMNSub
-from src.kloros_voice_intent import IntentZooid
+from src.voice.kloros_voice_intent import IntentZooid
 
 
 @pytest.fixture
@@ -18,8 +18,8 @@ def zooid(monkeypatch):
     """Create IntentZooid with mocked dependencies."""
     monkeypatch.setenv("KLR_ENABLE_INTENT", "1")
 
-    with patch('src.kloros_voice_intent.UMNPub', MockUMNPub), \
-         patch('src.kloros_voice_intent.UMNSub', MockUMNSub):
+    with patch('src.voice.kloros_voice_intent.UMNPub', MockUMNPub), \
+         patch('src.voice.kloros_voice_intent.UMNSub', MockUMNSub):
 
         zooid = IntentZooid()
         yield zooid
@@ -84,8 +84,8 @@ class TestIntentZooidStart:
         """Test that Intent can be disabled via environment."""
         monkeypatch.setenv("KLR_ENABLE_INTENT", "0")
 
-        with patch('src.kloros_voice_intent.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_intent.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_intent.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_intent.UMNSub', MockUMNSub):
             zooid = IntentZooid()
             zooid.start()
 

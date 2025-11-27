@@ -13,7 +13,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tests.fixtures.umn_mock import MockUMNPub, MockUMNSub
-from src.kloros_voice_audio_io import AudioIOZooid
+from src.voice.kloros_voice_audio_io import AudioIOZooid
 
 
 @pytest.fixture
@@ -47,8 +47,8 @@ def zooid(temp_recordings_dir, monkeypatch):
     monkeypatch.setenv("KLR_AUDIO_RECORDINGS_DIR", str(temp_recordings_dir))
     monkeypatch.setenv("KLR_AUDIO_SAMPLE_RATE", "16000")
 
-    with patch('src.kloros_voice_audio_io.UMNPub', MockUMNPub), \
-         patch('src.kloros_voice_audio_io.UMNSub', MockUMNSub):
+    with patch('src.voice.kloros_voice_audio_io.UMNPub', MockUMNPub), \
+         patch('src.voice.kloros_voice_audio_io.UMNSub', MockUMNSub):
 
         zooid = AudioIOZooid()
         yield zooid
@@ -64,8 +64,8 @@ class TestAudioIOZooidInit:
         recordings_dir = temp_recordings_dir / "recordings"
         monkeypatch.setenv("KLR_AUDIO_RECORDINGS_DIR", str(recordings_dir))
 
-        with patch('src.kloros_voice_audio_io.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_audio_io.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_audio_io.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_audio_io.UMNSub', MockUMNSub):
             zooid = AudioIOZooid()
 
         assert recordings_dir.exists()
@@ -75,8 +75,8 @@ class TestAudioIOZooidInit:
         """Test that sample rate is configured from environment."""
         monkeypatch.setenv("KLR_AUDIO_SAMPLE_RATE", "48000")
 
-        with patch('src.kloros_voice_audio_io.UMNPub', MockUMNPub), \
-             patch('src.kloros_voice_audio_io.UMNSub', MockUMNSub):
+        with patch('src.voice.kloros_voice_audio_io.UMNPub', MockUMNPub), \
+             patch('src.voice.kloros_voice_audio_io.UMNSub', MockUMNSub):
             zooid = AudioIOZooid()
 
         assert zooid.sample_rate == 48000
@@ -166,7 +166,7 @@ class TestAudioCapture:
 
     def test_record_start_begins_capture(self, zooid, mock_audio_backend):
         """Test that RECORD.START signal begins audio capture."""
-        with patch('src.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
+        with patch('src.voice.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
             zooid.start()
 
             assert not zooid.capturing
@@ -181,7 +181,7 @@ class TestAudioCapture:
 
     def test_record_stop_ends_capture(self, zooid, mock_audio_backend):
         """Test that RECORD.STOP signal ends audio capture."""
-        with patch('src.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
+        with patch('src.voice.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
             zooid.start()
 
             zooid._on_record_start({"incident_id": "rec-002"})
@@ -195,7 +195,7 @@ class TestAudioCapture:
 
     def test_record_start_ignores_duplicate(self, zooid, mock_audio_backend):
         """Test that duplicate RECORD.START is ignored."""
-        with patch('src.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
+        with patch('src.voice.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
             zooid.start()
 
             zooid._on_record_start({"incident_id": "rec-003"})
@@ -229,7 +229,7 @@ class TestAudioIOZooidShutdown:
 
     def test_shutdown_stops_capture(self, zooid, mock_audio_backend):
         """Test that shutdown stops active capture."""
-        with patch('src.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
+        with patch('src.voice.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
             zooid.start()
             zooid._on_record_start({"incident_id": "rec-005"})
             time.sleep(0.1)
@@ -241,7 +241,7 @@ class TestAudioIOZooidShutdown:
 
     def test_shutdown_closes_audio_backend(self, zooid, mock_audio_backend):
         """Test that shutdown closes audio backend."""
-        with patch('src.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
+        with patch('src.voice.kloros_voice_audio_io.PulseAudioBackend', return_value=mock_audio_backend):
             zooid.start()
             zooid.audio_backend = mock_audio_backend
 

@@ -14,8 +14,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.orchestration.core.umn_bus_v2 import UMNPub, UMNSub
-from src.kloros_voice_intent import IntentZooid
-from src.kloros_voice_emotion import EmotionZooid
+from src.voice.kloros_voice_intent import IntentZooid
+from src.voice.kloros_voice_emotion import EmotionZooid
 
 
 @pytest.mark.integration
@@ -477,7 +477,7 @@ class TestOrchestratorKnowledgeIntegration:
             knowledge_data.update(msg.get("facts", {}))
             received_results.set()
 
-        from src.kloros_voice_knowledge import KnowledgeZooid
+        from src.voice.kloros_voice_knowledge import KnowledgeZooid
         zooid = KnowledgeZooid()
         zooid.start()
 
@@ -529,7 +529,7 @@ class TestOrchestratorKnowledgeIntegration:
             error_data.update(msg.get("facts", {}))
             received_error.set()
 
-        from src.kloros_voice_knowledge import KnowledgeZooid
+        from src.voice.kloros_voice_knowledge import KnowledgeZooid
         zooid = KnowledgeZooid()
         zooid.start()
 
@@ -575,7 +575,7 @@ class TestOrchestratorKnowledgeIntegration:
             knowledge_data.update(msg.get("facts", {}))
             received_results.set()
 
-        from src.kloros_voice_knowledge import KnowledgeZooid
+        from src.voice.kloros_voice_knowledge import KnowledgeZooid
         zooid = KnowledgeZooid()
         zooid.start()
 
@@ -630,7 +630,7 @@ class TestOrchestratorLLMIntegration:
             llm_data.update(msg.get("facts", {}))
             received_response.set()
 
-        from src.kloros_voice_llm import LLMZooid
+        from src.voice.kloros_voice_llm import LLMZooid
         zooid = LLMZooid()
         zooid.start()
 
@@ -687,7 +687,7 @@ class TestOrchestratorLLMIntegration:
             error_data.update(msg.get("facts", {}))
             received_error.set()
 
-        from src.kloros_voice_llm import LLMZooid
+        from src.voice.kloros_voice_llm import LLMZooid
         zooid = LLMZooid()
         zooid.start()
 
@@ -733,7 +733,7 @@ class TestOrchestratorLLMIntegration:
             llm_data.update(msg.get("facts", {}))
             received_response.set()
 
-        from src.kloros_voice_llm import LLMZooid
+        from src.voice.kloros_voice_llm import LLMZooid
         zooid = LLMZooid()
         zooid.start()
 
@@ -801,7 +801,7 @@ class TestOrchestratorSessionIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setenv("KLR_SESSION_PERSIST_DIR", tmpdir)
 
-            from src.kloros_voice_session import SessionZooid
+            from src.voice.kloros_voice_session import SessionZooid
             zooid = SessionZooid()
 
             # Clear history before start to establish baseline
@@ -847,7 +847,7 @@ class TestOrchestratorSessionIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setenv("KLR_SESSION_PERSIST_DIR", tmpdir)
 
-            from src.kloros_voice_session import SessionZooid
+            from src.voice.kloros_voice_session import SessionZooid
             zooid = SessionZooid()
             zooid.start()
             initial_count = len(zooid.conversation_history)
@@ -892,7 +892,7 @@ class TestOrchestratorSessionIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setenv("KLR_SESSION_PERSIST_DIR", tmpdir)
 
-            from src.kloros_voice_session import SessionZooid
+            from src.voice.kloros_voice_session import SessionZooid
             zooid = SessionZooid()
 
             # Track SESSION.UPDATED signals

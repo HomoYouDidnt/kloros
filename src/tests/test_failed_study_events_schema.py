@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.cognition.mind.memory.storage import MemoryStore
+from kloros_memory.storage import MemoryStore
 
 
 def test_failed_study_events_schema():
@@ -221,7 +221,7 @@ def test_migration_on_existing_db():
         print("    Old database created")
 
         print("\n2. Running migration...")
-        from src.cognition.mind.memory.migrate_schema import migrate_memory_database
+        from kloros_memory.migrate_schema import migrate_memory_database
         try:
             migrate_memory_database(test_db_path)
             print("    Migration completed")

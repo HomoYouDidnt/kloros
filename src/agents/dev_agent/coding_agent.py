@@ -16,19 +16,19 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 
-from src.agents.dev_agent.tools.repo_indexer import RepoIndex, ContextPacker
-from src.agents.dev_agent.tools.patcher import (
+from src.dev_agent.tools.repo_indexer import RepoIndex, ContextPacker
+from src.dev_agent.tools.patcher import (
     apply_patch_with_validation,
     validate_diff_syntax,
     compute_diff_stats
 )
-from src.agents.dev_agent.tools.validate import (
+from src.dev_agent.tools.validate import (
     run_validation,
     run_tests_only,
     extract_test_failures,
     ValidationResult
 )
-from src.agents.dev_agent.tools.metrics import MetricsTracker, TaskMetrics
+from src.dev_agent.tools.metrics import MetricsTracker, TaskMetrics
 
 @dataclass
 class PlanStep:

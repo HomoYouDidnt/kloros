@@ -11,10 +11,10 @@ from typing import Any, Dict, List, Optional
 import inotify.adapters
 import inotify.constants
 
-from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
 
 try:
-    from kloros.orchestration.chem_bus_v2 import ChemPub
+    from src.orchestration.core.umn_bus import UMNPub as ChemPub
 except ImportError:
     ChemPub = None
 

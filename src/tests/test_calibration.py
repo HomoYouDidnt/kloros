@@ -383,17 +383,17 @@ class TestVoiceLoopIntegration:
         )
 
         # Mock the load_profile function to return our test profile
-        with patch("src.kloros_voice.load_profile") as mock_load:
+        with patch("src.voice.kloros_voice.load_profile") as mock_load:
             mock_load.return_value = test_profile
 
             # Mock other dependencies that might not be available in test
             with (
                 patch("sys.modules", {"sounddevice": MagicMock()}),
-                patch("src.kloros_voice.vosk"),
-                patch("src.kloros_voice.log_event"),
+                patch("src.voice.kloros_voice.vosk"),
+                patch("src.voice.kloros_voice.log_event"),
             ):
                 # Import and create minimal KLoROS instance
-                from src.kloros_voice import KLoROS
+                from src.voice.kloros_voice import KLoROS
 
                 # Create instance (this should call _load_calibration_profile)
                 kloros = KLoROS()
@@ -407,16 +407,16 @@ class TestVoiceLoopIntegration:
     def test_voice_loop_handles_missing_profile(self, kloros_init_lock):
         """Test that voice loop handles missing calibration profile gracefully."""
         # Mock load_profile to return None (no profile found)
-        with patch("src.kloros_voice.load_profile") as mock_load:
+        with patch("src.voice.kloros_voice.load_profile") as mock_load:
             mock_load.return_value = None
 
             # Mock other dependencies
             with (
                 patch("sys.modules", {"sounddevice": MagicMock()}),
-                patch("src.kloros_voice.vosk"),
-                patch("src.kloros_voice.log_event"),
+                patch("src.voice.kloros_voice.vosk"),
+                patch("src.voice.kloros_voice.log_event"),
             ):
-                from src.kloros_voice import KLoROS
+                from src.voice.kloros_voice import KLoROS
 
                 # Create instance
                 # Lock prevents parallel worker resource stampede
@@ -429,14 +429,14 @@ class TestVoiceLoopIntegration:
     def test_voice_loop_handles_calibration_import_error(self, kloros_init_lock):
         """Test that voice loop handles calibration module import errors gracefully."""
         # Mock the load_profile import to be None (import failed)
-        with patch("src.kloros_voice.load_profile", None):
+        with patch("src.voice.kloros_voice.load_profile", None):
             # Mock other dependencies
             with (
                 patch("sys.modules", {"sounddevice": MagicMock()}),
-                patch("src.kloros_voice.vosk"),
-                patch("src.kloros_voice.log_event"),
+                patch("src.voice.kloros_voice.vosk"),
+                patch("src.voice.kloros_voice.log_event"),
             ):
-                from src.kloros_voice import KLoROS
+                from src.voice.kloros_voice import KLoROS
 
                 # Create instance (should not crash)
                 # Lock prevents parallel worker resource stampede

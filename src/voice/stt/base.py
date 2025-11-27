@@ -66,9 +66,9 @@ def create_stt_backend(name: BackendName, **kwargs) -> SttBackend:
 
         return VoskSttBackend(**kwargs)
     elif name == "whisper":
-        from .faster_whisper_backend import FasterWhisperSttBackend
+        from .whisper_backend import WhisperSttBackend
 
-        return FasterWhisperSttBackend(**kwargs)
+        return WhisperSttBackend(**kwargs)
     elif name == "hybrid":
         from .hybrid_backend import HybridSttBackend
 
