@@ -8,6 +8,7 @@ from .types import (
 )
 from .substantia_nigra import SubstantiaNigra
 from .globus_pallidus import GlobusPallidus
+from .striatum import Striatum
 
 __all__ = [
     "ActionCandidate",
@@ -17,4 +18,5 @@ __all__ = [
     "Context",
     "SubstantiaNigra",
     "GlobusPallidus",
+    "Striatum",
 ]
