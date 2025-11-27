@@ -7,6 +7,7 @@ from .types import (
     Context,
 )
 from .substantia_nigra import SubstantiaNigra
+from .globus_pallidus import GlobusPallidus
 
 __all__ = [
     "ActionCandidate",
@@ -15,4 +16,5 @@ __all__ = [
     "Outcome",
     "Context",
     "SubstantiaNigra",
+    "GlobusPallidus",
 ]
