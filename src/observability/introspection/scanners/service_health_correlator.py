@@ -43,7 +43,7 @@ class ServiceHealthCorrelator:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.storage import MemoryStore
+            from kloros_memory.storage import MemoryStore
 
             self.store = MemoryStore()
             self.available = True
@@ -156,7 +156,7 @@ class ServiceHealthCorrelator:
         known_services = [
             'kloros_voice', 'kloros_introspection', 'kloros_orchestrator',
             'kloros_memory', 'kloros_observer', 'qdrant', 'chromadb',
-            'bioreactor', 'umn', 'mqtt', 'http', 'spica'
+            'bioreactor', 'chembus', 'mqtt', 'http', 'spica'
         ]
 
         for service in known_services:

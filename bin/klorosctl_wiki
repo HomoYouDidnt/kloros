@@ -1,0 +1,22 @@
+#!/home/kloros/.venv/bin/python3
+"""
+Wrapper for klorosctl wiki commands.
+
+Routes wiki commands to the cli_commands module.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path.home() / \"src\"))
+
+from wiki.cli_commands import main
+
+if __name__ == \"__main__\":
+    if len(sys.argv) > 1 and sys.argv[1] == \"wiki\":
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        sys.exit(main())
+    else:
+        print(\"Usage: klorosctl_wiki <command>\")
+        print(\"Commands: sync, status, show\")
+        sys.exit(1)

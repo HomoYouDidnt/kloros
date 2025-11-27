@@ -84,7 +84,7 @@ class SelfCapabilityChecker:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.storage import MemoryStore
+            from kloros_memory.storage import MemoryStore
 
             store = MemoryStore()
             conn = store._get_connection()
@@ -110,7 +110,7 @@ class SelfCapabilityChecker:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.vector_store import get_vector_store
+            from kloros_memory.vector_store import get_vector_store
 
             vector_store = get_vector_store()
 
@@ -196,7 +196,7 @@ class SelfCapabilityChecker:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.embeddings import get_embedding_model
+            from kloros_memory.embeddings import get_embedding_model
 
             model = get_embedding_model()
 
@@ -255,7 +255,7 @@ class SelfCapabilityChecker:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.observability.introspection.documentation_catalog import DocumentCatalog
+            from kloros.introspection.documentation_catalog import DocumentCatalog
 
             catalog = DocumentCatalog()
 

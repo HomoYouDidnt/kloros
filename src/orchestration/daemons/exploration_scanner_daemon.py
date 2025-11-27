@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import hashlib
-import json
 import logging
+import pickle
 import re
 import subprocess
 import time
@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Any, Dict, List
 from collections import OrderedDict
 
-from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
+from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
 
 try:
-    from src.orchestration.core.umn_bus import UMNPub
+    from kloros.orchestration.chem_bus_v2 import ChemPub
 except ImportError:
-    UMNPub = None
+    ChemPub = None
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,13 @@ class ExplorationScannerDaemon(BaseStreamingDaemon):
 
     Deduplication:
     - Opportunities tracked by content hash (type + evidence)
-    - Only NEW opportunities emitted to UMN
+    - Only NEW opportunities emitted to ChemBus
     - Existing opportunities update last_seen timestamp
     """
 
     def __init__(
         self,
-        state_file: Path = Path("/home/kloros/.kloros/exploration_scanner_state.json"),
+        state_file: Path = Path("/home/kloros/.kloros/exploration_scanner_state.pkl"),
         scan_interval: int = 300,
         max_workers: int = 2,
         max_opportunities: int = 100,
@@ -117,7 +117,7 @@ class ExplorationScannerDaemon(BaseStreamingDaemon):
                     logger.info(
                         f"[exploration_scanner] Emitting {len(new_opportunities)} new opportunities"
                     )
-                    self._emit_questions_to_umn(new_opportunities)
+                    self._emit_questions_to_chembus(new_opportunities)
                 else:
                     logger.debug("[exploration_scanner] No new opportunities to emit")
 
@@ -245,12 +245,12 @@ class ExplorationScannerDaemon(BaseStreamingDaemon):
 
         return opportunities
 
-    def _emit_questions_to_umn(self, opportunities: List[Dict[str, Any]]):
-        if not UMNPub:
-            logger.warning("[exploration_scanner] UMN not available, skipping emission")
+    def _emit_questions_to_chembus(self, opportunities: List[Dict[str, Any]]):
+        if not ChemPub:
+            logger.warning("[exploration_scanner] ChemBus not available, skipping emission")
             return
 
-        # Rate limiting: Don't spam UMN more than once per min_emission_interval
+        # Rate limiting: Don't spam ChemBus more than once per min_emission_interval
         current_time = time.time()
         if current_time - self.last_emission_time < self.min_emission_interval:
             logger.debug(
@@ -261,9 +261,9 @@ class ExplorationScannerDaemon(BaseStreamingDaemon):
 
         if not self.chem_pub:
             try:
-                self.chem_pub = UMNPub()
+                self.chem_pub = ChemPub()
             except Exception as e:
-                logger.error(f"[exploration_scanner] Failed to create UMNPub: {e}")
+                logger.error(f"[exploration_scanner] Failed to create ChemPub: {e}")
                 return
 
         for opp in opportunities:
@@ -326,8 +326,8 @@ class ExplorationScannerDaemon(BaseStreamingDaemon):
                 'timestamp': time.time()
             }
 
-            with open(self.state_file, 'w') as f:
-                json.dump(state, f)
+            with open(self.state_file, 'wb') as f:
+                pickle.dump(state, f)
 
             logger.info(f"[exploration_scanner] Saved state to {self.state_file}")
 
@@ -337,10 +337,10 @@ class ExplorationScannerDaemon(BaseStreamingDaemon):
         finally:
             if self.chem_pub is not None:
                 try:
-                    logger.info("[exploration_scanner] Cleaning up UMN connection")
+                    logger.info("[exploration_scanner] Cleaning up ChemBus connection")
                     self.chem_pub = None
                 except Exception as e:
-                    logger.warning(f"[exploration_scanner] UMN cleanup error: {e}")
+                    logger.warning(f"[exploration_scanner] ChemBus cleanup error: {e}")
 
     def load_state(self):
         if not self.state_file.exists():
@@ -348,8 +348,8 @@ class ExplorationScannerDaemon(BaseStreamingDaemon):
             return
 
         try:
-            with open(self.state_file, 'r') as f:
-                state = json.load(f)
+            with open(self.state_file, 'rb') as f:
+                state = pickle.load(f)
 
             self.last_scan = state.get('last_scan', 0.0)
             self.discovered_opportunities = OrderedDict(

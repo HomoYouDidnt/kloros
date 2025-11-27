@@ -5,7 +5,7 @@ import time
 import pickle
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-from src.orchestration.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
+from kloros.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
 
 
 @pytest.fixture
@@ -135,9 +135,9 @@ class TestOptimizationDetection:
             assert len(opportunities2) > 0
 
 
-class TestUMNIntegration:
+class TestChemBusIntegration:
 
-    def test_emit_to_umn_success(self, daemon):
+    def test_emit_to_chembus_success(self, daemon):
         opportunity = {
             'type': 'gpu_underutilization',
             'severity': 'medium',
@@ -145,12 +145,12 @@ class TestUMNIntegration:
             'suggestion': 'Consider GPU acceleration'
         }
 
-        with patch('kloros.daemons.exploration_scanner_daemon.UMNPub') as mock_pub_class:
+        with patch('kloros.daemons.exploration_scanner_daemon.ChemPub') as mock_pub_class:
             mock_pub = Mock()
             mock_pub_class.return_value = mock_pub
 
             daemon.chem_pub = mock_pub
-            daemon._emit_questions_to_umn([opportunity])
+            daemon._emit_questions_to_chembus([opportunity])
 
             assert mock_pub.emit.called
             call_args = mock_pub.emit.call_args
@@ -173,16 +173,16 @@ class TestUMNIntegration:
             }
         ]
 
-        with patch('kloros.daemons.exploration_scanner_daemon.UMNPub') as mock_pub_class:
+        with patch('kloros.daemons.exploration_scanner_daemon.ChemPub') as mock_pub_class:
             mock_pub = Mock()
             mock_pub_class.return_value = mock_pub
 
             daemon.chem_pub = mock_pub
-            daemon._emit_questions_to_umn(opportunities)
+            daemon._emit_questions_to_chembus(opportunities)
 
             assert mock_pub.emit.call_count == 2
 
-    def test_umn_not_available(self, daemon):
+    def test_chembus_not_available(self, daemon):
         opportunity = {
             'type': 'gpu_underutilization',
             'severity': 'medium',
@@ -190,8 +190,8 @@ class TestUMNIntegration:
             'suggestion': 'test'
         }
 
-        with patch('kloros.daemons.exploration_scanner_daemon.UMNPub', None):
-            daemon._emit_questions_to_umn([opportunity])
+        with patch('kloros.daemons.exploration_scanner_daemon.ChemPub', None):
+            daemon._emit_questions_to_chembus([opportunity])
 
 
 class TestStatePersistence:

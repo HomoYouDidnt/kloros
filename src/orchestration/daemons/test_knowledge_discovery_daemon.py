@@ -24,7 +24,7 @@ class TestKnowledgeDiscoveryDaemon(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_daemon_initialization(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -37,7 +37,7 @@ class TestKnowledgeDiscoveryDaemon(unittest.TestCase):
         self.assertIsInstance(daemon.knowledge_index, dict)
 
     def test_file_hash_computation(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -56,7 +56,7 @@ class TestKnowledgeDiscoveryDaemon(unittest.TestCase):
         self.assertEqual(file_hash, expected_hash)
 
     def test_change_detection_skips_unchanged_files(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -73,7 +73,7 @@ class TestKnowledgeDiscoveryDaemon(unittest.TestCase):
         self.assertFalse(result2)
 
     def test_unindexed_documentation_detection(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -91,7 +91,7 @@ class TestKnowledgeDiscoveryDaemon(unittest.TestCase):
         self.assertIn('new_guide.md', gaps[0]['evidence'][0])
 
     def test_indexed_documentation_not_flagged(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -108,7 +108,7 @@ class TestKnowledgeDiscoveryDaemon(unittest.TestCase):
         self.assertEqual(len(gaps), 0)
 
     def test_missing_docstrings_detection(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -139,7 +139,7 @@ class UndocumentedClass:
         self.assertIn('5', gaps[0]['evidence'][0])
 
     def test_few_missing_docstrings_not_flagged(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -161,7 +161,7 @@ class MostlyDocumented:
         self.assertEqual(len(gaps), 0)
 
     def test_stale_documentation_detection(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
         import os
 
         daemon = KnowledgeDiscoveryScannerDaemon(
@@ -183,7 +183,7 @@ class MostlyDocumented:
         self.assertIn('91', gaps[0]['evidence'][0])
 
     def test_fresh_documentation_not_flagged(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -198,7 +198,7 @@ class MostlyDocumented:
         self.assertEqual(len(gaps), 0)
 
     def test_process_file_event_analyzes_markdown(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -208,17 +208,17 @@ class MostlyDocumented:
         test_file = self.temp_path / "docs" / "new.md"
         test_file.write_text("# New Documentation")
 
-        with patch.object(daemon, '_emit_questions_to_umn') as mock_emit:
+        with patch.object(daemon, '_emit_questions_to_chembus') as mock_emit:
             daemon.process_file_event('create', test_file)
 
             self.assertTrue(mock_emit.called)
-            # _emit_questions_to_umn is called with list of gaps
+            # _emit_questions_to_chembus is called with list of gaps
             call_args = mock_emit.call_args
             questions = call_args[0][0] if call_args[0] else call_args.args[0]
             self.assertGreater(len(questions), 0)
 
     def test_process_file_event_analyzes_python(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -238,13 +238,13 @@ class MyClass:
         pass
 """)
 
-        with patch.object(daemon, '_emit_questions_to_umn') as mock_emit:
+        with patch.object(daemon, '_emit_questions_to_chembus') as mock_emit:
             daemon.process_file_event('create', test_file)
 
             self.assertTrue(mock_emit.called)
 
     def test_process_file_event_skips_unchanged(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -254,7 +254,7 @@ class MyClass:
         test_file = self.temp_path / "docs" / "unchanged.md"
         test_file.write_text("# Unchanged")
 
-        with patch.object(daemon, '_emit_questions_to_umn') as mock_emit:
+        with patch.object(daemon, '_emit_questions_to_chembus') as mock_emit:
             daemon.process_file_event('modify', test_file)
 
             initial_call_count = mock_emit.call_count
@@ -263,9 +263,9 @@ class MyClass:
             daemon.process_file_event('modify', test_file)
             self.assertEqual(mock_emit.call_count, initial_call_count)
 
-    @patch('kloros.daemons.knowledge_discovery_daemon.UMNPub')
-    def test_umn_question_emission(self, mock_chem_pub):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+    @patch('kloros.daemons.knowledge_discovery_daemon.ChemPub')
+    def test_chembus_question_emission(self, mock_chem_pub):
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         mock_pub_instance = MagicMock()
         mock_chem_pub.return_value = mock_pub_instance
@@ -285,7 +285,7 @@ class MyClass:
             }
         ]
 
-        daemon._emit_questions_to_umn(questions)
+        daemon._emit_questions_to_chembus(questions)
 
         mock_pub_instance.emit.assert_called()
 
@@ -294,7 +294,7 @@ class MyClass:
         self.assertEqual(call_args.kwargs['ecosystem'], 'curiosity')
 
     def test_state_save_and_load(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -318,7 +318,7 @@ class MyClass:
         self.assertIn('docs/indexed.md', daemon2.knowledge_index)
 
     def test_delete_event_handling(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -336,7 +336,7 @@ class MyClass:
         self.assertNotIn(file_path_str, daemon.file_hashes)
 
     def test_memory_usage_stays_bounded(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
         import psutil
         import os
 
@@ -359,7 +359,7 @@ class MyClass:
             f"Memory usage {memory_mb:.2f}MB exceeds 150MB limit")
 
     def test_deduplication_by_file_path(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -369,7 +369,7 @@ class MyClass:
         test_file = self.temp_path / "docs" / "duplicate.md"
         test_file.write_text("# Duplicate")
 
-        with patch.object(daemon, '_emit_questions_to_umn') as mock_emit:
+        with patch.object(daemon, '_emit_questions_to_chembus') as mock_emit:
             daemon.process_file_event('create', test_file)
             first_call_count = mock_emit.call_count
 
@@ -380,7 +380,7 @@ class MyClass:
                            "Should not emit duplicate questions for same file")
 
     def test_integration_with_base_daemon(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
         daemon = KnowledgeDiscoveryScannerDaemon(
             watch_path=self.temp_path,
@@ -397,7 +397,7 @@ class MyClass:
         self.assertIn('cache_size', health)
 
     def test_multiple_gap_types_in_single_file(self):
-        from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+        from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
         import os
 
         daemon = KnowledgeDiscoveryScannerDaemon(
@@ -411,7 +411,7 @@ class MyClass:
         old_time = time.time() - (91 * 86400)
         os.utime(test_file, (old_time, old_time))
 
-        with patch.object(daemon, '_emit_questions_to_umn') as mock_emit:
+        with patch.object(daemon, '_emit_questions_to_chembus') as mock_emit:
             daemon.process_file_event('create', test_file)
 
             call_args = mock_emit.call_args

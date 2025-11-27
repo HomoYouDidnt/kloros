@@ -34,7 +34,7 @@ class ErrorFrequencyScanner:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.storage import MemoryStore, EventType
+            from kloros_memory.storage import MemoryStore, EventType
 
             self.store = MemoryStore()
             self.EventType = EventType

@@ -2,7 +2,7 @@
 """
 IntrospectionDaemon - Real-time streaming introspection scanner orchestrator.
 
-Subscribes to OBSERVATION events on UMN, maintains shared rolling window cache,
+Subscribes to OBSERVATION events on ChemBus, maintains shared rolling window cache,
 runs 11 introspection scanners in thread pool with timeout protection, emits
 CapabilityGap objects immediately to CuriosityCore.
 """
@@ -19,25 +19,25 @@ from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from src.orchestration.core.umn_bus import UMNSub, UMNPub
-from src.orchestration.core.maintenance_mode import wait_for_normal_mode
-from src.observability.introspection.observation_cache import ObservationCache
+from kloros.orchestration.chem_bus_v2 import ChemSub, ChemPub
+from kloros.orchestration.maintenance_mode import wait_for_normal_mode
+from kloros.introspection.observation_cache import ObservationCache
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "src"))
 
-from src.cognition.mind.cognition.capability_scanners import (
+from registry.capability_scanners import (
     InferencePerformanceScanner,
     ContextUtilizationScanner,
     ResourceProfilerScanner,
     BottleneckDetectorScanner,
     ComparativeAnalyzerScanner
 )
-from src.observability.introspection.scanners.service_health_correlator import ServiceHealthCorrelator
-from src.observability.introspection.scanners.code_quality_scanner import CodeQualityScanner
-from src.observability.introspection.scanners.test_coverage_scanner import TestCoverageScanner
-from src.observability.introspection.scanners.performance_profiler_scanner import PerformanceProfilerScanner
-from src.observability.introspection.scanners.cross_system_pattern_scanner import CrossSystemPatternScanner
-from src.observability.introspection.scanners.documentation_completeness_scanner import DocumentationCompletenessScanner
+from kloros.introspection.scanners.service_health_correlator import ServiceHealthCorrelator
+from kloros.introspection.scanners.code_quality_scanner import CodeQualityScanner
+from kloros.introspection.scanners.test_coverage_scanner import TestCoverageScanner
+from kloros.introspection.scanners.performance_profiler_scanner import PerformanceProfilerScanner
+from kloros.introspection.scanners.cross_system_pattern_scanner import CrossSystemPatternScanner
+from kloros.introspection.scanners.documentation_completeness_scanner import DocumentationCompletenessScanner
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +51,7 @@ class IntrospectionDaemon:
     Streaming introspection daemon with executor pattern for scanner isolation.
 
     Features:
-    - Single UMN subscription to OBSERVATION topic
+    - Single ChemBus subscription to OBSERVATION topic
     - Shared ObservationCache (5min rolling window)
     - Thread pool executor for scanner isolation
     - Timeout protection (30s per scanner)
@@ -101,14 +101,14 @@ class IntrospectionDaemon:
             thread_name_prefix="introspection_scanner_"
         )
 
-        self.sub = UMNSub(
+        self.sub = ChemSub(
             topic="OBSERVATION",
             on_json=self._on_observation,
             zooid_name="introspection_daemon",
             niche="introspection"
         )
 
-        self.pub = UMNPub()
+        self.pub = ChemPub()
 
         logger.info(f"IntrospectionDaemon initialized")
         logger.info(f"  Cache window: {cache_window_seconds}s")
@@ -118,7 +118,7 @@ class IntrospectionDaemon:
 
     def _on_observation(self, msg: Dict[str, Any]) -> None:
         """
-        Callback invoked for each OBSERVATION message from UMN.
+        Callback invoked for each OBSERVATION message from ChemBus.
 
         Args:
             msg: OBSERVATION message dict with 'facts' containing observation data
@@ -160,7 +160,7 @@ class IntrospectionDaemon:
         isolated and logged. All detected gaps are emitted immediately.
 
         After scanning, triggers capability scanners via intents and consolidates
-        old UMN history to episodic memory.
+        old ChemBus history to episodic memory.
         """
         try:
             logger.debug(f"Starting scan cycle #{self.scan_count + 1}")
@@ -193,7 +193,7 @@ class IntrospectionDaemon:
             logger.info(f"Scan cycle #{self.scan_count} complete: {len(all_gaps)} gaps emitted")
 
             self.trigger_scanners_via_intents()
-            self.consolidate_umn_history()
+            self.consolidate_chembus_history()
 
         except Exception as e:
             logger.error(f"Scan cycle failed: {e}", exc_info=True)
@@ -217,7 +217,7 @@ class IntrospectionDaemon:
 
     def _emit_capability_gap(self, gap) -> None:
         """
-        Emit CapabilityGap to CuriosityCore via UMN.
+        Emit CapabilityGap to CuriosityCore via ChemBus.
 
         Args:
             gap: CapabilityGap object
@@ -271,9 +271,9 @@ class IntrospectionDaemon:
             )
             logger.info(f"[introspection] Emitted Q_RUN_SCANNER signal for: {scanner_name}")
 
-    def consolidate_umn_history(self) -> None:
+    def consolidate_chembus_history(self) -> None:
         """
-        Consolidate old UMN history to episodic memory and prune.
+        Consolidate old ChemBus history to episodic memory and prune.
 
         Moves messages older than 6h to episodic memory with aggregated statistics
         and preserves anomaly signals. Rewrites history file with only recent messages.
@@ -281,19 +281,19 @@ class IntrospectionDaemon:
         MEMORY OPTIMIZATION: Only consolidates if file > 100MB to avoid loading
         entire file into memory every 5 seconds.
         """
-        history_file = Path.home() / ".kloros/umn_history.jsonl"
+        history_file = Path.home() / ".kloros/chembus_history.jsonl"
 
         if not history_file.exists():
-            logger.debug("[introspection] No umn_history.jsonl to consolidate")
+            logger.debug("[introspection] No chembus_history.jsonl to consolidate")
             return
 
         # MEMORY FIX: Check file size before loading
         file_size_mb = history_file.stat().st_size / (1024 * 1024)
         if file_size_mb < 100:
-            logger.debug(f"[introspection] umn_history.jsonl only {file_size_mb:.1f}MB, skipping consolidation")
+            logger.debug(f"[introspection] chembus_history.jsonl only {file_size_mb:.1f}MB, skipping consolidation")
             return
 
-        logger.info(f"[introspection] umn_history.jsonl is {file_size_mb:.1f}MB, consolidating...")
+        logger.info(f"[introspection] chembus_history.jsonl is {file_size_mb:.1f}MB, consolidating...")
 
         cutoff_ts = time.time() - 21600
 
@@ -345,7 +345,7 @@ class IntrospectionDaemon:
         consolidated["daemons_active"] = list(consolidated["daemons_active"])
         consolidated["signals_by_type"] = dict(consolidated["signals_by_type"])
 
-        episodic_memory_file = Path.home() / ".kloros/episodic_memory/umn_consolidated.jsonl"
+        episodic_memory_file = Path.home() / ".kloros/episodic_memory/chembus_consolidated.jsonl"
         episodic_memory_file.parent.mkdir(parents=True, exist_ok=True)
 
         with open(episodic_memory_file, "a") as f:

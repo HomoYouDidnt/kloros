@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from src.orchestration.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
+from kloros.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
 
 
 class TestCapabilityPatternDetection(unittest.TestCase):
@@ -243,12 +243,12 @@ class TestStatePersistence(unittest.TestCase):
         self.assertEqual(len(daemon.discovered_capabilities), 0)
 
 
-class TestUMNEmission(unittest.TestCase):
+class TestChemBusEmission(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
 
-    @patch('kloros.daemons.capability_discovery_daemon.UMNPub')
+    @patch('kloros.daemons.capability_discovery_daemon.ChemPub')
     def test_emit_capability_questions(self, mock_pub_class):
         mock_pub = Mock()
         mock_pub_class.return_value = mock_pub
@@ -268,15 +268,15 @@ class TestUMNEmission(unittest.TestCase):
             }
         ]
 
-        daemon._emit_questions_to_umn(capabilities)
+        daemon._emit_questions_to_chembus(capabilities)
 
         mock_pub.emit.assert_called_once()
         call_args = mock_pub.emit.call_args
         self.assertEqual(call_args.kwargs['signal'], "curiosity.capability_question")
         self.assertEqual(call_args.kwargs['ecosystem'], "curiosity")
 
-    @patch('kloros.daemons.capability_discovery_daemon.UMNPub')
-    def test_umn_message_format(self, mock_pub_class):
+    @patch('kloros.daemons.capability_discovery_daemon.ChemPub')
+    def test_chembus_message_format(self, mock_pub_class):
         mock_pub = Mock()
         mock_pub_class.return_value = mock_pub
 
@@ -295,7 +295,7 @@ class TestUMNEmission(unittest.TestCase):
             }
         ]
 
-        daemon._emit_questions_to_umn(capabilities)
+        daemon._emit_questions_to_chembus(capabilities)
 
         # Verify emit was called with correct keyword arguments
         mock_pub.emit.assert_called_once()
@@ -313,8 +313,8 @@ class TestUMNEmission(unittest.TestCase):
         self.assertIn('severity', facts)
         self.assertIn('category', facts)
 
-    @patch('kloros.daemons.capability_discovery_daemon.UMNPub', None)
-    def test_graceful_no_umn(self):
+    @patch('kloros.daemons.capability_discovery_daemon.ChemPub', None)
+    def test_graceful_no_chembus(self):
         daemon = CapabilityDiscoveryMonitorDaemon(
             watch_path=Path(self.temp_dir),
             state_file=Path(self.temp_dir) / "test_state.pkl"
@@ -322,8 +322,8 @@ class TestUMNEmission(unittest.TestCase):
 
         capabilities = [{'term': 'test', 'type': 'class', 'evidence': ['Test']}]
 
-        # Should not raise exception when UMNPub is None
-        daemon._emit_questions_to_umn(capabilities)
+        # Should not raise exception when ChemPub is None
+        daemon._emit_questions_to_chembus(capabilities)
 
 
 class TestMemoryBounds(unittest.TestCase):

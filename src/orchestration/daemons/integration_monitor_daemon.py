@@ -2,19 +2,19 @@
 
 import ast
 import hashlib
-import json
 import logging
+import pickle
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from collections import defaultdict
 
-from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
+from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
 
 try:
-    from src.orchestration.core.umn_bus import UMNPub
+    from kloros.orchestration.chem_bus_v2 import ChemPub
 except ImportError:
-    UMNPub = None
+    ChemPub = None
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
     def __init__(
         self,
         watch_path: Path = Path("/home/kloros/src"),
-        state_file: Path = Path("/home/kloros/.kloros/integration_monitor_state.json"),
+        state_file: Path = Path("/home/kloros/.kloros/integration_monitor_state.pkl"),
         max_queue_size: int = 1000,
         max_workers: int = 2,
         max_cache_size: int = 500
@@ -86,7 +86,7 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
 
         if all_questions:
             logger.info(f"[integration_monitor] Detected {len(all_questions)} integration issues")
-            self._emit_questions_to_umn(all_questions)
+            self._emit_questions_to_chembus(all_questions)
         else:
             logger.debug(f"[integration_monitor] No issues found in {file_path}")
 
@@ -199,16 +199,16 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
 
         return missing
 
-    def _emit_questions_to_umn(self, questions: List[Dict[str, Any]]):
-        if not UMNPub:
-            logger.warning("[integration_monitor] UMN not available, skipping emission")
+    def _emit_questions_to_chembus(self, questions: List[Dict[str, Any]]):
+        if not ChemPub:
+            logger.warning("[integration_monitor] ChemBus not available, skipping emission")
             return
 
         if not self.chem_pub:
             try:
-                self.chem_pub = UMNPub()
+                self.chem_pub = ChemPub()
             except Exception as e:
-                logger.error(f"[integration_monitor] Failed to create UMNPub: {e}")
+                logger.error(f"[integration_monitor] Failed to create ChemPub: {e}")
                 return
 
         for q in questions:
@@ -239,8 +239,8 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
                 'timestamp': time.time()
             }
 
-            with open(self.state_file, 'w') as f:
-                json.dump(state, f)
+            with open(self.state_file, 'wb') as f:
+                pickle.dump(state, f)
 
             logger.info(f"[integration_monitor] Saved state to {self.state_file}")
 
@@ -253,8 +253,8 @@ class IntegrationMonitorDaemon(BaseStreamingDaemon):
             return
 
         try:
-            with open(self.state_file, 'r') as f:
-                state = json.load(f)
+            with open(self.state_file, 'rb') as f:
+                state = pickle.load(f)
 
             self.file_hashes = state.get('file_hashes', {})
             self.data_flows = defaultdict(

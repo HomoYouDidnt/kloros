@@ -1,0 +1,10 @@
+name: "Get audio system status"
+steps:
+  - say: "What is the audio system status?"
+
+expect:
+  speech_contains:
+    - "audio"
+  metrics:
+    latency_ms_max: 25000
+    tool_calls_max: 2

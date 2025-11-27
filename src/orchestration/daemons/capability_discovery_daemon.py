@@ -2,20 +2,20 @@
 
 import ast
 import hashlib
-import json
 import logging
+import pickle
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from collections import OrderedDict
 
-from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
-from src.cognition.mind.cognition.semantic_analysis import ArchitecturalReasoner
+from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
+from registry.semantic_analysis import ArchitecturalReasoner
 
 try:
-    from src.orchestration.core.umn_bus import UMNPub
+    from kloros.orchestration.chem_bus_v2 import ChemPub
 except ImportError:
-    UMNPub = None
+    ChemPub = None
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class CapabilityDiscoveryMonitorDaemon(BaseStreamingDaemon):
     def __init__(
         self,
         watch_path: Path = Path("/home/kloros/src"),
-        state_file: Path = Path("/home/kloros/.kloros/capability_discovery_state.json"),
+        state_file: Path = Path("/home/kloros/.kloros/capability_discovery_state.pkl"),
         max_queue_size: int = 1000,
         max_workers: int = 2,
         max_cache_size: int = 500
@@ -108,7 +108,7 @@ class CapabilityDiscoveryMonitorDaemon(BaseStreamingDaemon):
 
         if validated:
             logger.info(f"[capability_discovery] Validated {len(validated)} capabilities")
-            self._emit_questions_to_umn(validated)
+            self._emit_questions_to_chembus(validated)
 
         self._evict_capability_cache_if_needed()
         self._evict_file_hash_cache_if_needed()
@@ -219,16 +219,16 @@ class CapabilityDiscoveryMonitorDaemon(BaseStreamingDaemon):
             for key in list(self.file_hashes.keys())[:to_remove]:
                 del self.file_hashes[key]
 
-    def _emit_questions_to_umn(self, capabilities: List[Dict[str, Any]]):
-        if not UMNPub:
-            logger.warning("[capability_discovery] UMN not available, skipping emission")
+    def _emit_questions_to_chembus(self, capabilities: List[Dict[str, Any]]):
+        if not ChemPub:
+            logger.warning("[capability_discovery] ChemBus not available, skipping emission")
             return
 
         if not self.chem_pub:
             try:
-                self.chem_pub = UMNPub()
+                self.chem_pub = ChemPub()
             except Exception as e:
-                logger.error(f"[capability_discovery] Failed to create UMNPub: {e}")
+                logger.error(f"[capability_discovery] Failed to create ChemPub: {e}")
                 return
 
         for cap in capabilities:
@@ -273,8 +273,8 @@ class CapabilityDiscoveryMonitorDaemon(BaseStreamingDaemon):
                 'timestamp': time.time()
             }
 
-            with open(self.state_file, 'w') as f:
-                json.dump(state, f)
+            with open(self.state_file, 'wb') as f:
+                pickle.dump(state, f)
 
             logger.info(f"[capability_discovery] Saved state to {self.state_file}")
 
@@ -282,15 +282,15 @@ class CapabilityDiscoveryMonitorDaemon(BaseStreamingDaemon):
             logger.error(f"[capability_discovery] Failed to save state: {e}")
 
         finally:
-            # Cleanup UMN connection if exists
+            # Cleanup ChemBus connection if exists
             if self.chem_pub is not None:
                 try:
-                    # Note: UMNPub may not have explicit close() method
+                    # Note: ChemPub may not have explicit close() method
                     # Setting to None allows garbage collection
-                    logger.info("[capability_discovery] Cleaning up UMN connection")
+                    logger.info("[capability_discovery] Cleaning up ChemBus connection")
                     self.chem_pub = None
                 except Exception as e:
-                    logger.warning(f"[capability_discovery] UMN cleanup error: {e}")
+                    logger.warning(f"[capability_discovery] ChemBus cleanup error: {e}")
 
     def load_state(self):
         if not self.state_file.exists():
@@ -298,8 +298,8 @@ class CapabilityDiscoveryMonitorDaemon(BaseStreamingDaemon):
             return
 
         try:
-            with open(self.state_file, 'r') as f:
-                state = json.load(f)
+            with open(self.state_file, 'rb') as f:
+                state = pickle.load(f)
 
             self.file_hashes = state.get('file_hashes', {})
             self.discovered_capabilities = OrderedDict(

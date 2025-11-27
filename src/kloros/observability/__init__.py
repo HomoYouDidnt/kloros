@@ -1,1 +1,0 @@
-# KLoROS observability subsystem

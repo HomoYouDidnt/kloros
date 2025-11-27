@@ -4,7 +4,7 @@ Integration tests for the complete streaming daemons system.
 
 Tests the end-to-end flow:
 1. File changes trigger daemon detection
-2. Daemons emit questions to UMN
+2. Daemons emit questions to ChemBus
 3. CuriosityCore receives and processes questions
 4. Memory usage stays within bounds
 5. No question loss vs old batch monitors
@@ -24,10 +24,10 @@ import psutil
 
 sys.path.insert(0, '/home/kloros/src')
 
-from src.orchestration.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
-from src.orchestration.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
-from src.orchestration.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
-from src.orchestration.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
+from kloros.daemons.integration_monitor_daemon import IntegrationMonitorDaemon
+from kloros.daemons.capability_discovery_daemon import CapabilityDiscoveryMonitorDaemon
+from kloros.daemons.exploration_scanner_daemon import ExplorationScannerDaemon
+from kloros.daemons.knowledge_discovery_daemon import KnowledgeDiscoveryScannerDaemon
 
 
 class TestStreamingDaemonsIntegration(unittest.TestCase):
@@ -213,9 +213,9 @@ class Module{i}:
             f"Memory increase {memory_increase:.2f}MB exceeds 500MB limit"
         )
 
-    def test_umn_emission_integration(self):
-        """Test that daemons can emit questions to UMN (mocked)."""
-        with patch('kloros.daemons.integration_monitor_daemon.UMNPub') as mock_pub_class:
+    def test_chembus_emission_integration(self):
+        """Test that daemons can emit questions to ChemBus (mocked)."""
+        with patch('kloros.daemons.integration_monitor_daemon.ChemPub') as mock_pub_class:
             mock_pub = Mock()
             mock_pub_class.return_value = mock_pub
 
@@ -238,7 +238,7 @@ class Producer:
 
             daemon.process_file_event('create', test_file)
 
-            # UMNPub should have been created (lazy init)
+            # ChemPub should have been created (lazy init)
             # Actual emission depends on detection logic
             if daemon.chem_pub is not None:
                 self.assertIsInstance(daemon.chem_pub, Mock)

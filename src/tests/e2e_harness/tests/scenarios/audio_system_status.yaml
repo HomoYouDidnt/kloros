@@ -1,0 +1,13 @@
+name: "Audio: System Status"
+mode: "audio"  # Use audio ingress instead of text
+steps:
+  - say: "What is the audio system status?"
+
+expect:
+  speech_contains:
+    - "audio"
+    - "status"
+  tts_output: true  # Verify TTS output was generated
+  metrics:
+    latency_ms_max: 30000  # Allow more time for STT + processing + TTS
+    tool_calls_max: 6

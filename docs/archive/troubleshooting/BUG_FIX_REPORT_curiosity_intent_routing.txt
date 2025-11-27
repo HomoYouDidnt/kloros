@@ -1,0 +1,96 @@
+================================================================================
+BUG FIX REPORT: curiosity_investigate Intent Routing
+Date: 2025-11-13
+Status: FIXED AND VERIFIED
+================================================================================
+
+PROBLEM:
+--------
+Files named "*_curiosity_investigate_*.json" were publishing Q_CURIOSITY_PROPOSE_FIX 
+signals instead of Q_CURIOSITY_INVESTIGATE signals.
+
+ROOT CAUSE:
+-----------
+In /home/kloros/src/kloros/orchestration/curiosity_processor.py (lines 1145, 1167):
+
+BEFORE (BUGGY):
+    intent_path = INTENT_DIR / f"{ts_ms}_curiosity_investigate_{intent_sha}.json"
+    
+This hardcoded "curiosity_investigate" in ALL filenames, regardless of the actual
+intent_type value. This caused filename/content mismatches.
+
+AFTER (FIXED):
+    intent_path = INTENT_DIR / f"{ts_ms}_{intent['intent_type']}_{intent_sha}.json"
+    
+Now uses the actual intent_type from the intent object, ensuring filenames match content.
+
+HOW IT WORKED (and why it was confusing):
+------------------------------------------
+1. _question_to_intent() correctly mapped:
+   - action_class="investigate" → intent_type="curiosity_investigate"
+   - action_class="propose_fix" → intent_type="curiosity_propose_fix"
+
+2. But filename generation was hardcoded to "curiosity_investigate"
+
+3. Result: Some files had mismatched names/content:
+   File: "1234_curiosity_investigate_abc.json"
+   Content: {"intent_type": "curiosity_propose_fix", ...}
+
+4. Coordinator reads intent_type from JSON (not filename)
+
+5. Signal router correctly mapped intent_type to signals:
+   - "curiosity_investigate" → Q_CURIOSITY_INVESTIGATE
+   - "curiosity_propose_fix" → Q_CURIOSITY_PROPOSE_FIX
+
+6. OUTCOME: Files named "*investigate*" published PROPOSE_FIX signals (confusing!)
+
+EVIDENCE OF BUG:
+----------------
+From actual intent files in /home/kloros/.kloros/intents/:
+
+MISMATCH: 1763085250655_curiosity_investigate_af2e57b4.json -> intent_type="curiosity_propose_fix"
+MISMATCH: 1763079871733_curiosity_investigate_7261b2f7.json -> intent_type="curiosity_propose_fix"
+MISMATCH: 1763081374456_curiosity_investigate_a5bbcd41.json -> intent_type="curiosity_propose_fix"
+
+Out of 240 files named "*_curiosity_investigate_*.json", several had intent_type="curiosity_propose_fix"
+
+THE FIX:
+--------
+1. /home/kloros/src/kloros/orchestration/curiosity_processor.py (lines 1145, 1167)
+   Changed: f"{ts_ms}_curiosity_investigate_{intent_sha}.json"
+   To:      f"{ts_ms}_{intent['intent_type']}_{intent_sha}.json"
+
+2. /home/kloros/src/kloros/orchestration/coordinator.py (line 762)
+   Fixed misleading log message:
+   Changed: "Q_CURIOSITY_INVESTIGATE signal routed..."
+   To:      "Intent routed via chemical bus..."
+
+VERIFICATION:
+-------------
+✓ Syntax check passed
+✓ Test simulation shows correct filename generation:
+  - intent_type="curiosity_investigate" → file: "*_curiosity_investigate_*.json"
+  - intent_type="curiosity_propose_fix" → file: "*_curiosity_propose_fix_*.json"
+
+EXPECTED BEHAVIOR AFTER FIX:
+----------------------------
+When orchestrator runs next:
+1. New curiosity_investigate intents will be named "*_curiosity_investigate_*.json"
+2. New curiosity_propose_fix intents will be named "*_curiosity_propose_fix_*.json"
+3. Filenames will match their content
+4. Q_CURIOSITY_INVESTIGATE signals will be published for investigate intents
+5. Q_CURIOSITY_PROPOSE_FIX signals will be published for propose_fix intents
+6. Debugging will be easier (filename accurately reflects signal type)
+
+OLD FILES:
+----------
+Old mismatched files will still be processed correctly because coordinator reads
+intent_type from JSON content, not from filename. They'll just have confusing names.
+
+FILES MODIFIED:
+---------------
+1. /home/kloros/src/kloros/orchestration/curiosity_processor.py (2 locations fixed)
+2. /home/kloros/src/kloros/orchestration/coordinator.py (1 log message fixed)
+
+STATUS: ✅ FIXED AND VERIFIED
+================================================================================

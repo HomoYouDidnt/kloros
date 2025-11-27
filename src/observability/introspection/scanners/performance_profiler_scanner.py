@@ -30,7 +30,7 @@ class PerformanceProfilerScanner:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.storage import MemoryStore
+            from kloros_memory.storage import MemoryStore
 
             self.store = MemoryStore()
             self.available = True

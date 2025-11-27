@@ -1,0 +1,213 @@
+================================================================================
+                    KLOROS COMPONENT QUICK REFERENCE
+================================================================================
+
+1. SPEECH-TO-TEXT (STT)
+   ├─ Vosk (Primary)
+   │  └─ Fast, offline, vosk==0.3.45, Model: ~/KLoROS/models/vosk/model
+   ├─ Whisper (Secondary)
+   │  └─ Accurate, transformer-based, Model: "tiny" (configurable)
+   └─ Hybrid Backend
+      └─ Runs both in parallel, fuzzy matching, smart selection
+
+2. TEXT-TO-SPEECH (TTS)
+   ├─ Piper (Primary/Default)
+   │  └─ Fast, ONNX, en_US-lessac-medium, 22050 Hz
+   ├─ XTTS v2 (Secondary)
+   │  └─ Multi-lingual, speaker cloning, GPU-capable
+   ├─ Kokoro (Tertiary)
+   │  └─ CLI-based, dynamic voices
+   └─ Mimic3 (Fallback)
+      └─ Traditional open-source TTS
+
+3. VOICE ACTIVITY DETECTION (VAD)
+   ├─ Silero VAD (Primary ML)
+   │  └─ torch.hub, snakers4/silero-vad, 16kHz, threshold=0.5
+   └─ Two-Stage Pipeline
+      ├─ Stage A: RMS dBFS pre-gate (-28.0 dBFS, fast)
+      └─ Stage B: Silero refinement (accurate)
+
+4. EMBEDDING MODELS (Semantic Search)
+   ├─ Primary: BAAI/bge-small-en-v1.5 (384-dim, sentence-transformers)
+   ├─ Fallbacks: all-MiniLM-L6-v2, all-distilroberta-v1, all-MiniLM-L12-v2
+   ├─ Features: Dual encoder, query caching, intelligent GPU selection
+   └─ Vector DB: FAISS (faiss-cpu==1.12.0)
+
+5. LLM INFERENCE (Ollama-based)
+   ├─ LIVE:   Qwen 7B (port 11434) - Fast responses (<1s)
+   ├─ THINK:  DeepSeek-R1 7B (port 11435) - Deep reasoning
+   ├─ DEEP:   Qwen 14B (port 11436) - Background analysis
+   └─ CODE:   Qwen-Coder 32B (port 11434) - Code generation
+
+6. SEMANTIC SEARCH & RAG
+   ├─ RAG System: Lightweight, NPZ bundles, SHA256 verification
+   ├─ Hybrid Retrieval:
+   │  ├─ BM25 (50 results)
+   │  ├─ Vector Search (12 results)
+   │  ├─ RRF Fusion (k=60)
+   │  └─ Reranking (6 final results)
+   ├─ Query Caching: 1000 queries
+   └─ Self-RAG: System introspection with secret redaction
+
+7. SPEAKER ID
+   └─ Model: speechbrain/spkrec-ecapa-voxceleb
+
+8. ADDITIONAL AI/ML
+   ├─ Tree of Thought: Beam width 3, depth 3
+   ├─ Multi-Agent Debate: Consensus reasoning
+   ├─ Uncertainty Quantification: Confidence estimation
+   ├─ PETRI: Security/safety testing (risk threshold 0.3)
+   └─ ACE: Agentic Context Engineering (12 bullets, 0.88 cosine)
+
+================================================================================
+KEY FILES
+================================================================================
+
+Audio/Voice Pipeline:
+  • /home/kloros/src/kloros_voice.py           - Main voice loop
+  • /home/kloros/src/stt/                      - STT backends
+  • /home/kloros/src/tts/                      - TTS backends
+  • /home/kloros/src/audio/                    - Audio capture & VAD
+
+Configuration:
+  • /home/kloros/src/config/models_config.py   - Model definitions
+  • /home/kloros/src/config/kloros.yaml        - System configuration
+  • /home/kloros/src/inference/config.py       - vLLM/inference topology
+
+Semantic Search:
+  • /home/kloros/src/simple_rag.py             - RAG system
+  • /home/kloros/src/rag/                      - RAG components
+
+================================================================================
+ENVIRONMENT VARIABLES
+================================================================================
+
+STT/Audio:
+  KLR_VOSK_MODEL_DIR              ~/KLoROS/models/vosk/model
+  KLR_WHISPER_MODEL               tiny
+  KLR_INPUT_IDX                   (mic index)
+  KLR_WAKE_PHRASES                (custom wake words)
+
+TTS:
+  KLR_PIPER_VOICE                 en_US-lessac-medium
+
+Models:
+  KLR_EMBEDDER_MODEL              BAAI/bge-small-en-v1.5
+  OLLAMA_MODEL                    (default model)
+  OLLAMA_HOST                     http://127.0.0.1:11434
+  OLLAMA_THINK_URL                http://127.0.0.1:11435
+  OLLAMA_DEEP_URL                 http://127.0.0.1:11436
+  OLLAMA_CODE_URL                 http://127.0.0.1:11434
+  KLR_MODEL_MODE                  live|think|deep|code
+
+GPU:
+  CUDA_VISIBLE_DEVICES            (GPU selection)
+
+================================================================================
+PERFORMANCE CHARACTERISTICS
+================================================================================
+
+STT Latency:
+  • Vosk:       <100ms
+  • Whisper:    500-2000ms
+  • Hybrid:     <500ms (optimal)
+
+TTS Latency:
+  • Piper:      Real-time streaming
+  • XTTS v2:    Slower but higher quality
+  • Kokoro:     Medium speed
+
+VAD Latency:
+  • Stage A:    ~30ms
+  • Stage B:    ~100ms
+  • Total:      ~130ms overhead
+
+LLM Response (typical):
+  • LIVE:       <1000ms
+  • THINK:      1-3s (reasoning)
+  • DEEP:       2-10s (background)
+  • CODE:       2-5s
+
+Embedding Speed:
+  • Single:     ~10-20ms per query
+  • Batch (32): ~50-100ms
+
+================================================================================
+KNOWN CONSTRAINTS & TUNING
+================================================================================
+
+VAD Tuning:
+  • Release time: 600ms (tolerates natural pauses)
+  • Attack time: 80ms (noise resilience)
+  • Min active: 300ms (spurious segment filtering)
+
+Whisper Optimization:
+  • Greedy decoding (beam_size=1, best_of=1) for speed
+  • No word timestamps (disabled for speed)
+  • Compression ratio threshold: 2.4
+  • Logprob threshold: -1.0
+
+Hybrid STT:
+  • Similarity threshold: 0.75
+  • Confidence boost threshold: 0.9
+  • Vosk acceptance: confidence >= 0.82 AND similarity >= 0.88
+  • Whisper acceptance: logprob >= -0.75 OR compression_ratio <= 2.5
+
+RAG:
+  • Cosine similarity threshold (dedup): 0.88
+  • Min evidence score: 0.6
+  • Max chunk per doc: 2 (diversity)
+  • Cache size: 1000 queries
+
+================================================================================
+MULTIMODAL ARCHITECTURE
+================================================================================
+
+GPU Distribution (Dual GPU Setup):
+  GPU 0 (RTX 3060 12GB):
+    • LIVE mode (Qwen 7B)
+    • CODE mode (Qwen-Coder 32B)
+    • Judge server (if vLLM)
+
+  GPU 1 (GTX 1080 Ti 11GB):
+    • THINK mode (DeepSeek-R1 7B)
+    • DEEP mode (Qwen 14B)
+    • Performer server (if vLLM)
+
+CPU Tasks:
+  • Audio capture & processing
+  • VAD (Silero uses CPU by default)
+  • Embedding computation (intelligent GPU selection fallback to CPU)
+  • BM25 full-text search
+  • Reranking (heuristic mode)
+
+================================================================================
+FAILURE RECOVERY
+================================================================================
+
+STT Fallback Chain:
+  1. Hybrid (Vosk+Whisper)
+  2. Whisper alone (if Vosk unavailable)
+  3. Vosk alone (if Whisper unavailable)
+  4. Mock backend (for testing)
+
+TTS Fallback Chain:
+  1. Piper (configured)
+  2. XTTS v2 (if enabled)
+  3. Kokoro (if enabled)
+  4. Mimic3 (if enabled)
+
+Embedding Fallback Chain:
+  1. BAAI/bge-small-en-v1.5 (primary)
+  2. all-MiniLM-L6-v2 (fast fallback)
+  3. all-distilroberta-v1 (alternative)
+  4. all-MiniLM-L12-v2 (heavy fallback)
+
+GPU to CPU Fallback:
+  • Embedder: Auto-detects available GPU, falls back to CPU if <10% memory free
+  • Whisper: Falls back to CPU if GPU initialization fails
+
+================================================================================
+LAST UPDATED: 2025-11-02
+KLOROS VERSION: (see git log for version)
+================================================================================

@@ -1,0 +1,13 @@
+[project]
+name = "kloros-e2e"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+addopts = "-q"
+python_files = "test_*.py"
+testpaths = ["tests/e2e"]
+
+[tool.ruff]
+line-length = 100

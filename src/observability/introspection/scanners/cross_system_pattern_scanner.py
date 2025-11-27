@@ -41,7 +41,7 @@ class CrossSystemPatternScanner:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.storage import MemoryStore
+            from kloros_memory.storage import MemoryStore
 
             self.store = MemoryStore()
 
@@ -55,13 +55,13 @@ class CrossSystemPatternScanner:
     def _initialize_scanners(self):
         """Initialize all Phase 1-3 scanners."""
         try:
-            from src.observability.introspection.scanners.code_quality_scanner import CodeQualityScanner
-            from src.observability.introspection.scanners.test_coverage_scanner import TestCoverageScanner
-            from src.observability.introspection.scanners.performance_profiler_scanner import PerformanceProfilerScanner
-            from src.observability.introspection.scanners.service_health_correlator import ServiceHealthCorrelator
-            from src.observability.introspection.scanners.error_frequency_scanner import ErrorFrequencyScanner
-            from src.observability.introspection.scanners.self_capability_checker import SelfCapabilityChecker
-            from src.observability.introspection.scanners.unindexed_knowledge_scanner import UnindexedKnowledgeScanner
+            from kloros.introspection.scanners.code_quality_scanner import CodeQualityScanner
+            from kloros.introspection.scanners.test_coverage_scanner import TestCoverageScanner
+            from kloros.introspection.scanners.performance_profiler_scanner import PerformanceProfilerScanner
+            from kloros.introspection.scanners.service_health_correlator import ServiceHealthCorrelator
+            from kloros.introspection.scanners.error_frequency_scanner import ErrorFrequencyScanner
+            from kloros.introspection.scanners.self_capability_checker import SelfCapabilityChecker
+            from kloros.introspection.scanners.unindexed_knowledge_scanner import UnindexedKnowledgeScanner
 
             self.other_scanners = [
                 CodeQualityScanner(),

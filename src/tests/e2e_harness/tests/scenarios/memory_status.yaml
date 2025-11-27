@@ -1,0 +1,11 @@
+name: "Get memory system status"
+steps:
+  - say: "What is the current memory system status?"
+
+expect:
+  speech_contains:
+    - "memory"
+    - "status"
+  metrics:
+    latency_ms_max: 25000
+    tool_calls_max: 3

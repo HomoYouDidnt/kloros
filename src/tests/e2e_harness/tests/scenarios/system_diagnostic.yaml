@@ -1,0 +1,11 @@
+name: "Run system diagnostic"
+steps:
+  - say: "Run a full system diagnostic and report status."
+
+expect:
+  speech_contains:
+    - "component"
+    - "status"
+  metrics:
+    latency_ms_max: 25000
+    tool_calls_max: 6

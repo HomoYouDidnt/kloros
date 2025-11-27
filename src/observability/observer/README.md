@@ -237,13 +237,13 @@ sudo systemctl stop kloros-observer.service
 
 ```bash
 # Run directly (foreground)
-python3 -m src.observer.run --log-level INFO
+python3 -m src.kloros.observer.run --log-level INFO
 
 # Enable event spooling (debug mode)
-python3 -m src.observer.run --spool-events
+python3 -m src.kloros.observer.run --spool-events
 
 # Custom metrics endpoint
-python3 -m src.observer.run --metrics-endpoint http://localhost:8080/metrics
+python3 -m src.kloros.observer.run --metrics-endpoint http://localhost:8080/metrics
 ```
 
 ### Environment Variables
@@ -282,7 +282,7 @@ ls -lh ~/.kloros/intents/
 
 Verify intent integrity:
 ```python
-from src.observer.emit import IntentEmitter
+from src.kloros.observer.emit import IntentEmitter
 emitter = IntentEmitter()
 emitter.verify_intent(Path("~/.kloros/intents/1234567890_test.json"))
 ```
@@ -312,7 +312,7 @@ Example orchestrator integration:
 
 ```python
 from pathlib import Path
-from src.observer.emit import IntentEmitter
+from src.kloros.observer.emit import IntentEmitter
 
 emitter = IntentEmitter()
 
@@ -445,7 +445,7 @@ This is non-fatal. MetricsSource will continue trying every interval.
 ## References
 
 - Architecture discussion: `/home/kloros/docs/SYSTEM_ARCHITECTURE_OVERVIEW.md`
-- Orchestrator implementation: `/home/kloros/src/orchestration/`
+- Orchestrator implementation: `/home/kloros/src/kloros/orchestration/`
 - Test logs: `/home/kloros/logs/spica-phase-test.log`
 - PHASE heuristics: `/home/kloros/out/heuristics/summary.json`
 

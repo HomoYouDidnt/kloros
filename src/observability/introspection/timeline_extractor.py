@@ -28,7 +28,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from collections import defaultdict
 
-from src.observability.introspection.documentation_catalog import DocumentCatalog
+from kloros.introspection.documentation_catalog import DocumentCatalog
 
 logger = logging.getLogger(__name__)
 

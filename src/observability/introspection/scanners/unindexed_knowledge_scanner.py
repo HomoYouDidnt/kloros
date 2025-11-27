@@ -92,7 +92,7 @@ class UnindexedKnowledgeScanner:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.knowledge_indexer import get_knowledge_indexer
+            from kloros_memory.knowledge_indexer import get_knowledge_indexer
 
             self.indexer = get_knowledge_indexer()
 

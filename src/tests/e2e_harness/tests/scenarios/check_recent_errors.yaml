@@ -1,0 +1,11 @@
+name: "Check recent errors"
+steps:
+  - say: "Check recent errors from the system."
+
+expect:
+  speech_contains:
+    - "error"
+    - "recent"
+  metrics:
+    latency_ms_max: 25000
+    tool_calls_max: 4

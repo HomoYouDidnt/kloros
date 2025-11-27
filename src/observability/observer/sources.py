@@ -456,6 +456,89 @@ class SystemdAuditSource:
         return False
 
 
+class DeadLetterMonitor:
+    """Monitor dead letter queue for failed intent routing."""
+
+    def __init__(self, dlq_path: Path = Path.home() / ".kloros" / "failed_signals.jsonl",
+                 check_interval_s: int = 60):
+        """
+        Args:
+            dlq_path: Path to dead letter queue file
+            check_interval_s: How often to check DLQ for new entries
+        """
+        self.dlq_path = Path(dlq_path)
+        self.check_interval_s = check_interval_s
+        self._last_check_size = 0
+        self._startup_complete = False
+
+    def stream(self) -> Iterator[Event]:
+        """
+        Yield events when dead letter queue grows.
+
+        Detects intent routing failures and generates investigation events.
+        On first iteration, processes any existing dead letters from startup.
+        """
+        while True:
+            try:
+                if not self.dlq_path.exists():
+                    time.sleep(self.check_interval_s)
+                    continue
+
+                current_size = self.dlq_path.stat().st_size
+
+                if not self._startup_complete:
+                    if current_size > 0:
+                        count = len([line for line in open(self.dlq_path, 'r').readlines() if line.strip()])
+                        yield Event(
+                            source="dead_letter_monitor",
+                            type="error_critical",
+                            ts=time.time(),
+                            data={"message": f"Found {count} historical dead letters on startup"}
+                        )
+
+                    self._last_check_size = current_size
+                    self._startup_complete = True
+                    time.sleep(self.check_interval_s)
+                    continue
+
+                if current_size > self._last_check_size:
+                    with open(self.dlq_path, 'r') as f:
+                        f.seek(self._last_check_size)
+                        new_entries = f.read()
+
+                    new_count = len([line for line in new_entries.split('\n') if line.strip()])
+
+                    if new_count > 0:
+                        last_entry = {}
+                        for line in reversed(new_entries.split('\n')):
+                            if line.strip():
+                                try:
+                                    last_entry = json.loads(line)
+                                    break
+                                except:
+                                    pass
+
+                        error_msg = last_entry.get('error', 'Unknown error')
+
+                        yield Event(
+                            source="dead_letter_monitor",
+                            type="error_critical",
+                            ts=time.time(),
+                            data={
+                                "message": f"Intent routing failures detected: {new_count} new dead letters. Last error: {error_msg}",
+                                "unit": "kloros-intent-router.service",
+                                "dead_letter_count": new_count,
+                                "last_error": error_msg
+                            }
+                        )
+
+                    self._last_check_size = current_size
+
+            except Exception as e:
+                logger.warning(f"Dead letter monitor error: {e}")
+
+            time.sleep(self.check_interval_s)
+
 
 class MetricsSource:
     """Scrape Prometheus metrics periodically."""

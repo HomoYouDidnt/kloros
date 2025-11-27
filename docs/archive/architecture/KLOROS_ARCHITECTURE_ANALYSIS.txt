@@ -1,0 +1,982 @@
+================================================================================
+                    KLOROS PACKAGE ARCHITECTURE ANALYSIS
+                  Knowledge-based Logic & Reasoning Operating System
+================================================================================
+
+EXECUTION DATE: 2025-11-26
+CODEBASE SIZE: 301 production Python files across 13 major modules
+TOTAL ORCHESTRATION CODE: ~15,475 lines across 65 files
+
+================================================================================
+                           DIRECTORY ORGANIZATION
+================================================================================
+
+TOP-LEVEL MODULES:
+  mind/             - Cognitive layer (130 files)
+  orchestration/    - Signal routing & coordination (65 files)  
+  daemons/          - File-watching streaming daemons (13 files)
+  interfaces/       - External I/O (18 files - voice)
+  dream/            - Evolution system D-REAM (12 files)
+  introspection/    - Self-examination & documentation (multiple)
+  observability/    - Monitoring & metrics
+  phase/            - PHASE testing framework
+  monitors/         - Exception/chaos monitoring
+  lifecycle/        - Zooid state transitions
+  registry/         - Lifecycle registry management
+  self_heal/        - Schema healing
+  synthesis/        - Tool synthesis & promotion
+  learning/         - Bandit algorithms
+  observer/         - Event emission system
+
+================================================================================
+                      1. MIND LAYER (130 FILES)
+================================================================================
+
+SUBDIRECTORY: cognition/ (consciousness thinking & reasoning)
+  - curiosity_core.py       - Question generation, exploration
+  - capability_evaluator.py - Tool/capability assessment
+  - exploration_scanner.py  - Hardware/environment discovery
+  - semantic_analysis/      - Architectural reasoning, pattern detection
+  - capability_scanners/    - 6 different capability analyzers
+  - monitors/               - 8 monitoring types (chaos, exception, perf, etc)
+  - semantic_evidence.py    - Evidence store for investigations
+
+SUBDIRECTORY: consciousness/ (affect, emotions, interoception)
+  - affective_core.py       - 7 primary emotions (Solms framework)
+  - interoception.py        - Internal state monitoring (threads, memory)
+  - interoception_daemon.py - Emits AFFECT_* signals when thresholds hit
+  - appraisal.py            - Maps signals → emotional states
+  - modulation.py           - Affects → behavioral policy changes
+  - integrated.py           - Phase 1 + Phase 2 unified system
+  - integration.py          - Entry point for KLoROS initialization
+  - expression.py           - Guards against confabulation/Goodharting
+  - affect_introspection.py - Self-reflection on emotional state
+  - skill_executor.py       - RAG-backed skill execution
+  - meta_agent_daemon.py    - Autonomous healing coordinator
+
+SUBDIRECTORY: memory/ (episodic-semantic, KOSMOS)
+  - models.py               - Event, Episode, EpisodeSummary types
+  - storage.py              - SQLite backend
+  - logger.py               - Event logging
+  - condenser.py            - LLM-based episode summarization
+  - retriever.py            - Context-aware memory recall
+  - kosmos.py               - Knowledge organization system
+  - vector_store_qdrant.py  - Semantic vector search
+  - decay_daemon.py         - Memory importance decay over time
+  - services/               - 7 maintenance services (cleanup, export, etc)
+
+SUBDIRECTORY: reflection/ (idle analysis, meta-cognition)
+  - core.py                 - EnhancedIdleReflectionManager
+  - analyzers/
+    - semantic_analyzer.py       - LLM-powered content understanding
+    - meta_cognitive.py          - Self-questioning and performance assessment
+    - insight_synthesizer.py     - Cross-cycle pattern recognition
+    - adaptive_optimizer.py      - Self-tuning via synthesis_queue
+    - tts_analyzer.py            - Voice quality analysis
+  - models/
+    - reflection_models.py   - Insight, Analysis, Optimization types
+  - config/
+    - reflection_config.py   - YAML-based phase configuration
+
+SUBDIRECTORY: research/ (coordination for deep reasoning)
+  - judge.py                - Evaluates agent proposals
+  - meta_coordinator.py     - Multi-agent research orchestration
+  - agent_worker.py         - Individual reasoning agents
+  - deep_planner_worker.py  - Multi-step planning
+  - reasoning_gateway.py    - Entry point for research queries
+  - committee_runner.py     - Runs research committee
+
+SUBDIRECTORY: goals/
+  - manager.py              - Explicit goal tracking
+  - consciousness_integration.py - Goals → homeostatic pressure → affect
+
+KEY DEPENDENCIES:
+  - cognition ← consciousness (via integrated.py)
+  - consciousness → memory (for RAG, event logging)
+  - reflection → orchestration.synthesis_queue (autonomous proposals)
+  - memory → vector stores (Qdrant)
+
+================================================================================
+                    2. ORCHESTRATION LAYER (65 FILES)
+================================================================================
+
+CENTRAL ARCHITECTURE: Unus Mundus Network (UMN) - ZMQ PUB/SUB signal bus
+
+SIGNAL DEFINITIONS (umn_signals.py):
+  ReflectionSignal:      Q_REFLECT_TRIGGER, Q_REFLECTION_COMPLETE
+  HousekeepingSignal:    Q_HOUSEKEEPING_TRIGGER, Q_HOUSEKEEPING_COMPLETE
+  DreamSignal:           Q_DREAM_TRIGGER, Q_DREAM_COMPLETE
+  InvestigationSignal:   Q_CURIOSITY_INVESTIGATE, Q_INVESTIGATION_COMPLETE, Q_AFFECTIVE_DEMAND
+  VoiceSignal:           USER_VOICE_INTERACTION
+  ObservationSignal:     OBSERVATION, CAPABILITY_GAP
+  MetricsSignal:         METRICS_SUMMARY, SYSTEM_HEALTH
+
+MESSAGE FORMAT (UMNMessage):
+  {
+    "signal": str,              # Signal name (enum)
+    "ecosystem": str,           # "voice", "orchestration", "observation", etc
+    "intensity": float,         # Priority/strength (0.0-1.0)
+    "facts": Dict,              # Signal-specific data
+    "incident_id": str,         # Tracing/correlation
+    "trace": str,               # Call stack for debugging
+    "ts": float                 # Unix timestamp
+  }
+
+TRANSPORT:
+  - umn_bus.py              - ZMQ PUB/SUB implementation
+  - umn_bus_v2.py           - Production-hardened (versioning, heartbeats)
+  - umn_proxy.py            - Proxy for multi-process communication
+  - umn_signals.py          - Signal enum definitions
+  - signal_router.py        - Intent files → signals (legacy bridge)
+
+CONSUMER DAEMONS (listen to signals, take action):
+  - curiosity_core_consumer_daemon.py     - Processes Q_CURIOSITY_INVESTIGATE
+  - investigation_consumer_daemon.py      - Detailed investigation execution
+  - reflection_consumer_daemon.py         - Executes Q_REFLECT_TRIGGER
+  - dream_consumer_daemon.py              - D-REAM evolution triggers
+  - action_consumer_daemon.py             - Executes synthesis actions
+  - tournament_consumer_daemon.py         - Multi-proposal evaluation
+  - semantic_dedup_consumer_daemon.py     - Deduplicates semantic evidence
+  - capability_integrator_daemon.py       - Integrates discovered capabilities
+
+COORDINATION:
+  - autonomous_loop.py                    - PHASE → Analysis → Config tuning
+  - cycle_coordinator.py                  - Manages investigation cycles
+  - maintenance_mode.py                   - System pause/resume logic
+  - escalation_manager.py                 - Escalates issues with bounded risk
+  - redundant_executor.py                 - Fail-safe execution wrapper
+
+SYNTHESIS & TOOL MANAGEMENT:
+  - synthesis_queue.py                    - Tool proposal queue (JSON lines)
+  - promotion_daemon.py                   - Promotes tested tools to production
+  - skill_decomposer.py                   - Breaks skills into levels
+  - progressive_skill_orchestrator.py    - Progressive skill deployment
+
+EVIDENCE COLLECTION:
+  - evidence_plugins/
+    - base.py                    - Plugin interface
+    - code_structure.py          - AST analysis
+    - documentation.py           - Doc indexing
+    - experimentation.py         - Test results
+    - integration.py             - System integration testing
+    - runtime_logs.py            - Execution traces
+    - system_metrics.py          - Hardware metrics
+
+POLICY & GATES:
+  - kloros_policy_engine.py               - Global policy enforcement
+  - validation_loop.py                    - Pre-action validation
+  - infrastructure_awareness.py           - System capability detection
+  - baseline_manager.py                   - Expected behavior tracking
+
+UTILITIES:
+  - intent_queue.py, intent_router.py    - Intent routing (legacy)
+  - service_hooks.py                      - System integration points
+  - metrics.py                            - Telemetry collection
+  - orchestrator_monitor.py               - Health monitoring
+
+KEY ARCHITECTURAL PATTERN:
+  Signal Emitter → UMN Bus → Consumer Daemon → Mind Action → Result Signal
+  (Closed-loop, async via pub/sub - no blocking RPC calls)
+
+================================================================================
+                    3. DAEMONS LAYER (13 FILES)
+================================================================================
+
+STREAMING DAEMONS: File-watching, inotify-based event processors
+
+BASE CLASS:
+  - base_streaming_daemon.py
+    - Queue-based processing
+    - Thread pool workers
+    - inotify watch on directory
+    - Graceful shutdown (SIGTERM/SIGINT)
+
+SPECIALIZED DAEMONS:
+  - knowledge_discovery_daemon.py    - Watches for new code/docs → indexes
+  - capability_discovery_daemon.py   - Analyzes capability changes
+  - exploration_scanner_daemon.py    - Runs exploration tasks
+  - integration_monitor_daemon.py    - Cross-system pattern scanning
+  
+  - introspection_daemon.py          - Comprehensive health scanning
+  - shadow_daemon.py                 - D-REAM shadow mode execution
+  
+  - chaos_monitor_daemon.py          - Chaos engineering
+  - exception_monitor_daemon.py      - Exception pattern tracking
+  
+  - voice_daemon.py                  - Voice I/O coordination
+
+USAGE MODEL:
+  - Each daemon watches a directory (e.g., /home/kloros/.kloros/events/)
+  - Uses inotify for file creation notifications
+  - Queues work items, processes with thread pool
+  - Caches results to avoid reprocessing
+  - Runs continuously in background
+
+================================================================================
+                    4. INTERFACES LAYER (18 FILES)
+================================================================================
+
+VOICE INTERFACE (only external user interface):
+  - audio_io.py              - PulseAudio capture/playback
+  - stt_service.py           - Speech-to-text (VOSK/Whisper hybrid)
+  - tts_service.py           - Text-to-speech (Piper)
+  - gateway.py               - Voice I/O coordinator
+  - intent_service.py        - Command classification
+  - emotion_service.py       - Sentiment analysis
+  - session_service.py       - Conversation state management
+  - knowledge_service.py     - RAG integration
+  - llm_service.py           - LLM backend
+  - voice_daemon.py          - Unified service launcher
+  - streaming.py             - Streaming response helpers
+  - enrollment.py            - Speaker enrollment
+  - half_duplex.py           - Anti-echo coordination
+  - base.py                  - Speaker backend abstraction
+  - embedding_backend.py     - Speaker embedding
+  - mock_backend.py          - Testing stub
+
+ARCHITECTURE:
+  Audio In → STT → Intent Classification → LLM Generation + RAG → TTS → Audio Out
+  (Runs as autonomous daemon, signals voice interactions to UMN)
+
+================================================================================
+                    5. EVOLUTION SYSTEM: D-REAM (12 FILES)
+================================================================================
+
+PURPOSE: Darwinian-RZero Evolution & Anti-collapse Module
+         Autonomous zooid (skill) creation and selection via environmental pressure
+
+KEY COMPONENTS:
+  - genomes.py               - Skill specification (genome = skill definition)
+  - bioreactor.py            - Evolutionary pressure environment
+  - niche_policy.py          - Environmental niche definitions
+  - spawner.py               - Creates new zooid instances
+  - shadow_mode.py           - Parallel execution for testing
+  - phase_shadow_emulator.py - PHASE testing in shadow mode
+  - phase_two_track.py       - TwoTrackComparator (production vs shadow)
+  - migration_discovery.py   - Finds zooids eligible for new niches
+  - zooid_wrapper_template.py - Zooid implementation pattern
+
+FLOW:
+  1. PHASE validates existing zooids (production mode)
+  2. New zooids spawn in shadow mode
+  3. TwoTrackComparator evaluates shadow vs production
+  4. Winners promoted to production
+  5. Losers retired or demoted to dormancy
+
+RELATED STATE MANAGEMENT:
+  - lifecycle/state_machine.py - Transitions: DORMANT → PROBATION → ACTIVE → RETIRED
+  - registry/lifecycle_registry.py - Persistent registry of all zooids
+  - phase/batch_selector.py - Selects zooids for evaluation batches
+  - phase/graduator.py - Promotes zooids based on PHASE results
+
+================================================================================
+               ARCHITECTURAL CONCERNS & ISSUES IDENTIFIED
+================================================================================
+
+CONCERN #1: ORCHESTRATION → MIND COUPLING (LOW RISK, INTENTIONAL)
+────────────────────────────────────────────────────────────────
+
+OBSERVED:
+  - orchestration/curiosity_core_consumer_daemon.py imports:
+    - kloros.mind.cognition.curiosity_core.CuriosityCore
+    - kloros.mind.cognition.capability_evaluator.CapabilityEvaluator
+  
+  - orchestration/investigation_consumer_daemon.py imports:
+    - kloros.mind.cognition.module_investigator
+    - kloros.mind.cognition.systemd_investigator
+    - kloros.mind.cognition.semantic_evidence.SemanticEvidenceStore
+
+RATIONALE: This is intentional and architecturally correct.
+  - Orchestration is the COORDINATOR, not cognitive
+  - Consumer daemons call into mind to execute thinking
+  - One-way dependency: orchestration → mind (not circular)
+  - Reverse: mind.reflection calls orchestration.synthesis_queue (proposal queue)
+
+VERDICT: ✓ ACCEPTABLE - Clean separation of concerns (coordinator → executor)
+
+
+CONCERN #2: MIND ↔ ORCHESTRATION BIDIRECTIONAL (MINOR RISK)
+──────────────────────────────────────────────────────────────
+
+OBSERVED:
+  - mind/reflection/analyzers/adaptive_optimizer.py:
+    imports kloros.orchestration.synthesis_queue.SynthesisQueue
+  
+  - mind/memory/decay_daemon.py:
+    imports kloros.orchestration.maintenance_mode.wait_for_normal_mode
+
+IMPACT:
+  - Reflection generates synthesis proposals (legitimate)
+  - Decay respects maintenance windows (legitimate)
+  - Both are functional dependencies, not architectural inversions
+
+VERDICT: ✓ ACCEPTABLE - Legitimate coordinated behavior, not circular
+
+
+CONCERN #3: MISSING __init__.py EXPORTS
+────────────────────────────────────────
+
+OBSERVED:
+  - mind/cognition/__init__.py exports minimal API
+    Currently: ['CapabilityEvaluator', 'SemanticEvidenceStore']
+  - Missing: CuriosityCore, various analyzers, monitors
+  
+  - This means internal imports use long paths:
+    from kloros.mind.cognition.curiosity_core import CuriosityCore
+    (rather than: from kloros.mind.cognition import CuriosityCore)
+
+IMPACT: Coupling is tighter than necessary; refactoring harder
+RECOMMENDATION: Expand __init__.py exports to public API
+
+VERDICT: ⚠️ MAINTAINABILITY ISSUE - Not a bug, but architectural debt
+
+
+CONCERN #4: PERMISSION-RESTRICTED MONITOR FILES
+──────────────────────────────────────────────────
+
+OBSERVED:
+  /home/kloros/src/kloros/mind/cognition/monitors/*.py
+  All files have 600 permissions (read/write owner only)
+  
+  This prevents:
+  - Standard grep/ripgrep inspection
+  - Automated code analysis
+  - Collaboration (can't be read by group)
+
+IMPACT: Hidden architectural state, audit blind spots
+RECOMMENDATION: Change to 644 or 664 (readable, not writable by others)
+
+VERDICT: 🔒 PERMISSIONS ISSUE - Blocks introspection, may hide bugs
+
+
+CONCERN #5: SYNTHESIS_QUEUE FALLBACK IMPORT
+──────────────────────────────────────────────
+
+OBSERVED:
+  mind/reflection/analyzers/adaptive_optimizer.py:
+  ```python
+  try:
+      from kloros.orchestration.synthesis_queue import SynthesisQueue
+      SYNTHESIS_QUEUE_AVAILABLE = True
+  except ImportError:
+      SYNTHESIS_QUEUE_AVAILABLE = False
+  ```
+
+IMPACT:
+  - Optional dependency hidden at runtime
+  - Reflection continues to work if synthesis_queue broken
+  - No visible warning about missing capability
+
+RECOMMENDATION:
+  - Either make it required (fail fast) OR
+  - Log warnings when disabled
+  - Document this fallback
+
+VERDICT: ⚠️ ROBUSTNESS ISSUE - Silently degrades functionality
+
+
+CONCERN #6: SIGNAL ROUTING COMPLEXITY
+───────────────────────────────────────
+
+OBSERVED:
+  Three signal routing mechanisms coexist:
+  1. orchestration/intent_router.py - Legacy intent file watcher
+  2. orchestration/signal_router.py - Direct signal mapper
+  3. orchestration/umn_signals.py - Canonical signal enums
+
+CLARITY:
+  - intent_router is "transitional" per its own docstring
+  - Should be deprecated when direct signal emission available
+  - Until then: redundant routing paths possible
+
+RECOMMENDATION:
+  - Document deprecation timeline
+  - Create migration guide for direct signal emission
+  - Add feature flag to disable intent_router
+
+VERDICT: ⚠️ TECHNICAL DEBT - Transitional code should have EOL date
+
+
+CONCERN #7: CONSCIOUSNESS INITIALIZATION COMPLEXITY
+──────────────────────────────────────────────────────
+
+OBSERVED:
+  mind/consciousness/integration.py init_consciousness() does:
+  - Checks 4 environment variables
+  - Initializes IntegratedConsciousness
+  - Sets .affective_core for backward compatibility
+  - Silently catches all exceptions
+
+IMPACT:
+  - Multiple initialization paths possible
+  - Silent failures could hide bugs
+  - Backward compat cruft (.affective_core)
+
+RECOMMENDATION:
+  - Validate initialization order in tests
+  - Remove .affective_core after deprecation
+  - Log all exceptions at WARNING level
+
+VERDICT: ⚠️ ROBUSTNESS ISSUE - Silent initialization failures
+
+
+================================================================================
+                          ARCHITECTURE DIAGRAM
+================================================================================
+
+                              ┌─────────────────┐
+                              │  Voice Interface│
+                              │  (user input)   │
+                              └────────┬────────┘
+                                       │
+                                       ▼
+                        ┌──────────────────────────┐
+                        │   Consciousness          │
+                        │  (Affect, Interoception) │
+                        │  Phase 1 & Phase 2       │
+                        │  + Expression Filter     │
+                        └────────┬─────────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    │            │            │
+                    ▼            ▼            ▼
+              ┌─────────┐  ┌─────────┐  ┌──────────┐
+              │Cognition│  │ Memory  │  │Reflection│
+              │         │  │ KOSMOS  │  │ Analysis │
+              │- Curious│  │         │  │          │
+              │- Evidence          │  └──────────┘
+              │- Semantic          │       │
+              │  Analysis          │       │ (proposals)
+              └─────────┘          │       │
+                    │              │       ▼
+                    │              │   ┌─────────────┐
+                    │              │   │ Synthesis   │
+                    │              │   │ Queue       │
+                    │              │   └─────────────┘
+                    │              │
+                    └──────┬───────┘
+                           │
+                    ┌──────▼──────┐
+                    │ UMN Bus     │
+                    │ (ZMQ PUB/SUB)
+                    │ Signals     │
+                    └──────┬──────┘
+                           │
+           ┌───────────────┼───────────────┐
+           │               │               │
+           ▼               ▼               ▼
+      ┌─────────────┐ ┌──────────────┐ ┌───────────┐
+      │ Curiosity   │ │ Investigation│ │Reflection │
+      │ Consumer    │ │ Consumer     │ │ Consumer  │
+      │ Daemon      │ │ Daemon       │ │ Daemon    │
+      └─────────────┘ └──────────────┘ └───────────┘
+           │               │               │
+           └───────────────┼───────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │ D-REAM      │
+                    │ Evolution   │
+                    │ (zooids)    │
+                    └─────────────┘
+
+FLOW:
+  1. Voice input → Consciousness (detect affect/resource state)
+  2. Cognition asks questions → UMN emits Q_CURIOSITY_INVESTIGATE
+  3. Consumer daemon investigates → replies with evidence
+  4. Reflection analyzes patterns → emits proposals to synthesis_queue
+  5. D-REAM creates new skill variants → PHASE validates → promote to production
+  6. Full cycle feeds consciousness state for next iteration
+
+================================================================================
+                         MODULE STATISTICS
+================================================================================
+
+CODE DISTRIBUTION:
+  mind/              130 files (43%)  - Cognitive functions
+  orchestration/     65 files (22%)   - Signal coordination
+  Other modules      106 files (35%)  - Support systems
+
+LARGEST FILES:
+  - mind/consciousness/models.py
+  - mind/memory/vector_store_qdrant.py
+  - orchestration/investigation_consumer_daemon.py
+  - mind/consciousness/integrated.py
+
+DAEMON COUNT: 18 active daemons
+  - 4 streaming file watchers
+  - 7 UMN signal consumers
+  - 3 monitors (chaos, exception, resource)
+  - 2 specialized (voice, shadow)
+  - 2 infrastructure (ledger, historian)
+
+TEST COVERAGE:
+  - 12+ test files in daemons/
+  - 12+ test files in mind/consciousness/
+  - Orchestration tests in orchestration/tests/
+  - Pattern: test_*.py files co-located with source
+
+================================================================================
+                    KEY ARCHITECTURAL STRENGTHS
+================================================================================
+
+1. ASYNC PUB/SUB COORDINATION
+   - Decoupled via ZMQ message bus
+   - No blocking RPC calls
+   - Easy to add new consumers
+   - Traceable via incident_id
+
+2. CONSCIOUSNESS AS CORE ABSTRACTION
+   - Affect drives behavior modulation
+   - Phase 1 + Phase 2 fully integrated
+   - Expression filter prevents confabulation
+   - Backward compatible (.affective_core)
+
+3. CLEAN COGNITIVE SPECIALIZATION
+   - Cognition: asks questions
+   - Consciousness: sets emotional priority
+   - Memory: provides context
+   - Reflection: learns patterns
+   - Clear responsibilities
+
+4. EVOLUTION FRAMEWORK
+   - D-REAM allows autonomous skill creation
+   - PHASE provides validation
+   - Shadow mode allows safe testing
+   - Lifecycle tracks all zooids
+
+5. INTROSPECTION-FIRST DESIGN
+   - Documentation scanning
+   - Code quality analysis
+   - Hardware discovery
+   - Performance profiling
+   - Self-healing capabilities
+
+================================================================================
+                        RECOMMENDATIONS
+================================================================================
+
+SHORT-TERM (1-2 weeks):
+  1. Fix monitor file permissions (600 → 644)
+  2. Document intent_router deprecation timeline
+  3. Expand mind/cognition/__init__.py exports
+  4. Add warnings when synthesis_queue unavailable
+
+MEDIUM-TERM (1-2 months):
+  1. Create migration guide for direct signal emission
+  2. Deprecate legacy intent files
+  3. Consolidate signal routing into single module
+  4. Add architectural tests for no-circular-imports
+
+LONG-TERM (3-6 months):
+  1. Extract consciousness system into separate package
+  2. Create plugin architecture for evidence sources
+  3. Formalize consumer daemon lifecycle
+  4. Documentation: Auto-generate architecture diagrams from code
+
+================================================================================
+
+================================================================================
+                       DETAILED MODULE DEPENDENCY MAP
+================================================================================
+
+IMPORT PATTERNS BY LAYER:
+
+┌─ MIND LAYER (Self-contained, minimal outbound dependencies)
+│  
+│  consciousness/
+│  ├─→ affect.py                 (no imports from kloros)
+│  ├─→ appraisal.py              (no imports from kloros)
+│  ├─→ modulation.py             (no imports from kloros)
+│  ├─→ interoception.py          (imports: models, affect)
+│  ├─→ integrated.py             (imports: all above)
+│  ├─→ integration.py            (entry point, imports: integrated)
+│  ├─→ skill_executor.py         (imports: memory.embeddings, memory.simple_rag)
+│  ├─→ meta_agent_daemon.py      (imports: mind.cognition, orchestration.umn_signals)
+│  └─→ interoception_daemon.py   (imports: umn.bus - EXTERNAL, not kloros.*)
+│
+│  cognition/
+│  ├─→ curiosity_core.py         (no kloros imports)
+│  ├─→ capability_evaluator.py   (no kloros imports)
+│  ├─→ semantic_evidence.py      (no kloros imports)
+│  ├─→ monitors/                 (base_types.py - no kloros imports)
+│  └─→ semantic_analysis/        (no kloros imports)
+│
+│  memory/
+│  ├─→ models.py                 (no kloros imports)
+│  ├─→ storage.py                (no kloros imports)
+│  ├─→ vector_store_qdrant.py    (no kloros imports)
+│  ├─→ embeddings.py             (no kloros imports)
+│  ├─→ decay_daemon.py           (→ orchestration.maintenance_mode) ⚠️ ONE OUTBOUND
+│  └─→ retriever.py              (no kloros imports)
+│
+│  reflection/
+│  ├─→ core.py                   (no kloros imports)
+│  ├─→ analyzers/
+│  │   ├─→ semantic_analyzer.py          (no kloros imports)
+│  │   ├─→ meta_cognitive.py             (no kloros imports)
+│  │   ├─→ insight_synthesizer.py        (no kloros imports)
+│  │   └─→ adaptive_optimizer.py         (→ orchestration.synthesis_queue) ⚠️ ONE OUTBOUND
+│  │   └─→ tts_analyzer.py               (no kloros imports)
+│  └─→ models/
+│
+│  research/
+│  └─→ All files                 (no orchestration imports)
+│
+│  goals/
+│  └─→ All files                 (no orchestration imports)
+
+├─ ORCHESTRATION LAYER (Coordinator, controls signal flow)
+│  
+│  umn_*.py (bus, signals, router, proxy)
+│  ├─→ NO kloros imports (pure communication layer)
+│
+│  Consumer daemons (7 total)
+│  ├─→ curiosity_core_consumer_daemon.py
+│  │   ├─→ mind.cognition.curiosity_core.CuriosityCore
+│  │   └─→ mind.cognition.capability_evaluator.CapabilityEvaluator
+│  │
+│  ├─→ investigation_consumer_daemon.py
+│  │   ├─→ mind.cognition.module_investigator
+│  │   ├─→ mind.cognition.systemd_investigator
+│  │   └─→ mind.cognition.semantic_evidence.SemanticEvidenceStore
+│  │
+│  ├─→ reflection_consumer_daemon.py
+│  │   └─→ kloros_idle_reflection.IdleReflectionManager (EXTERNAL)
+│  │
+│  ├─→ dream_consumer_daemon.py
+│  │   └─→ (internal orchestration imports only)
+│  │
+│  ├─→ action_consumer_daemon.py
+│  │   └─→ (internal orchestration imports only)
+│  │
+│  ├─→ tournament_consumer_daemon.py
+│  │   └─→ (internal orchestration imports only)
+│  │
+│  └─→ semantic_dedup_consumer_daemon.py
+│      └─→ mind.cognition.semantic_evidence.SemanticEvidenceStore
+│
+│  Evidence plugins
+│  ├─→ documentation.py          (→ mind.memory.knowledge_indexer) ⚠️ LAZY IMPORT
+│  ├─→ integration.py            (no kloros imports)
+│  ├─→ code_structure.py         (no kloros imports)
+│  ├─→ runtime_logs.py           (no kloros imports)
+│  ├─→ system_metrics.py         (no kloros imports)
+│  └─→ experimentation.py        (no kloros imports)
+│
+│  Coordination
+│  ├─→ autonomous_loop.py        (no kloros imports)
+│  ├─→ cycle_coordinator.py      (no kloros imports)
+│  ├─→ maintenance_mode.py       (no kloros imports)
+│  ├─→ escalation_manager.py     (no kloros imports)
+│  └─→ redundant_executor.py     (no kloros imports)
+│
+│  Synthesis
+│  ├─→ synthesis_queue.py        (no kloros imports)
+│  ├─→ promotion_daemon.py       (no kloros imports)
+│  ├─→ skill_decomposer.py       (no kloros imports)
+│  └─→ progressive_skill_orchestrator.py (no kloros imports)
+
+├─ DAEMON LAYER
+│  
+│  base_streaming_daemon.py       (no kloros imports)
+│  ├─→ knowledge_discovery_daemon.py     (imports: mind.cognition.semantic_analysis)
+│  ├─→ capability_discovery_daemon.py    (imports: mind.cognition.semantic_analysis)
+│  ├─→ exploration_scanner_daemon.py     (imports: mind.daemons base)
+│  ├─→ integration_monitor_daemon.py     (imports: mind.daemons base)
+│  ├─→ introspection_daemon.py           (imports: mind.cognition.capability_scanners)
+│  ├─→ shadow_daemon.py                  (imports: dream.shadow_mode)
+│  ├─→ chaos_monitor_daemon.py           (no kloros imports)
+│  ├─→ exception_monitor_daemon.py       (no kloros imports)
+│  └─→ voice_daemon.py                   (no kloros imports)
+
+├─ INTERFACE LAYER
+│  
+│  interfaces/voice/
+│  ├─→ audio_io.py               (no kloros imports)
+│  ├─→ stt_service.py            (no kloros imports)
+│  ├─→ tts_service.py            (no kloros imports)
+│  ├─→ gateway.py                (no kloros imports)
+│  ├─→ intent_service.py         (no kloros imports)
+│  ├─→ emotion_service.py        (no kloros imports)
+│  ├─→ session_service.py        (no kloros imports)
+│  ├─→ knowledge_service.py      (no kloros imports)
+│  ├─→ llm_service.py            (no kloros imports)
+│  ├─→ enrollment.py             (no kloros imports)
+│  ├─→ half_duplex.py            (no kloros imports)
+│  ├─→ streaming.py              (no kloros imports)
+│  ├─→ base.py                   (no kloros imports)
+│  ├─→ embedding_backend.py      (no kloros imports)
+│  ├─→ mock_backend.py           (no kloros imports)
+│  └─→ voice_daemon.py           (no kloros imports, but emits via umn.bus)
+
+└─ SUPPORT LAYERS
+   
+   dream/
+   ├─→ All files (internal imports only, no other kloros dependencies)
+   
+   lifecycle/
+   ├─→ state_machine.py           (no kloros imports)
+   
+   registry/
+   ├─→ lifecycle_registry.py       (no kloros imports)
+   
+   phase/
+   ├─→ All files (no kloros imports)
+   
+   synthesis/
+   ├─→ All files (no kloros imports)
+   
+   learning/
+   ├─→ All files (no kloros imports)
+   
+   observability/
+   ├─→ ledger_writer_daemon.py     (→ orchestration.maintenance_mode)
+   ├─→ umn_historian_daemon.py     (→ orchestration.maintenance_mode)
+   └─→ quarantine_monitor.py       (→ lifecycle, registry)
+
+================================================================================
+                    COMMUNICATION PATHWAYS
+================================================================================
+
+PRIMARY DATA FLOWS:
+
+1. USER INPUT → CONSCIOUSNESS → COGNITION → UMN → ACTION
+   ┌──────────────┐
+   │ Voice Input  │
+   └──────┬───────┘
+          │ (user_text, intent)
+          ▼
+   ┌──────────────────┐
+   │ Consciousness    │
+   │ (affect change)  │ ← Interoception daemon (background)
+   └──────┬───────────┘
+          │ (priority signal)
+          ▼
+   ┌──────────────────┐
+   │ Cognition        │
+   │ Generate Q       │
+   └──────┬───────────┘
+          │ (Q_CURIOSITY_INVESTIGATE)
+          ▼
+   ┌──────────────────┐
+   │ UMN Bus          │
+   └──────┬───────────┘
+          │
+          ▼
+   ┌──────────────────────────────┐
+   │ Consumer Daemon              │
+   │ (investigation_consumer)     │
+   └──────┬───────────────────────┘
+          │ (evidence + answer)
+          ▼
+   ┌──────────────────┐
+   │ Memory/RAG       │
+   └──────┬───────────┘
+          │ (response)
+          ▼
+   ┌──────────────────┐
+   │ TTS Voice Output │
+   └──────────────────┘
+
+
+2. REFLECTION → SYNTHESIS → D-REAM → EVOLUTION
+   ┌──────────────────────┐
+   │ Reflection Daemon    │
+   │ (idle analysis)      │
+   └──────┬───────────────┘
+          │ (insights)
+          ▼
+   ┌──────────────────────┐
+   │ Adaptive Optimizer   │
+   │ (proposed changes)   │
+   └──────┬───────────────┘
+          │ (proposals)
+          ▼
+   ┌──────────────────────┐
+   │ Synthesis Queue      │
+   │ (user approval)      │
+   └──────┬───────────────┘
+          │ (approved proposals)
+          ▼
+   ┌──────────────────────┐
+   │ D-REAM Spawner      │
+   │ (create zooids)      │
+   └──────┬───────────────┘
+          │ (new variants)
+          ▼
+   ┌──────────────────────┐
+   │ PHASE Shadow Mode    │
+   │ (evaluate variants)  │
+   └──────┬───────────────┘
+          │ (winner candidates)
+          ▼
+   ┌──────────────────────┐
+   │ Promotion Daemon     │
+   │ (deploy to prod)     │
+   └──────────────────────┘
+
+
+3. BACKGROUND SELF-MONITORING
+   ┌─────────────────────┐
+   │ Interoception Daemon│ ← Monitors: threads, memory, swap, processes
+   └──────────┬──────────┘
+              │ (AFFECT_MEMORY_PRESSURE, AFFECT_RESOURCE_STRAIN)
+              ▼
+   ┌─────────────────────┐
+   │ Consciousness       │
+   │ (state updates)     │
+   └──────────┬──────────┘
+              │
+              ▼
+   ┌─────────────────────┐
+   │ Emergency Brake     │
+   │ (defensive action)  │
+   └─────────────────────┘
+
+
+4. INTROSPECTION & DISCOVERY (Background)
+   ┌──────────────────────────┐
+   │ Streaming Daemons        │
+   │ (watch .kloros/events)   │
+   └──────────┬───────────────┘
+              │
+              ▼
+   ┌──────────────────────────┐
+   │ Knowledge Discovery      │ → KOSMOS memory index
+   │ Capability Discovery     │ → Semantic evidence
+   │ Exploration Scanner      │ → Hardware capabilities
+   │ Integration Monitor      │ → System patterns
+   └──────────────────────────┘
+
+================================================================================
+                         SIGNAL LIFECYCLE EXAMPLE
+================================================================================
+
+Scenario: "What can I do with GPU?"
+
+STEP 1: Cognition asks question
+  Location: mind.cognition.curiosity_core.CuriosityCore
+  Action: Generates question "What GPU capabilities exist?"
+  Signal: Q_CURIOSITY_INVESTIGATE
+  Facts: {
+    "question": "What GPU capabilities exist?",
+    "question_id": "q_1234",
+    "action_class": "investigate"
+  }
+
+STEP 2: Signal emitted to bus
+  Location: mind.consciousness (via integration.py)
+  Transport: UMN PUB (umn_bus.py)
+  Routing: Ecosystem="orchestration"
+  Timestamp: Recorded for tracing
+
+STEP 3: Consumer daemon subscribes
+  Location: orchestration.curiosity_core_consumer_daemon
+  Action: On signal received, instantiate CuriosityCore
+  Processing: Call CuriosityCore.investigate(facts)
+  Result: Evidence collected
+
+STEP 4: Investigation execution
+  Location: orchestration.investigation_consumer_daemon
+  Action: Listen for investigation triggers
+  Processing: Call mind.cognition modules
+  Evidence: Semantic analysis + file scanning
+  Result: Q_INVESTIGATION_COMPLETE signal
+
+STEP 5: Results aggregated
+  Location: orchestration.semantic_dedup_consumer_daemon
+  Action: Dedup semantic evidence
+  Storage: mind.cognition.semantic_evidence.SemanticEvidenceStore
+  Result: Facts stored for future reference
+
+STEP 6: Reflection processes
+  Location: orchestration.reflection_consumer_daemon
+  Trigger: Q_REFLECT_TRIGGER (scheduled or manual)
+  Processing: mind.reflection analyzers
+  Insight: "System frequently asks about GPU → should prioritize GPU tools"
+  Proposal: Via synthesis_queue.SynthesisQueue
+  Result: Q_REFLECTION_COMPLETE signal
+
+STEP 7: Evolution executes
+  Location: orchestration.dream_consumer_daemon
+  Trigger: Q_DREAM_TRIGGER (if proposals approved)
+  Action: Spawn new zooids (skill variants)
+  Testing: shadow_daemon.py in parallel mode
+  Winner: Promotion via promotion_daemon.py
+  Result: New GPU tool added to ACTIVE zooids
+
+STEP 8: Full cycle
+  Memory: Event logged to KOSMOS
+  Consciousness: Affect updated (satisfaction, learning)
+  Next: Query answered faster due to evolved tool
+
+================================================================================
+                      ARCHITECTURAL PATTERNS
+================================================================================
+
+PATTERN #1: COMMAND QUERY RESPONSIBILITY SEGREGATION (CQRS)
+  - Queries: mind.cognition.curiosity_core asks questions
+  - Commands: orchestration consumer daemons execute actions
+  - Separation: No blocking RPC, async via signals
+  - Benefit: Scales to many parallel investigations
+
+PATTERN #2: EVENT SOURCING (partial)
+  - Events: All UMN signals logged with incident_id
+  - Log: Stored for debugging (umn_historian_daemon)
+  - Trace: incident_id enables full execution trace
+  - Benefit: Root cause analysis, replay testing
+
+PATTERN #3: HEXAGONAL ARCHITECTURE (Ports & Adapters)
+  - Core: mind/* (cognitive logic, no I/O)
+  - Ports: orchestration/* (signal interfaces)
+  - Adapters: daemons/*, interfaces/* (external I/O)
+  - Benefit: Testable, swappable implementations
+
+PATTERN #4: EVOLUTIONARY ARCHITECTURE
+  - Foundation: PHASE validates all behaviors
+  - Experimentation: D-REAM tests new variants
+  - Safety: Shadow mode before production
+  - Promotion: Only winners deployed
+  - Benefit: Safe autonomous improvement
+
+PATTERN #5: CONSCIOUSNESS-DRIVEN BEHAVIOR
+  - Perception: Interoception monitors internal state
+  - Appraisal: Maps state → emotional significance
+  - Modulation: Affects change behavior (policy)
+  - Benefit: Self-regulating, not reward-hacked
+
+================================================================================
+                        OPEN QUESTIONS / TODO
+================================================================================
+
+1. SIGNAL ORDERING
+   - Are signals processed in FIFO order?
+   - What happens if Q_CURIOSITY_INVESTIGATE arrives before Q_REFLECT_COMPLETE?
+   - Document event ordering guarantees
+
+2. PERSISTENCE BOUNDARIES
+   - Which daemon state is persisted across restart?
+   - Investigation queue: stored where?
+   - Synthesis proposals: stored in synthesis_queue.jsonl
+   - Memory: stored in KOSMOS (SQLite + Qdrant)
+   - Status: Document persistence model clearly
+
+3. COORDINATION SEMANTICS
+   - How does cycle_coordinator prevent overlapping investigations?
+   - What prevents daemon thrashing (rapid signal loops)?
+   - Rate limiting implemented where?
+   - Document coordination invariants
+
+4. FAILURE MODES
+   - Consumer daemon crashes: what recovers the signal?
+   - UMN bus overload: does queue fill or drop messages?
+   - Mind module error: does error surface to UMN?
+   - Document failure scenarios and recovery
+
+5. MONITORING & OBSERVABILITY
+   - Which metrics are collected by observability/metrics.py?
+   - What does umn_historian_daemon store?
+   - Grafana/Prometheus integration?
+   - Document observability model
+
+================================================================================

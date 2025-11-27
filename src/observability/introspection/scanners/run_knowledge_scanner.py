@@ -17,7 +17,7 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parents[3]))
 
-from src.observability.introspection.scanners.unindexed_knowledge_scanner import scan_for_unindexed_knowledge
+from kloros.introspection.scanners.unindexed_knowledge_scanner import scan_for_unindexed_knowledge
 
 logging.basicConfig(
     level=logging.INFO,

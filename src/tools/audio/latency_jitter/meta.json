@@ -1,0 +1,13 @@
+{
+  "current_version": "v0001",
+  "created_at": 1761089765,
+  "history": [
+    {
+      "version": "v0001",
+      "applied_at": 1761089765,
+      "source": "baseline",
+      "checksum": "4156d1d8eea2cf1325415103df9e3cb0dc3dab120dab6d2825126d1cac7a6db3",
+      "reason": "Initial baseline version"
+    }
+  ]
+}

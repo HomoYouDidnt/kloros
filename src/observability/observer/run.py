@@ -19,12 +19,12 @@ import threading
 from pathlib import Path
 from typing import List
 
-from .sources import Event, JournaldSource, InotifySource, MetricsSource, SystemdAuditSource
+from .sources import Event, JournaldSource, InotifySource, MetricsSource, SystemdAuditSource, DeadLetterMonitor
 from .rules import RuleEngine
 from .emit import IntentEmitter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from src.core.common.memory_monitor import create_monitor
+from src.common.memory_monitor import create_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ class Observer:
                 "kloros-curiosity-core-consumer.service",
                 "kloros-curiosity-processor.service",
                 "kloros-dream-consumer.service",
+                "kloros-intent-router.service",
                 "kloros-introspection.service",
                 "kloros-observer.service",
                 "kloros-orchestrator-monitor.service",
@@ -88,6 +89,7 @@ class Observer:
             interval_s=metrics_interval_s
         )
         self.systemd_audit_source = SystemdAuditSource(interval_s=86400)  # Audit once per day
+        self.dead_letter_monitor = DeadLetterMonitor(check_interval_s=60)  # Check DLQ every minute
 
         self.rule_engine = RuleEngine(rate_limit_window_s=300)
         self.intent_emitter = IntentEmitter()
@@ -121,7 +123,7 @@ class Observer:
 
         # Start config hot-reload (enables zero-downtime D-REAM deployments)
         try:
-            from src.core.config.hot_reload import start_hot_reload
+            from src.config.hot_reload import start_hot_reload
             start_hot_reload()
             logger.info("Config hot-reload enabled")
         except Exception as e:
@@ -179,6 +181,14 @@ class Observer:
         systemd_audit_thread.start()
         threads.append(systemd_audit_thread)
 
+        # Thread 6: dead letter monitor
+        dlq_thread = threading.Thread(
+            target=self._stream_source,
+            args=(self.dead_letter_monitor, "dead_letter_monitor"),
+            daemon=True
+        )
+        dlq_thread.start()
+        threads.append(dlq_thread)
 
         # Thread 7: periodic housekeeping
         housekeeping_thread = threading.Thread(

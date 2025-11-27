@@ -30,8 +30,8 @@ class DocLearner:
         try:
             import sys
             sys.path.insert(0, '/home/kloros/src')
-            from src.cognition.mind.memory.logger import MemoryLogger
-            from src.cognition.mind.memory.storage import EventType
+            from kloros_memory.logger import MemoryLogger
+            from kloros_memory.storage import EventType
             
             self.memory = MemoryLogger()
             self.EventType = EventType

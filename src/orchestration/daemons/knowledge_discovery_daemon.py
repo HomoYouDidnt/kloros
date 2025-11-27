@@ -2,8 +2,8 @@
 
 import ast
 import hashlib
-import json
 import logging
+import pickle
 import time
 import queue
 from pathlib import Path
@@ -11,12 +11,12 @@ from typing import Any, Dict, List, Optional
 import inotify.adapters
 import inotify.constants
 
-from src.orchestration.daemons.base_streaming_daemon import BaseStreamingDaemon
+from kloros.daemons.base_streaming_daemon import BaseStreamingDaemon
 
 try:
-    from src.orchestration.core.umn_bus import UMNPub
+    from kloros.orchestration.chem_bus_v2 import ChemPub
 except ImportError:
-    UMNPub = None
+    ChemPub = None
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class KnowledgeDiscoveryScannerDaemon(BaseStreamingDaemon):
     def __init__(
         self,
         watch_path: Path = Path("/home/kloros"),
-        state_file: Path = Path("/home/kloros/.kloros/knowledge_discovery_state.json"),
+        state_file: Path = Path("/home/kloros/.kloros/knowledge_discovery_state.pkl"),
         max_queue_size: int = 1000,
         max_workers: int = 2,
         max_cache_size: int = 500
@@ -119,7 +119,7 @@ class KnowledgeDiscoveryScannerDaemon(BaseStreamingDaemon):
 
         if all_gaps:
             logger.info(f"[knowledge_discovery] Detected {len(all_gaps)} knowledge gaps")
-            self._emit_questions_to_umn(all_gaps)
+            self._emit_questions_to_chembus(all_gaps)
         else:
             logger.debug(f"[knowledge_discovery] No gaps found in {file_path}")
 
@@ -231,16 +231,16 @@ class KnowledgeDiscoveryScannerDaemon(BaseStreamingDaemon):
 
         return []
 
-    def _emit_questions_to_umn(self, gaps: List[Dict[str, Any]]):
-        if not UMNPub:
-            logger.warning("[knowledge_discovery] UMN not available, skipping emission")
+    def _emit_questions_to_chembus(self, gaps: List[Dict[str, Any]]):
+        if not ChemPub:
+            logger.warning("[knowledge_discovery] ChemBus not available, skipping emission")
             return
 
         if not self.chem_pub:
             try:
-                self.chem_pub = UMNPub()
+                self.chem_pub = ChemPub()
             except Exception as e:
-                logger.error(f"[knowledge_discovery] Failed to create UMNPub: {e}")
+                logger.error(f"[knowledge_discovery] Failed to create ChemPub: {e}")
                 return
 
         for gap in gaps:
@@ -300,8 +300,8 @@ class KnowledgeDiscoveryScannerDaemon(BaseStreamingDaemon):
                 'timestamp': time.time()
             }
 
-            with open(self.state_file, 'w') as f:
-                json.dump(state, f)
+            with open(self.state_file, 'wb') as f:
+                pickle.dump(state, f)
 
             logger.info(f"[knowledge_discovery] Saved state to {self.state_file}")
 
@@ -314,8 +314,8 @@ class KnowledgeDiscoveryScannerDaemon(BaseStreamingDaemon):
             return
 
         try:
-            with open(self.state_file, 'r') as f:
-                state = json.load(f)
+            with open(self.state_file, 'rb') as f:
+                state = pickle.load(f)
 
             self.file_hashes = state.get('file_hashes', {})
             self.knowledge_index = state.get('knowledge_index', {})
@@ -325,12 +325,13 @@ class KnowledgeDiscoveryScannerDaemon(BaseStreamingDaemon):
                 f"{len(self.file_hashes)} files, {len(self.knowledge_index)} indexed"
             )
 
-        except (json.JSONDecodeError, EOFError, ValueError) as e:
+        except (pickle.UnpicklingError, EOFError, ValueError) as e:
             logger.error(
                 f"[knowledge_discovery] Corrupted state file, starting fresh: {e}"
             )
+            # Backup corrupted file for investigation
             try:
-                corrupted_path = self.state_file.with_suffix('.json.corrupted')
+                corrupted_path = self.state_file.with_suffix('.pkl.corrupted')
                 self.state_file.rename(corrupted_path)
                 logger.info(f"[knowledge_discovery] Backed up corrupted state to {corrupted_path}")
             except Exception as backup_error:
