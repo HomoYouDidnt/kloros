@@ -19,7 +19,7 @@ def _get_ssot():
     if _SSOT is None and not _SSOT_LOAD_ATTEMPTED:
         _SSOT_LOAD_ATTEMPTED = True
         try:
-            from ssot.loader import get_ssot
+            from src.ssot.loader import get_ssot
             _SSOT = get_ssot()
         except Exception:
             # SSOT module not available - using fallback config (env vars + defaults)

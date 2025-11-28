@@ -6,7 +6,7 @@ import math
 from collections import Counter
 from typing import Any, Dict
 
-from rag_pipeline.decoding.cisc import _citations, _snippet
+from src.knowledge.rag_pipeline.decoding.cisc import _citations, _snippet
 
 
 def sled_generate(

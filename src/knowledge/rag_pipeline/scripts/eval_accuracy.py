@@ -4,7 +4,7 @@ import json
 
 import yaml
 
-from rag_pipeline.pipeline.qa import answer as run_answer
+from src.knowledge.rag_pipeline.pipeline.qa import answer as run_answer
 
 
 def main():

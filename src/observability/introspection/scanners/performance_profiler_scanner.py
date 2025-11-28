@@ -146,7 +146,7 @@ class PerformanceProfilerScanner:
                         daemon_name = 'klr-observer'
                     elif 'klr-orchestrator' in cmdline_str or 'klr_orchestrator' in cmdline_str:
                         daemon_name = 'klr-orchestrator'
-                    elif 'kloros_voice' in cmdline_str or 'klr-voice' in cmdline_str:
+                    elif 'kloros_voice' in cmdline_str or 'klr-voice' in cmdline_str or 'voice_daemon' in cmdline_str:
                         daemon_name = 'klr-voice'
 
                     if daemon_name:

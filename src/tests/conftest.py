@@ -216,11 +216,11 @@ def kloros_init_lock(tmp_path_factory, worker_id):
     - Start threading subsystems
 
     Usage:
-        def test_piper_run(kloros_init_lock):
+        def test_voice_service(kloros_init_lock):
             # Lock is automatically acquired here
-            from src.voice.kloros_voice import KLoROS
-            k = KLoROS()
-            # Only ONE worker can be inside KLoROS.__init__() at a time
+            from src.core.interfaces.voice.voice_daemon import VoiceDaemon
+            daemon = VoiceDaemon()
+            # Only ONE worker can be inside initialization at a time
 
     NOTE: This fixture runs AFTER pytest_configure()'s early init guard,
     providing a second layer of protection during actual test execution.

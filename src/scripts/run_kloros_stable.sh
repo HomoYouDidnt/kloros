@@ -51,7 +51,7 @@ run_kloros() {
     esac
     
     cd /home/kloros
-    timeout 30 /home/kloros/.venv/bin/python -m src.kloros_voice
+    timeout 30 /home/kloros/.venv/bin/python -m src.core.interfaces.voice.voice_daemon
     return $?
 }
 

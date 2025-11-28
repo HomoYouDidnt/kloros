@@ -15,4 +15,4 @@ export KLR_AUDIO_OUTPUT_DEVICE=plughw:2,0
 echo "Starting KLoROS with 3.5mm speaker (plughw:2,0)..."
 echo "Say \"KLoROS\" to wake her up!"
 
-/opt/kloros/.venv/bin/python -m src.kloros_voice
+/opt/kloros/.venv/bin/python -m src.core.interfaces.voice.voice_daemon

@@ -21,7 +21,7 @@ class LocalQaBackend:
             RuntimeError: If QA module is unavailable
         """
         try:
-            from rag_pipeline.pipeline import qa as qa_mod
+            from src.knowledge.rag_pipeline.pipeline import qa as qa_mod
 
             self.qa_mod = qa_mod
         except ImportError as e:

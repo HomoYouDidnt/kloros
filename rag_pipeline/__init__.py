@@ -1,1 +1,0 @@
-"KLoROS accuracy stack package."

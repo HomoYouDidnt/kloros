@@ -191,7 +191,7 @@ def main():
 
         # Load SSOT directly instead of relying on models_config fallback
         try:
-            from ssot.loader import get_ssot
+            from src.ssot.loader import get_ssot
             ssot = get_ssot()
             model_name = ssot.get_embedder_model()
             trust_remote_code = ssot.get_embedder_trust_remote_code()

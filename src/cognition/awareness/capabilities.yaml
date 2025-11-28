@@ -88,7 +88,7 @@ rag:
   enabled: true
   description: Hybrid retrieval (BM25 + vector search)
 voice:
-  module: kloros_voice
+  module: core.interfaces.voice.voice_daemon
   enabled: true
   description: Main voice interaction orchestrator
 agentflow:

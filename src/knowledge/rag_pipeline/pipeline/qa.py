@@ -6,14 +6,14 @@ from typing import Any, Dict, List, Tuple
 
 import yaml
 
-from rag_pipeline.decoding.cisc import cisc_generate, greedy_generate
-from rag_pipeline.decoding.sampling import nucleus_generate, topk_generate
-from rag_pipeline.decoding.sled_decoding import sled_generate
-from rag_pipeline.retrieval.crag import corrective_loop, need_correction
-from rag_pipeline.retrieval.embedder import retrieve
-from rag_pipeline.retrieval.graphrag import graphrag_expand
-from rag_pipeline.retrieval.reranker import rerank
-from rag_pipeline.verify.cove import cove_verify
+from src.knowledge.rag_pipeline.decoding.cisc import cisc_generate, greedy_generate
+from src.knowledge.rag_pipeline.decoding.sampling import nucleus_generate, topk_generate
+from src.knowledge.rag_pipeline.decoding.sled_decoding import sled_generate
+from src.knowledge.rag_pipeline.retrieval.crag import corrective_loop, need_correction
+from src.knowledge.rag_pipeline.retrieval.embedder import retrieve
+from src.knowledge.rag_pipeline.retrieval.graphrag import graphrag_expand
+from src.knowledge.rag_pipeline.retrieval.reranker import rerank
+from src.knowledge.rag_pipeline.verify.cove import cove_verify
 
 
 def build_context(

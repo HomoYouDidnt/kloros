@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-from rag_pipeline.retrieval.embedder import retrieve
+from src.knowledge.rag_pipeline.retrieval.embedder import retrieve
 
 
 def _prominent_token(question: str) -> str | None:

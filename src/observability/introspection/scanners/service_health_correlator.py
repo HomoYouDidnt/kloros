@@ -154,7 +154,7 @@ class ServiceHealthCorrelator:
 
         content_lower = content.lower()
         known_services = [
-            'kloros_voice', 'kloros_introspection', 'kloros_orchestrator',
+            'kloros_voice', 'voice_daemon', 'kloros_introspection', 'kloros_orchestrator',
             'kloros_memory', 'kloros_observer', 'qdrant', 'chromadb',
             'bioreactor', 'chembus', 'mqtt', 'http', 'spica'
         ]

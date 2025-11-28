@@ -75,7 +75,7 @@ playbooks:
     steps:
       - action: kill_duplicate_process
         params:
-          process_name: kloros_voice
+          process_name: voice_daemon
     validate:
       check: system_health
 

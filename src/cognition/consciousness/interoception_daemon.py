@@ -255,7 +255,7 @@ class InteroceptionDaemon:
             for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'status', 'create_time']):
                 try:
                     cmdline = ' '.join(proc.info.get('cmdline', []) or [])
-                    if 'kloros_voice' in cmdline:
+                    if 'kloros_voice' in cmdline or 'voice_daemon' in cmdline:
                         kloros_procs.append(proc)
 
                     if proc.info.get('status') == psutil.STATUS_DISK_SLEEP:
@@ -267,7 +267,7 @@ class InteroceptionDaemon:
 
             if len(kloros_procs) > 1:
                 if current_time - self.last_duplicate_process_emission > self.emission_cooldown:
-                    logger.warning(f"[interoception_daemon] Found {len(kloros_procs)} kloros_voice processes (expected 1)")
+                    logger.warning(f"[interoception_daemon] Found {len(kloros_procs)} voice daemon processes (expected 1)")
 
                     self.chem_pub.emit(
                         signal="AFFECT_RESOURCE_STRAIN",

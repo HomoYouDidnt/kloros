@@ -39,4 +39,4 @@ echo -e "\n${GREEN}Starting KLoROS...${NC}"
 cd /home/kloros
 source .venv/bin/activate
 export XDG_RUNTIME_DIR=/run/user/1001
-exec python -m src.kloros_voice
+exec python -m src.core.interfaces.voice.voice_daemon

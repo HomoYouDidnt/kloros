@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from rag_pipeline.retrieval.embedder import _tokenize
+from src.knowledge.rag_pipeline.retrieval.embedder import _tokenize
 
 try:
     from sentence_transformers import CrossEncoder  # type: ignore
